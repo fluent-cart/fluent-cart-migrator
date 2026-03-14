@@ -458,7 +458,6 @@ class PaymentMigrate
 
                 $discountData = [
                     'order_id'    => $this->payment->id,
-                    'customer_id' => $orderData['customer_id'],
                     'code'        => $codeData['code'],
                     'amount'      => $codeData['amount'],
                     'created_at'  => $orderData['created_at'],

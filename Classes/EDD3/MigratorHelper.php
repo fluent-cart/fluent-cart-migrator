@@ -420,7 +420,7 @@ class MigratorHelper
 
         foreach ($allManualLimits as $manualLimit) {
             if ($manualLimit->meta_value) {
-                $manualLimits[$manualLimit->license_id] = $manualLimit->meta_value;
+                $manualLimits[$manualLimit->edd_license_id] = $manualLimit->meta_value;
             }
         }
 
