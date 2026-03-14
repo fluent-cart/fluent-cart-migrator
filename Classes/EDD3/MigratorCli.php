@@ -110,7 +110,7 @@ class MigratorCli
             $settedUp = $paymentMigrator->setupData();
 
             if (is_wp_error($settedUp)) {
-                $this->logFailedMigration($payment->ID, $settedUp->get_error_message(), [
+                $this->logFailedMigration($payment->id, $settedUp->get_error_message(), [
                     'error_type' => $settedUp->get_error_code(),
                     'stage'      => 'data_setup'
                 ]);
@@ -123,7 +123,7 @@ class MigratorCli
 
                 $this->print('Validation Failed for:  ' . $payment->id . ' :: ' . $validated->get_error_message());
 
-                $this->logFailedMigration($payment->ID, $validated->get_error_message(), [
+                $this->logFailedMigration($payment->id, $validated->get_error_message(), [
                     'error_type' => $validated->get_error_code(),
                     'stage'      => 'validation'
                 ]);

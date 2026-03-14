@@ -316,7 +316,7 @@ class Commands
         $offset = 0;
         $perPage = 100;
         while ($count > 0) {
-            $posts = $wpdb->get_results("SELECT ID FROM {$wpdb->prefix}posts WHERE post_type = '" . $postType . "' LIMIT 100");
+            $posts = $wpdb->get_results($wpdb->prepare("SELECT ID FROM {$wpdb->prefix}posts WHERE post_type = %s LIMIT 100", $postType));
 
             if (empty($posts)) {
                 break;
@@ -379,7 +379,8 @@ class Commands
             return;
         }
 
-        \WP_CLI::line('Found ' . $count . ' orphanded post meta');
+        $totalCount = $count;
+        \WP_CLI::line('Found ' . $totalCount . ' orphanded post meta');
 
         // confirm
         \WP_CLI::confirm("Are you sure you want to delete all orphanded post meta?", []);
@@ -404,7 +405,7 @@ class Commands
         }
 
         $progress->finish();
-        \WP_CLI::line('Deleted ' . $count . ' orphanded post meta');
+        \WP_CLI::line('Deleted ' . $totalCount . ' orphanded post meta');
 
     }
 
@@ -441,7 +442,7 @@ class Commands
                 break;
             }
 
-            $wpdb->get_results("DELETE FROM {$wpdb->prefix}term_relationships WHERE term_taxonomy_id IN (" . implode(',', $termTaxonomyIds) . ") LIMIT 100");
+            $wpdb->query("DELETE FROM {$wpdb->prefix}term_relationships WHERE term_taxonomy_id IN (" . implode(',', $termTaxonomyIds) . ") LIMIT 100");
 
             \WP_CLI::line('Deleted ' . count($termRelations) . ' term relationships');
 

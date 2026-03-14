@@ -84,7 +84,7 @@ class PaymentMigrate
     {
         $this->payment = $payment;
         if (!$formattedMeta) {
-            $formattedMeta = MigratorHelper::getFormattedOrderMeta($payment->ID);
+            $formattedMeta = MigratorHelper::getFormattedOrderMeta($payment->id);
         }
 
         $this->formattedMeta = $formattedMeta;
@@ -227,13 +227,13 @@ class PaymentMigrate
             $dummySubscription = $this->maybeCreateDummySubscription();
 
             if (!$dummySubscription) {
-                return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->ID . ' => ' . $this->customer->id, $this->payment);
+                return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->id . ' => ' . $this->customer->id, $this->payment);
             }
 
             $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
 
             if (defined('WP_CLI')) {
-                \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->ID . ' Subscription ID: ' . $dummySubscription->id);
+                \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
             }
 
             $transactionData['subscription_id'] = $dummySubscription->id;
@@ -310,7 +310,7 @@ class PaymentMigrate
             $subscriptionData = $this->subscripionData;
             if ($fctUpgradedFrom) {
                 $upgradedFromSubscription = fluentCart('db')->table('fct_subscriptions')
-                    ->where('id', $fctUpgradedFrom->id)
+                    ->where('parent_order_id', $fctUpgradedFrom->id)
                     ->first();
                 if ($upgradedFromSubscription) {
                     $subscriptionData['config']['upgraded_from_sub_id'] = $upgradedFromSubscription->id;
@@ -485,7 +485,7 @@ class PaymentMigrate
         $invalidStatuses = ['pending', 'failed'];
         if (!in_array($this->orderStatus, $invalidStatuses)) {
             $utmDetails = Arr::get($this->formattedMeta, '_f_utm_details', []);
-            $orderOperation = array_filter([
+            $orderOperation = [
                 'order_id'       => $createdOrderId,
                 'created_via'    => 'migration',
                 'emails_sent'    => 1,
@@ -499,9 +499,9 @@ class PaymentMigrate
                 'cart_hash'      => $orderData['uuid'],
                 'refer_url'      => Arr::get($utmDetails, 'refer', ''),
                 'meta'           => \json_encode([]),
-                'created_at'     => $this->payment->date_created, //$payment->post_date_gmt,
-                'updated_at'     => $this->payment->date_modified, //$payment->post_date_gmt,
-            ]);
+                'created_at'     => $this->payment->date_created,
+                'updated_at'     => $this->payment->date_modified,
+            ];
             fluentCart('db')->table('fct_order_operations')
                 ->insert($orderOperation);
         }
@@ -603,11 +603,7 @@ class PaymentMigrate
 
 
         if (!$eddSubscription) {
-            return new \WP_Error('no_subscription', 'No subscriptions found for Payment ID: ' . $this->payment->ID, $this->payment);
-        }
-
-        if (!$eddSubscription) {
-            return new \WP_Error('no_subscription', 'EDD Subscription not found for Payment ID: ' . $this->payment->ID, $this->payment);
+            return new \WP_Error('no_subscription', 'EDD Subscription not found for Payment ID: ' . $this->payment->id, $this->payment);
         }
 
         $fctProductDetails = MigratorHelper::getTransformedProductDetails($eddSubscription->product_id, $eddSubscription->price_id);
@@ -677,7 +673,7 @@ class PaymentMigrate
             }
 
             if (!$parsedItems) {
-                return new \WP_Error('empty_cart_item', 'Parsed items are empty. Payment ID: ' . $this->payment->ID, $this->payment);
+                return new \WP_Error('empty_cart_item', 'Parsed items are empty. Payment ID: ' . $this->payment->id, $this->payment);
             }
 
             foreach ($parsedItems as $newIndex => $parsedItem) {
@@ -688,7 +684,7 @@ class PaymentMigrate
         }
 
         if (!$orderItems) {
-            return new \WP_Error('empty_cart_item', 'No order items found. Payment ID: ' . $this->payment->ID, $this->payment);
+            return new \WP_Error('empty_cart_item', 'No order items found. Payment ID: ' . $this->payment->id, $this->payment);
         }
 
         $this->orderItems = $orderItems;
@@ -714,7 +710,7 @@ class PaymentMigrate
                     'updated_at'          => $refund->date_modified,
                     'order_type'          => $this->transactionType,
                     'transaction_type'    => 'refund',
-                    'subscription_id'     => !empty($transactionData['subscription_id']) ? $transactionData['subscription_id'] : null,
+                    'subscription_id'     => null,
                     'card_last_4'         => '',
                     'card_brand'          => '',
                     'vendor_charge_id'    => '',
@@ -742,7 +738,7 @@ class PaymentMigrate
                 // we have to adjust the order items refund total
                 foreach ($this->orderItems as $itemIndex => $orderItem) {
                     $itemLineTotal = $orderItem['line_total'];
-                    if ($itemLineTotal <= 0 && $totalAmount <= 0) {
+                    if ($itemLineTotal <= 0 || $totalAmount <= 0) {
                         continue;
                     }
 
@@ -828,7 +824,7 @@ class PaymentMigrate
             'ip_address'            => $this->payment->ip,
             'completed_at'          => $completedDate,
             'refunded_at'           => $refundedAt,
-            'uuid'                  => md5($this->payment->ID . '_' . $this->payment->uuid . '_' . microtime(true)),
+            'uuid'                  => md5($this->payment->id . '_' . $this->payment->uuid . '_' . microtime(true)),
             'config'                => [],
             'created_at'            => $this->payment->date_created, //$payment->post_date_gmt,
             'updated_at'            => $this->payment->date_modified, //$payment->post_modified_gmt,
@@ -859,7 +855,7 @@ class PaymentMigrate
                 'vendor_charge_id'    => $vendorIntentId,
                 'payment_method'      => MigratorHelper::getGatewaySlug($transaction->gateway),
                 'payment_mode'        => $this->paymentMode,
-                'payment_method_type' => $this->paymentMode === 'stripe' ? 'card' : '',
+                'payment_method_type' => $this->paymentMethod === 'stripe' ? 'card' : '',
                 'status'              => ($transaction->status === 'complete') ? 'succeeded' : Status::PAYMENT_PENDING,
                 'currency'            => $this->currency,
                 'total'               => MigratorHelper::toCents($transaction->total, $this->eddCurrency),
@@ -895,12 +891,12 @@ class PaymentMigrate
             'vendor_charge_id'    => Arr::get($this->formattedMeta, '_edds_stripe_payment_intent_id') ?? '',
             'payment_method'      => $this->paymentMethod,
             'payment_mode'        => $this->paymentMode,
-            'payment_method_type' => $this->paymentMode === 'stripe' ? 'card' : '',
+            'payment_method_type' => $this->paymentMethod === 'stripe' ? 'card' : '',
             'status'              => $transactionStatus,
             'currency'            => $this->currency,
             'total'               => $this->orderTotals['total_paid'],
             'rate'                => 1,
-            'uuid'                => md5('payment_' . $this->payment->ID . '_' . Arr::get($this->formattedMeta, '_edd_payment_purchase_key', '') . '_' . microtime(true)),
+            'uuid'                => md5('payment_' . $this->payment->id . '_' . Arr::get($this->formattedMeta, '_edd_payment_purchase_key', '') . '_' . microtime(true)),
             'meta'                => \json_encode([
                 'fallback' => 1
             ]),
@@ -919,7 +915,7 @@ class PaymentMigrate
         $this->licenses = $licenses;
 
         if ($this->licenses && $this->renewwingLicense) {
-            \WP_CLI::line('Got new licenses for renewal license: ' . $this->payment->ID);
+            \WP_CLI::line('Got new licenses for renewal license: ' . $this->payment->id);
         }
     }
 
@@ -1037,7 +1033,7 @@ class PaymentMigrate
             // we have some refund amount to process
             // @todo: find the refund date from activities
             $this->refundData = [
-                'order_id'   => $this->payment->ID,
+                'order_id'   => $this->payment->id,
                 'status'     => Status::TRANSACTION_REFUNDED,
                 'total'      => $diffAmount,
                 'created_at' => $this->guessRefundDate(),
@@ -1224,7 +1220,7 @@ class PaymentMigrate
             ];
         }
 
-        if (!$customerData) {
+        if (empty($customerData['email'])) {
             return new \WP_Error('no_customer_data', 'No customer data found for Payment ID: ' . $this->payment->id, $this->payment);
         }
 
@@ -1275,7 +1271,7 @@ class PaymentMigrate
             'week'      => 'weekly',
             'month'     => 'monthly',
             'quarter'   => 'quarterly',
-            'semi-year' => 'semi-yearly',
+            'semi-year' => 'half-yearly',
             'year'      => 'yearly'
         ];
 
@@ -1387,6 +1383,7 @@ class PaymentMigrate
 
             if ($period) {
                 $subscriptionItem = [
+                    'uuid'                   => md5('dummy_subscription_' . $parentOrderPost->ID . '_' . wp_generate_uuid4() . '_' . microtime(true)),
                     'customer_id'            => $this->customer->id,
                     'parent_order_id'        => $parentOrderPost->ID,
                     'product_id'             => $fctProductDetails['id'],
@@ -1473,7 +1470,7 @@ class PaymentMigrate
             'status'      => 'info',
             'log_type'    => 'activity',
             'module_type' => 'FluentCart\App\Models\Order',
-            'module_id'   => $paymentId ? $paymentId : $this->payment->ID,
+            'module_id'   => $paymentId ? $paymentId : $this->payment->id,
             'module_name' => 'Order',
             'user_id'     => NULL,
             'title'       => $title,

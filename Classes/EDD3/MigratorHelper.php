@@ -476,7 +476,7 @@ class MigratorHelper
 
             foreach ($bundledProductDetails as $productDetails) {
                 $orderItems[] = [
-                    'order_id'           => $payment->ID,
+                    'order_id'           => $payment->id,
                     'post_id'            => $productDetails['id'],
                     'fulfillment_type'   => 'digital',
                     'payment_type'       => $transactionType,
@@ -587,7 +587,7 @@ class MigratorHelper
         }
 
         $orderItem = [
-            'order_id'           => (int)$payment->ID,
+            'order_id'           => (int)$payment->id,
             'post_id'            => $productDetails['id'],
             'fulfillment_type'   => 'digital',
             'payment_type'       => $transactionType,
@@ -869,7 +869,7 @@ class MigratorHelper
 
         foreach ($licenses as $license) {
             fluentCart('db')->table('fct_license_activations')
-                ->where('id', $license->id)
+                ->where('license_id', $license->id)
                 ->delete();
         }
 
