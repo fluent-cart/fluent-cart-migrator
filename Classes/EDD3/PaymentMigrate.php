@@ -483,6 +483,14 @@ class PaymentMigrate
         // 8. Migrate Activities
         MigratorHelper::doBulkInsert('fct_activity', $this->activities);
 
+        // 8.1 Migrate Subscription Notes
+        if ($createdSubscriptionId && $this->eddSubscriptionId) {
+            $subActivities = MigratorHelper::getSubscriptionActivities($this->eddSubscriptionId, $createdSubscriptionId);
+            if ($subActivities) {
+                MigratorHelper::doBulkInsert('fct_activity', $subActivities);
+            }
+        }
+
         // 9. Migrate the used coupon code
         if ($this->couponCodes) {
             foreach ($this->couponCodes as $codeData) {
