@@ -1059,8 +1059,19 @@ class MigratorHelper
             }
         }
 
+        if (!defined('EDD_PLUGIN_FILE')) {
+            return new \WP_Error('edd_not_found', 'Easy Digital Downloads plugin not found. Please install and activate Easy Digital Downloads and try again.');
+        }
 
+        $productCount = fluentCart('db')->table('posts')
+            ->where('post_type', 'download')
+            ->count();
 
+        if (!$productCount) {
+            return new \WP_Error('no_edd_products', 'No EDD products found. Nothing to migrate.');
+        }
+        
+        return true;
     }
 
 }
