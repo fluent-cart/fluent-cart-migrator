@@ -11,6 +11,7 @@ use FluentCart\App\Models\Subscription;
 use FluentCart\Database\DBMigrator;
 use FluentCart\Framework\Support\Arr;
 use FluentCartMigrator\Classes\Edd3\MigratorCli;
+use FluentCartMigrator\Classes\Edd3\MigratorHelper;
 
 class Commands
 {
@@ -22,13 +23,16 @@ class Commands
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/MigratorHelper.php';
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/PaymentMigrate.php';
 
+        $canMigrate = MigratorHelper::canMigrate();
+
+        if (is_wp_error($canMigrate)) {
+            \WP_CLI::error($canMigrate->get_error_message());
+            return;
+        }
+
         $eddCli = new \FluentCartMigrator\Classes\Edd3\MigratorCli();
 
-
-//        $results = (new MigratorCli())->migratePayments(1, 100);
-//
-//        dd($results);
-
+        // $eddCli->migratePayments(); die();
 
         if (Arr::get($assoc_args, 'stats')) {
             $eddCli->stats($assoc_args);
@@ -40,10 +44,6 @@ class Commands
             return;
         }
 
-//        if(Arr::get($assoc_args, 'test')) {
-//            $eddCli->testPayment(Arr::get($assoc_args, 'test'));
-//        }
-
         if (Arr::get($assoc_args, 'log')) {
             $log = get_option('_fluent_edd_failed_payment_logs', []);
             print_r($log);
@@ -51,11 +51,6 @@ class Commands
         }
 
         if (Arr::get($assoc_args, 'reset')) {
-            if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
-                \WP_CLI::error('You can only reset the migration in dev mode. Please define FLUENT_CART_DEV_MODE in your wp-config.php file.');
-                return;
-            }
-
             // prompt for confirmation
             if (!\WP_CLI\Utils\make_progress_bar('Are you sure you want to reset the migration? (y/n)', 1)) {
                 \WP_CLI::line('Migration reset cancelled.');
@@ -179,6 +174,8 @@ class Commands
 
         if (Arr::get($assoc_args, 'recount')) {
             // Recount stats now
+            $this->fix_reactivations();
+            $this->fix_subs_uuid();
             $this->recountCoupons();
             $this->recountCustomersStat();
             $this->recountSubscriptions();
@@ -219,41 +216,6 @@ class Commands
             $orphan->save();
 
             $rightSubscription->reSyncFromRemote();
-        }
-
-        \WP_CLI::line('Done');
-    }
-
-    public function fix_manual_reactivated_subscriptions()
-    {
-        $renewalOrders = Order::query()->where('type', 'renewal')
-            ->where('status', 'completed')
-            ->where('config', 'LIKE', '%old_vendor_subscription_id%')
-            ->get();
-
-        foreach ($renewalOrders as $renewalOrder) {
-            $oldSubId = Arr::get($renewalOrder->config, 'old_vendor_subscription_id', false);
-            $oldPaymentMethod = Arr::get($renewalOrder->config, 'old_payment_method', false);
-
-            $subscription = Subscription::where('vendor_subscription_id', $oldSubId)
-                ->first();
-
-            if (!$subscription && $oldSubId && $oldPaymentMethod) {
-                $gateway = App::gateway($oldPaymentMethod);
-
-                if ($gateway && $gateway->has('subscriptions')) {
-                    $result = $gateway->subscriptions->cancel($oldSubId, [
-                        'mode' => $renewalOrder->mode
-                    ]);
-
-                    if (is_wp_error($result)) {
-                        \WP_CLI::line('Error cancelling old subscription ID: ' . $oldSubId . ' - ' . $result->get_error_message());
-                        continue;
-                    }
-
-                    \WP_CLI::line('Cancelled old subscription ID: ' . $oldSubId);
-                }
-            }
         }
 
         \WP_CLI::line('Done');
@@ -612,10 +574,21 @@ class Commands
                     continue;
                 }
 
+                $hasChanges = false;
+
                 $subscription = $keyedSubscriptions[$orderId];
                 if ($subscription->bill_count != $count) {
-                    unset($subscription->preventsLazyLoading);
+                    $hasChanges = true;
                     $subscription->bill_count = $count;
+                }
+
+                if ($subscription->bill_times > 0 && $subscription->bill_count >= $subscription->bill_times) {
+                    $subscription->status = 'completed';
+                    $hasChanges = true;
+                }
+
+                if ($hasChanges) {
+                    unset($subscription->preventsLazyLoading);
                     $subscription->save();
                 }
             }

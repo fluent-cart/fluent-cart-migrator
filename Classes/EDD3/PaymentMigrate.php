@@ -103,6 +103,7 @@ class PaymentMigrate
         // let's prepare the order data first
         $this->paymentMethod = MigratorHelper::getGatewaySlug($payment->gateway);
         $this->parentOrderId = $this->payment->parent ? (int)$this->payment->parent : null;
+
     }
 
     public function setupData()
@@ -116,22 +117,10 @@ class PaymentMigrate
 
         $formattedMeta = $this->formattedMeta;
 
-        if (defined('EDD_RECURRING_PLUGIN_DIR')) {
-            $this->eddSubscriptionId = Arr::get($formattedMeta, 'subscription_id', '');
-            if ($this->payment->status == 'edd_subscription') {
-                $this->transactionType = 'renewal';
-                if (!$this->eddSubscriptionId) {
-                    return new \WP_Error('no_sub_id', 'EDD Subscription ID is empty for Payment ID: ' . $this->payment->id, $this->payment);
-                }
-            } else {
-                $subscription = fluentCart('db')->table('edd_subscriptions')->where('parent_payment_id', $this->payment->id)->first();
-                if ($subscription) {
-                    $this->eddSubscriptionId = $subscription->id;
-                    $this->transactionType = 'subscription';
-                }
-            }
+        $this->customer = $this->getCustomer();
+        if (!$this->customer || is_wp_error($this->customer)) {
+            return new \WP_Error('invalid_customer', 'Customer could not be resolved.', $this->payment);
         }
-
 
         // software license addon data preparation
         if (defined('EDD_SL_PLUGIN_DIR')) {
@@ -167,17 +156,11 @@ class PaymentMigrate
         }
 
 
-        $this->customer = $this->getCustomer();
-        if (!$this->customer || is_wp_error($this->customer)) {
-            return new \WP_Error('invalid_customer', 'Customer could not be resolved.', $this->payment);
-        }
-
-
         $subscription = $this->setupSubscriptionData();
+
         if (is_wp_error($subscription)) {
             return $subscription;
         }
-
 
         $items = $this->prepareOrderItems(); // preparing order items
         if (is_wp_error($items)) {
@@ -228,28 +211,26 @@ class PaymentMigrate
                     $parentSubscription = fluentCart('db')->table('fct_subscriptions')
                         ->where('parent_order_id', $this->parentOrderId)
                         ->first();
-
                     if ($parentSubscription) {
                         $transactionData['subscription_id'] = $parentSubscription->id;
                     }
                 }
-            }
+                if (empty($transactionData['subscription_id'])) {
+                    // we should not proceed if we don't have subscription ID
+                    $dummySubscription = $this->maybeCreateDummySubscription();
 
-            if ($this->transactionType == 'renewal' && empty($transactionData['subscription_id'])) {
-                // we should not proceed if we don't have subscription ID
-                $dummySubscription = $this->maybeCreateDummySubscription();
+                    if (!$dummySubscription) {
+                        return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->id . ' => ' . $this->customer->id, $this->payment);
+                    }
 
-                if (!$dummySubscription) {
-                    return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->id . ' => ' . $this->customer->id, $this->payment);
+                    $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
+
+                    if (defined('WP_CLI')) {
+                        \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
+                    }
+
+                    $transactionData['subscription_id'] = $dummySubscription->id;
                 }
-
-                $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
-
-                if (defined('WP_CLI')) {
-                    \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
-                }
-
-                $transactionData['subscription_id'] = $dummySubscription->id;
             }
         }
 
@@ -267,6 +248,7 @@ class PaymentMigrate
             $orderData['config']['upgraded_from'] = $fctUpgradedFrom->id;
         }
         $orderData['config'] = \json_encode($orderData['config']);
+
 
         $createdOrderId = fluentCart('db')->table('fct_orders')
             ->insertGetId($orderData);
@@ -363,6 +345,8 @@ class PaymentMigrate
             $subscriptionData['config'] = \json_encode($subscriptionData['config']);
             $createdSubscriptionId = fluentCart('db')->table('fct_subscriptions')
                 ->insertGetId($subscriptionData);
+
+
             if ($upgradedFromSubscription) {
                 $config = \json_decode($upgradedFromSubscription->config, true);
                 if (!is_array($config)) {
@@ -643,9 +627,25 @@ class PaymentMigrate
 
     private function setupSubscriptionData()
     {
-        if (defined('EDD_RECURRING_PLUGIN_DIR')) {
+        if (!defined('EDD_RECURRING_PLUGIN_DIR')) {
             return null;
         }
+
+        if ($this->payment->status === 'edd_subscription') {
+            $this->transactionType = 'renewal';
+            $existingSubscriptionId = Arr::get($this->formattedMeta, 'subscription_id', '');
+            $this->eddSubscriptionId = $existingSubscriptionId;
+            if (!$existingSubscriptionId) {
+                return new \WP_Error('no_sub_id', 'EDD Subscription ID is empty for Payment ID: ' . $this->payment->id, $this->payment);
+            }
+        } else {
+            $subscription = fluentCart('db')->table('edd_subscriptions')->where('parent_payment_id', $this->payment->id)->first();
+            if ($subscription) {
+                $this->eddSubscriptionId = $subscription->id;
+                $this->transactionType = 'subscription';
+            }
+        }
+
 
         if ($this->transactionType != 'subscription') {
             return null;
@@ -697,7 +697,7 @@ class PaymentMigrate
             'vendor_customer_id'     => $vendorCustomerId,
             'vendor_plan_id'         => '',
             'vendor_subscription_id' => $eddSubscription->profile_id,
-            'status'                 => $this->getSubscriptionStatus($eddSubscription->status),
+            'status'                 => $this->getSubscriptionStatus($eddSubscription),
             'original_plan'          => '',
             'vendor_response'        => '',
             'current_payment_method' => $this->paymentMethod,
@@ -1163,8 +1163,11 @@ class PaymentMigrate
         return '';
     }
 
-    private function getSubscriptionStatus($eddStatus)
+    private function getSubscriptionStatus($eddSubscription)
     {
+
+        $eddStatus = $eddSubscription->status;
+
         $maps = [
             // for subscriptions
             'active'    => Status::SUBSCRIPTION_ACTIVE,
@@ -1180,7 +1183,31 @@ class PaymentMigrate
             return $maps[$eddStatus];
         }
 
-        return '';
+        if (strtotime($eddSubscription->expiration) < current_time('timestamp')) {
+            return Status::SUBSCRIPTION_EXPIRED;
+        }
+
+        // subscription status is not mapped, So we have to guess it!
+        $parentPayment = fluentCart('db')->table('edd_payments')->where('id', $eddSubscription->parent_payment_id)->first();
+
+        if ($parentPayment) {
+            $parentStatus = $this->getPaymentStatus($parentPayment->status);
+            if ($parentStatus == Status::PAYMENT_PAID) {
+                return Status::SUBSCRIPTION_ACTIVE;
+            }
+
+            if ($parentStatus == Status::PAYMENT_PENDING) {
+                return Status::SUBSCRIPTION_PENDING;
+            }
+
+            if ($parentStatus == Status::PAYMENT_REFUNDED) {
+                return Status::SUBSCRIPTION_CANCELED;
+            }
+        }
+
+        // if we can't guess the status, let's set it to draft and we will fix it later with activities
+
+        return 'draft';
     }
 
     private function getOrderStatus($eddStatus)
