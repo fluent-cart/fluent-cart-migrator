@@ -5,6 +5,8 @@ namespace FluentCartMigrator\Classes\Edd3;
 use FluentCart\App\CPT\FluentProducts;
 use FluentCart\App\Models\Meta;
 use FluentCart\App\Models\Order;
+use FluentCart\App\Models\ProductDetail;
+use FluentCart\App\Models\ProductVariation;
 use FluentCart\Framework\Support\Arr;
 
 class MigratorCli
@@ -34,7 +36,6 @@ class MigratorCli
 
     public function stats($assoc_args = [])
     {
-
         $statuses = fluentCart('db')->table('edd_orders')
             ->select(['status'])
             ->whereNotIn('status', ['abandoned', 'trash'])
@@ -71,9 +72,13 @@ class MigratorCli
 
     public function migrate_products($willUpdate = false)
     {
+
+        update_option('_fcart_migrated_bundled_products', []);
+
         $products = fluentCart('db')->table('posts')
             ->where('post_type', 'download')
             ->get();
+
 
         $results = [];
 
@@ -82,6 +87,15 @@ class MigratorCli
         }
 
         $this->cacheMigratedProductMaps();
+
+        $bunddledItems = get_option('_fcart_migrated_bundled_products');
+
+        if ($bunddledItems) {
+            foreach ($bunddledItems as $eddId => $fctId) {
+                $this->syncBundledProductAttributes($eddId, $fctId);
+            }
+        }
+
 
         return $results;
     }
@@ -458,8 +472,10 @@ class MigratorCli
             $formattedMeta[$meta->meta_key] = maybe_unserialize($meta->meta_value);
         }
 
-        if (Arr::get($formattedMeta, '_edd_product_type') == 'bundle') {
-            return new \WP_Error('edd_migrator_error', 'Bundle product is not supported yet.');
+        $isBundled = Arr::get($formattedMeta, '_edd_product_type') === 'bundle';
+
+        if ($isBundled) {
+            // return new \WP_Error('edd_migrator_error', 'Bundle product is not supported yet.');
         }
 
         $isVariable = Arr::get($formattedMeta, '_variable_pricing') == 1;
@@ -541,7 +557,7 @@ class MigratorCli
                     'other_info'           => json_encode($this->getPriceVariationDetails($price)),
                 ];
 
-                if ($licenseEnabled) {
+                if ($licenseEnabled && !$isBundled) {
                     $isLifetime = Arr::get($price, 'is_lifetime', '') == 1;
                     $licenseVariations[$priceIndex] = [
                         'variation_id'     => '',
@@ -610,7 +626,7 @@ class MigratorCli
         }
 
         $licenseConfig = null;
-        if ($licenseEnabled) {
+        if ($licenseEnabled && !$isBundled) {
             $licenseConfig = [
                 'enabled'            => 'yes',
                 'version'            => Arr::get($formattedMeta, '_edd_sl_version', ''),
@@ -672,7 +688,6 @@ class MigratorCli
 
         // create the license settings
         if ($licenseConfig) {
-
             if ($isUpdated) {
                 // remove the existing
                 fluentCart('db')->table('fct_product_meta')
@@ -702,58 +717,73 @@ class MigratorCli
                 ->delete();
         }
 
-        foreach (Arr::get($formattedMeta, 'edd_download_files', []) as $index => $file) {
-            $attachmentId = Arr::get($file, 'attachment_id', 0);
-            $driver = 'local';
-            $bucket = '';
-            $attachedFileId = get_attached_file($attachmentId, true);
+        if (!$isBundled) {
+            foreach (Arr::get($formattedMeta, 'edd_download_files', []) as $index => $file) {
+                $attachmentId = Arr::get($file, 'attachment_id', 0);
+                $driver = 'local';
+                $bucket = '';
+                $attachedFileId = get_attached_file($attachmentId, true);
 
-            if ($attachmentId && is_numeric($attachmentId) && $attachedFileId) {
-                $filePath = $attachedFileId;
-                $fileUrl = wp_get_attachment_url($attachmentId);
-            } else {
-                if (!defined('EDD_AS3_VERSION')) {
+                if ($attachmentId && is_numeric($attachmentId) && $attachedFileId) {
+                    $filePath = $attachedFileId;
+                    $fileUrl = wp_get_attachment_url($attachmentId);
+                } else {
+                    if (!defined('EDD_AS3_VERSION')) {
+                        continue;
+                    }
+
+                    $fileInfo = $file['file'];
+                    $arr = explode('/', $fileInfo);
+                    $bucket = array_shift($arr);
+                    $filePath = implode('/', $arr);
+                    $fileUrl = implode('/', $arr);
+                    $driver = 's3';
+                }
+
+                if (empty($filePath)) {
                     continue;
                 }
 
-                $fileInfo = $file['file'];
-                $arr = explode('/', $fileInfo);
-                $bucket = array_shift($arr);
-                $filePath = implode('/', $arr);
-                $fileUrl = implode('/', $arr);
-                $driver = 's3';
+                // get the extension name from file path
+                $fileName = basename($filePath);
+                $fileExtension = explode('.', $fileName);
+                $fileExtension = $fileExtension[count($fileExtension) - 1];
+
+                $downloadFile = [
+                    'download_identifier' => md5($filePath . $createdPostId . wp_generate_uuid4() . $index),
+                    'post_id'             => $createdPostId,
+                    'driver'              => $driver,
+                    'title'               => $fileName,
+                    'type'                => $fileExtension,
+                    'file_name'           => $fileName,
+                    'file_path'           => $filePath,
+                    'file_url'            => $fileUrl,
+                    'serial'              => $index,
+                    'settings'            => json_encode([
+                        'bucket'          => $bucket,
+                        'download_limit'  => '',
+                        'download_expiry' => '',
+                    ]),
+                    'created_at'          => MigratorHelper::getPostDate($product, 'post_date'), //$product->post_date_gmt,
+                    'updated_at'          => current_time('mysql')
+                ];
+
+                fluentCart('db')->table('fct_product_downloads')
+                    ->insertGetId($downloadFile);
+            }
+        }
+
+        if ($isBundled) {
+            // we will add this to the options settings
+            $prevSettings = get_option('_fcart_migrated_bundled_products', []);
+
+            if (!$prevSettings || !is_array($prevSettings)) {
+                $prevSettings = [];
             }
 
-            if (empty($filePath)) {
-                continue;
-            }
+            $prevSettings[$product->ID] = $createdPostId;
 
-            // get the extension name from file path
-            $fileName = basename($filePath);
-            $fileExtension = explode('.', $fileName);
-            $fileExtension = $fileExtension[count($fileExtension) - 1];
-
-            $downloadFile = [
-                'download_identifier' => md5($filePath . $createdPostId . wp_generate_uuid4() . $index),
-                'post_id'             => $createdPostId,
-                'driver'              => $driver,
-                'title'               => $fileName,
-                'type'                => $fileExtension,
-                'file_name'           => $fileName,
-                'file_path'           => $filePath,
-                'file_url'            => $fileUrl,
-                'serial'              => $index,
-                'settings'            => json_encode([
-                    'bucket'          => $bucket,
-                    'download_limit'  => '',
-                    'download_expiry' => '',
-                ]),
-                'created_at'          => MigratorHelper::getPostDate($product, 'post_date'), //$product->post_date_gmt,
-                'updated_at'          => current_time('mysql')
-            ];
-
-            fluentCart('db')->table('fct_product_downloads')
-                ->insertGetId($downloadFile);
+            update_option('_fcart_migrated_bundled_products', $prevSettings);
         }
 
         return $createdPostId;
@@ -847,4 +877,130 @@ class MigratorCli
         \WP_CLI::line($text);
     }
 
+
+    private function syncBundledProductAttributes($eddId, $fctId)
+    {
+        $attributes = fluentCart('db')->table('postmeta')
+            ->where('post_id', $eddId)
+            ->get();
+
+        $metaData = [];
+        foreach ($attributes as $attribute) {
+            $metaData[$attribute->meta_key] = maybe_unserialize($attribute->meta_value);
+        }
+
+        $bundledConditions = Arr::get($metaData, '_edd_bundled_products_conditions', []);
+
+        $variablePrices = Arr::get($metaData, 'edd_variable_prices', []);
+
+        $variablePriceIdentifiers = array_keys($variablePrices);
+
+        $bundledMaps = Arr::get($metaData, '_edd_bundled_products', []);
+        $fctMaps = get_post_meta($fctId, '__edd_migrated_variation_maps', true);
+
+        $formattedBundledMaps = [];
+
+        foreach ($bundledMaps as $productIndex => $map) {
+            $maps = explode('_', $map);
+            $formattedBundledMaps[$productIndex] = [
+                'edd_product_id' => Arr::get($maps, 0, ''),
+                'edd_price_id'   => Arr::get($maps, 1, '')
+            ];
+        }
+
+        $formattedConditions = [];
+        foreach ($bundledConditions as $priceIndex => $condition) {
+            if ($condition == 'all') {
+                $condition = $variablePriceIdentifiers;
+            } else {
+                $condition = [$condition];
+            }
+
+            foreach ($condition as $conditionItem) {
+                if (!isset($formattedConditions[$conditionItem])) {
+                    $formattedConditions[$conditionItem] = [];
+                }
+
+                $formattedConditions[$conditionItem][] = $priceIndex;
+            }
+        }
+
+        $accessMaps = [];
+
+        foreach ($formattedConditions as $index => $priceIds) {
+            if (empty($fctMaps[$index])) {
+                continue;
+            }
+
+            $eddItems = array_values(Arr::only($formattedBundledMaps, array_values($priceIds)));
+
+            $fctVariationIds = [];
+
+            foreach ($eddItems as $eddItem) {
+                $eddProductId = Arr::get($eddItem, 'edd_product_id');
+                $eddVariationId = Arr::get($eddItem, 'edd_price_id');
+                $migratedFcId = get_post_meta($eddProductId, '_fcart_migrated_id', true);
+
+                if ($eddVariationId) {
+                    $variationMaps = get_post_meta($migratedFcId, '__edd_migrated_variation_maps', true);
+
+                    if (!$variationMaps) {
+                        return new \WP_Error('edd_migrator_error', 'Variation maps not found.');
+                    }
+                    $variationId = Arr::get($variationMaps, $eddVariationId, 0);
+                    $fctVariationIds[] = $variationId;
+                } else {
+                    $allItemvariations = fluentCart('db')->table('fct_product_variations')
+                        ->where('post_id', $migratedFcId)
+                        ->get()
+                        ->pluck('id')
+                        ->toArray();
+
+                    if ($allItemvariations) {
+                        foreach ($allItemvariations as $variationId) {
+                            if (!in_array($variationId, $fctVariationIds)) {
+                                $fctVariationIds[] = $variationId;
+                            }
+                        }
+                    }
+                }
+            }
+
+            $accessMaps[$fctMaps[$index]] = array_values(array_unique($fctVariationIds));
+        }
+
+        $productDetail = ProductDetail::query()->where('post_id', $fctId)->first();
+
+        if (!$productDetail) {
+            return new \WP_Error('edd_migrator_error', 'Product detail not found for bundled product.');
+        }
+
+        foreach ($accessMaps as $variationId => $accessVariationIds) {
+            $variation = ProductVariation::query()->where('id', $variationId)->first();
+            if ($variation) {
+                $otherInfo = $variation->other_info;
+
+                if (!is_array($otherInfo)) {
+                    $otherInfo = [];
+                }
+
+                $otherInfo['bundle_child_ids'] = $accessVariationIds;
+                $otherInfo['is_bundle_product'] = 'yes';
+                $variation->other_info = $otherInfo;
+                $variation->save();
+            }
+        }
+
+        $otherInfo = $productDetail->other_info;
+
+        if (!is_array($otherInfo)) {
+            $otherInfo = [];
+        }
+
+        $otherInfo['is_bundle_product'] = 'yes';
+        $productDetail->other_info = $otherInfo;
+        $productDetail->save();
+
+        return true;
+    }
 }
