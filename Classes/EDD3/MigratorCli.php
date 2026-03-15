@@ -640,6 +640,8 @@ class MigratorCli
         }
 
         $licenseConfig = null;
+        $licenseChangelog = '';
+
         if ($licenseEnabled && !$isBundled) {
             $licenseConfig = [
                 'enabled'            => 'yes',
@@ -654,9 +656,9 @@ class MigratorCli
                     'required_php' => '',
                     'required_wp'  => '',
                 ],
-                'changelog'          => Arr::get($formattedMeta, '_edd_sl_changelog', ''),
                 'prefix'             => ''
             ];
+            $licenseChangelog = Arr::get($formattedMeta, '_edd_sl_changelog', '');
         }
 
         // let's create the product details
@@ -718,6 +720,17 @@ class MigratorCli
                     'created_at' => MigratorHelper::getPostDate($product, 'post_date'), //$product->post_date_gmt,
                     'updated_at' => gmdate('Y-m-d H:i:s'),
                 ]);
+
+            if ($licenseChangelog) {
+                fluentCart('db')->table('fct_product_meta')
+                    ->insert([
+                        'object_id'  => $createdPostId,
+                        'meta_key'   => '_fluent_sl_changelog',
+                        'meta_value' => $licenseChangelog,
+                        'created_at' => MigratorHelper::getPostDate($product, 'post_date'), //$product->post_date_gmt,
+                        'updated_at' => gmdate('Y-m-d H:i:s'),
+                    ]);
+            }
         }
 
         if ($createdVariations) {
