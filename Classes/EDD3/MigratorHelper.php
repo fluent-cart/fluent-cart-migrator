@@ -1037,4 +1037,30 @@ class MigratorHelper
 
     }
 
+    public static function canMigrate()
+    {
+        if (defined('EDD_SL_PLUGIN_DIR')) {
+            // we have to check if we have fluent-cart-pro installed
+            if (!defined('FLUENTCART_PRO_PLUGIN_VERSION')) {
+                return new \WP_Error('fluentcart_pro_required', 'FluentCart Pro is required to migrate EDD License data. Please install FluentCart Pro and try again.');
+            }
+
+            if (!ModuleSettings::isActive('license')) {
+                $prevSettings = ModuleSettings::getAllSettings(false);
+                if (empty($prevSettings['license'])) {
+                    $prevSettings['license'][] = [];
+                }
+                $prevSettings['license']['active'] = 'yes';
+                // We are activating the license module here!
+                ModuleSettings::saveSettings($prevSettings);
+                do_action('fluent_cart/module/activated/license', $prevSettings, $prevSettings);
+                // invalidate the cache
+                ModuleSettings::getAllSettings(false);
+            }
+        }
+
+
+
+    }
+
 }

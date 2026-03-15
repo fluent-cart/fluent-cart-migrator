@@ -115,60 +115,69 @@ class PaymentMigrate
         $this->activities = MigratorHelper::getActivities($this->payment);
 
         $formattedMeta = $this->formattedMeta;
-        $this->eddSubscriptionId = Arr::get($formattedMeta, 'subscription_id', '');
 
-        if ($this->payment->status == 'edd_subscription') {
-            $this->transactionType = 'renewal';
-            if (!$this->eddSubscriptionId) {
-                return new \WP_Error('no_sub_id', 'EDD Subscription ID is empty for Payment ID: ' . $this->payment->id, $this->payment);
-            }
-        } else {
-            $subscription = fluentCart('db')->table('edd_subscriptions')->where('parent_payment_id', $this->payment->id)->first();
-            if ($subscription) {
-                $this->eddSubscriptionId = $subscription->id;
-                $this->transactionType = 'subscription';
-            }
-        }
-
-        $renewingLicenseKey = Arr::get($formattedMeta, '_edd_sl_renewal_key', '');
-        if ($renewingLicenseKey) {
-            $this->renewwingLicense = fluentCart('db')->table('fct_licenses')
-                ->where('license_key', $renewingLicenseKey)
-                ->first();
-        }
-
-        $upgradedPaymentId = Arr::get($formattedMeta, '_edd_sl_upgraded_payment_id', '');
-
-        if ($upgradedPaymentId) {
-            $upgradeFromPayment = fluentCart('db')->table('posts')
-                ->where('ID', $upgradedPaymentId)
-                ->first();
-
-            if ($upgradeFromPayment) {
-                $this->upgradedFromPayment = $upgradeFromPayment;
-                if (!$this->renewwingLicense) {
-                    $licenseOrderId = $upgradeFromPayment->ID;
-                    if ($upgradeFromPayment->post_parent) {
-                        $licenseOrderId = $upgradeFromPayment->post_parent;
-                    }
-                    $this->renewwingLicense = fluentCart('db')->table('fct_licenses')
-                        ->where('order_id', $licenseOrderId)
-                        ->first();
+        if (defined('EDD_RECURRING_PLUGIN_DIR')) {
+            $this->eddSubscriptionId = Arr::get($formattedMeta, 'subscription_id', '');
+            if ($this->payment->status == 'edd_subscription') {
+                $this->transactionType = 'renewal';
+                if (!$this->eddSubscriptionId) {
+                    return new \WP_Error('no_sub_id', 'EDD Subscription ID is empty for Payment ID: ' . $this->payment->id, $this->payment);
+                }
+            } else {
+                $subscription = fluentCart('db')->table('edd_subscriptions')->where('parent_payment_id', $this->payment->id)->first();
+                if ($subscription) {
+                    $this->eddSubscriptionId = $subscription->id;
+                    $this->transactionType = 'subscription';
                 }
             }
         }
+
+
+        // software license addon data preparation
+        if (defined('EDD_SL_PLUGIN_DIR')) {
+            $renewingLicenseKey = Arr::get($formattedMeta, '_edd_sl_renewal_key', '');
+            if ($renewingLicenseKey) {
+                $this->renewwingLicense = fluentCart('db')->table('fct_licenses')
+                    ->where('license_key', $renewingLicenseKey)
+                    ->first();
+            }
+
+            $upgradedPaymentId = Arr::get($formattedMeta, '_edd_sl_upgraded_payment_id', '');
+
+            if ($upgradedPaymentId) {
+                $upgradeFromPayment = fluentCart('db')->table('posts')
+                    ->where('ID', $upgradedPaymentId)
+                    ->first();
+
+                if ($upgradeFromPayment) {
+                    $this->upgradedFromPayment = $upgradeFromPayment;
+                    if (!$this->renewwingLicense) {
+                        $licenseOrderId = $upgradeFromPayment->ID;
+                        if ($upgradeFromPayment->post_parent) {
+                            $licenseOrderId = $upgradeFromPayment->post_parent;
+                        }
+                        $this->renewwingLicense = fluentCart('db')->table('fct_licenses')
+                            ->where('order_id', $licenseOrderId)
+                            ->first();
+                    }
+                }
+            }
+
+            $this->setupLicenses(); // preparing licenses
+        }
+
 
         $this->customer = $this->getCustomer();
         if (!$this->customer || is_wp_error($this->customer)) {
             return new \WP_Error('invalid_customer', 'Customer could not be resolved.', $this->payment);
         }
 
+
         $subscription = $this->setupSubscriptionData();
         if (is_wp_error($subscription)) {
             return $subscription;
         }
 
-        $this->setupLicenses(); // preparing licenses
 
         $items = $this->prepareOrderItems(); // preparing order items
         if (is_wp_error($items)) {
@@ -209,36 +218,39 @@ class PaymentMigrate
 
         $transactionData = $this->transactionData;
 
-        if ($this->transactionType == 'renewal') {
-            if ($this->renewwingLicense && $this->renewwingLicense->subscription_id) {
-                $transactionData['subscription_id'] = $this->renewwingLicense->subscription_id;
-            } else if ($this->parentOrderId) {
-                // find the subscription id from parent order
-                $parentSubscription = fluentCart('db')->table('fct_subscriptions')
-                    ->where('parent_order_id', $this->parentOrderId)
-                    ->first();
 
-                if ($parentSubscription) {
-                    $transactionData['subscription_id'] = $parentSubscription->id;
+        if (defined('EDD_RECURRING_PLUGIN_DIR')) {
+            if ($this->transactionType == 'renewal') {
+                if ($this->renewwingLicense && $this->renewwingLicense->subscription_id) {
+                    $transactionData['subscription_id'] = $this->renewwingLicense->subscription_id;
+                } else if ($this->parentOrderId) {
+                    // find the subscription id from parent order
+                    $parentSubscription = fluentCart('db')->table('fct_subscriptions')
+                        ->where('parent_order_id', $this->parentOrderId)
+                        ->first();
+
+                    if ($parentSubscription) {
+                        $transactionData['subscription_id'] = $parentSubscription->id;
+                    }
                 }
             }
-        }
 
-        if ($this->transactionType == 'renewal' && empty($transactionData['subscription_id'])) {
-            // we should not proceed if we don't have subscription ID
-            $dummySubscription = $this->maybeCreateDummySubscription();
+            if ($this->transactionType == 'renewal' && empty($transactionData['subscription_id'])) {
+                // we should not proceed if we don't have subscription ID
+                $dummySubscription = $this->maybeCreateDummySubscription();
 
-            if (!$dummySubscription) {
-                return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->id . ' => ' . $this->customer->id, $this->payment);
+                if (!$dummySubscription) {
+                    return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->id . ' => ' . $this->customer->id, $this->payment);
+                }
+
+                $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
+
+                if (defined('WP_CLI')) {
+                    \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
+                }
+
+                $transactionData['subscription_id'] = $dummySubscription->id;
             }
-
-            $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
-
-            if (defined('WP_CLI')) {
-                \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
-            }
-
-            $transactionData['subscription_id'] = $dummySubscription->id;
         }
 
         // we should migrate this now. What's the steps?
@@ -272,7 +284,6 @@ class PaymentMigrate
                 ->update(['config' => \json_encode($existingConfig)]);
         }
         // Completed Main Order Data Migration
-
 
         // 2. Add Order Items Data
         foreach ($this->orderItems as $orderItem) {
@@ -632,6 +643,10 @@ class PaymentMigrate
 
     private function setupSubscriptionData()
     {
+        if (defined('EDD_RECURRING_PLUGIN_DIR')) {
+            return null;
+        }
+
         if ($this->transactionType != 'subscription') {
             return null;
         }
@@ -946,6 +961,10 @@ class PaymentMigrate
 
     private function setupLicenses()
     {
+        if (!defined('EDD_SL_PLUGIN_DIR')) {
+            return null;
+        }
+
         $licenses = MigratorHelper::getLicenses($this->payment->id);
         foreach ($licenses as $index => $license) {
             $licenses[$index]['customer_id'] = (int)$this->customer->id;
