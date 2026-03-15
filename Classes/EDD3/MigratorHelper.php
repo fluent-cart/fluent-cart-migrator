@@ -724,6 +724,57 @@ class MigratorHelper
         return $formattedActivities;
     }
 
+    public static function getSubscriptionActivities($eddSubscriptionId, $fctSubscriptionId)
+    {
+        $subNotes = fluentCart('db')->table('edd_notes')
+            ->where('object_type', 'subscription')
+            ->where('object_id', $eddSubscriptionId)
+            ->orderBy('id', 'ASC')
+            ->get();
+
+        $formattedActivities = [];
+        foreach ($subNotes as $note) {
+            $formattedActivities[] = [
+                'status'      => 'info',
+                'log_type'    => 'activity',
+                'module_type' => 'FluentCart\App\Models\Subscription',
+                'module_id'   => $fctSubscriptionId,
+                'module_name' => 'subscription',
+                'user_id'     => $note->user_id,
+                'title'       => '',
+                'content'     => $note->content,
+                'read_status' => 'read',
+                'created_by'  => 'Migrator',
+                'created_at'  => $note->date_created,
+                'updated_at'  => $note->date_modified,
+            ];
+        }
+
+        // Also migrate the inline notes field from edd_subscriptions
+        $eddSub = fluentCart('db')->table('edd_subscriptions')
+            ->where('id', $eddSubscriptionId)
+            ->first();
+
+        if ($eddSub && !empty($eddSub->notes)) {
+            $formattedActivities[] = [
+                'status'      => 'info',
+                'log_type'    => 'activity',
+                'module_type' => 'FluentCart\App\Models\Subscription',
+                'module_id'   => $fctSubscriptionId,
+                'module_name' => 'subscription',
+                'user_id'     => NULL,
+                'title'       => 'EDD Subscription Note',
+                'content'     => $eddSub->notes,
+                'read_status' => 'read',
+                'created_by'  => 'Migrator',
+                'created_at'  => $eddSub->created,
+                'updated_at'  => $eddSub->created,
+            ];
+        }
+
+        return $formattedActivities;
+    }
+
     public static function moveOrderToNewCustomer($orderId, $newCustomerId, $datTime = '')
     {
         if (!$datTime) {
