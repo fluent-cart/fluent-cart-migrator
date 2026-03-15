@@ -7,7 +7,7 @@ class AdminMenu
     public function register()
     {
         add_action('fluent_cart/admin_submenu_added', [$this, 'addMigratorSubmenu']);
-        add_action('admin_menu', [$this, 'registerStandalonePage']);
+        add_action('admin_menu', [$this, 'registerStandalonePage'], 99);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
     }
 

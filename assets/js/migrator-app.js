@@ -21,7 +21,7 @@ const app = createApp({
         const migrationStatus = ref(null);
 
         // Config
-        const batchSize = ref(100);
+        const batchSize = ref(50);
         const stepsToRun = reactive({
             products: true,
             coupons: true,
