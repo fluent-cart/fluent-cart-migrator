@@ -245,81 +245,12 @@ class MigratorCli
                 if ($fluentLicense->status != $eddLicense->status) {
                     \WP_CLI::line('License Status Mismatch: ' . $eddLicense->license_key . ' => EDD: ' . $eddLicense->status . ' => Fluent: ' . $fluentLicense->status);
                 }
-
-                continue;
-
-                $fcartProduct = MigratorHelper::getTransformedProductDetails($eddLicense->download_id, $eddLicense->price_id);
-
-                if (!$fcartProduct) {
-                    \WP_CLI::line('Product not found: ' . $eddLicense->download_id . ' => License Key: ' . $eddLicense->license_key);
-                    continue;
-                }
-
-                if ($fcartProduct['id'] != $fluentLicense->product_id) {
-                    \WP_CLI::line('Product ID Mismatch: ' . $eddLicense->license_key . ' => EDD: ' . $fcartProduct['id'] . ' => Fluent: ' . $fluentLicense->product_id);
-                }
-
-                if ($fcartProduct['variation_id'] != $fluentLicense->variation_id) {
-                    \WP_CLI::line('Variation ID Mismatch: ' . $eddLicense->license_key . ' => EDD: ' . $fcartProduct['variation_id'] . ' => Fluent: ' . $fluentLicense->variation_id);
-                }
-
-                $eddLicenseUserId = $eddLicense->user_id ? (int)$eddLicense->user_id : null;
-
-                if (!$eddLicenseUserId) {
-                    // let's find the customer
-                    if (!$eddLicense->custmer_id) {
-                        $connectedLicenseSkippedIds[] = $eddLicense->payment_id;
-                        continue;
-                    }
-
-                    $eddCustomer = fluentCart('db')->table('edd_customers')
-                        ->where('id', $eddLicense->custmer_id)
-                        ->first();
-
-                    if (!$eddCustomer) {
-                        \WP_CLI::line('EDD Customer not found: ' . $eddLicense->custmer_id . ' => License Key: ' . $eddLicense->license_key);
-                        continue;
-                    }
-
-                    $eddLicenseUserId = $eddCustomer->user_id;
-
-                    if (!$eddLicenseUserId || $eddLicenseUserId < 0) {
-                        $user = get_user_by('user_email', $eddCustomer->email);
-                        if ($user) {
-                            $eddLicenseUserId = $user->ID;
-                        } else {
-                            \WP_CLI::line('EDD Customer User ID not found: ' . $eddCustomer->email . ' => License Key: ' . $eddLicense->license_key);
-                        }
-                    }
-                }
-
-                if (!$eddLicenseUserId) {
-                    \WP_CLI::line('EDD License User ID not found: ' . $eddLicense->license_key . ' => EDD: ' . $eddLicenseUserId . ' => Fluent: ' . $fluentLicense->customer_id);
-                    continue;
-                }
-
-                if (!$fluentLicense->customer_id) {
-                    \WP_CLI::line('Fluent License Customer ID is empty: ' . $eddLicense->license_key . ' => EDD: ' . $eddLicenseUserId . ' => Fluent: ' . $fluentLicense->customer_id);
-                }
-
-                $fluentCustomer = fluentCart('db')->table('fct_customers')
-                    ->where('id', $fluentLicense->customer_id)
-                    ->first();
-
-                if (!$fluentCustomer->user_id) {
-                    \WP_CLI::line('Fluent: User ID is empty: ' . $fluentCustomer->id . ' => EDD User ID: ' . $eddLicenseUserId . ' => Payment: ' . $fluentLicense->order_id);
-                    continue;
-                }
             }
 
             $page++;
             if ($page % 100 === 0) {
                 \WP_CLI::line('Verified Page: ' . $page);
             }
-        }
-
-        if ($connectedLicenseSkippedIds) {
-            dd($connectedLicenseSkippedIds);
         }
     }
 
@@ -355,6 +286,43 @@ class MigratorCli
                 $status = 'disabled';
             }
 
+            // Build product restrictions from EDD meta
+            $includedProducts = [];
+            $excludedProducts = [];
+
+            $productReqs = Arr::get($formattedMeta, 'product_reqs', []);
+            $eddExcludedProducts = Arr::get($formattedMeta, 'excluded_products', []);
+
+            // EDD scope: 'global' = applies to all, 'not_global' = restricted to product_reqs
+            if ($coupon->scope === 'not_global' && !empty($productReqs)) {
+                if (!is_array($productReqs)) {
+                    $productReqs = array_filter(array_map('trim', explode(',', $productReqs)));
+                }
+                foreach ($productReqs as $eddProductRef) {
+                    // EDD stores as "product_id" or "product_id_price_id"
+                    $parts = explode('_', $eddProductRef);
+                    $eddProductId = (int)$parts[0];
+                    $fctProductId = get_post_meta($eddProductId, '_fcart_migrated_id', true);
+                    if ($fctProductId) {
+                        $includedProducts[] = (int)$fctProductId;
+                    }
+                }
+                $includedProducts = array_values(array_unique($includedProducts));
+            }
+
+            if (!empty($eddExcludedProducts)) {
+                if (!is_array($eddExcludedProducts)) {
+                    $eddExcludedProducts = wp_parse_id_list($eddExcludedProducts);
+                }
+                foreach ($eddExcludedProducts as $eddProductId) {
+                    $fctProductId = get_post_meta((int)$eddProductId, '_fcart_migrated_id', true);
+                    if ($fctProductId) {
+                        $excludedProducts[] = (int)$fctProductId;
+                    }
+                }
+                $excludedProducts = array_values(array_unique($excludedProducts));
+            }
+
             $couponData = [
                 'title'      => $coupon->name,
                 'code'       => $coupon->code,
@@ -366,10 +334,16 @@ class MigratorCli
                     'max_per_customer'    => $coupon->once_per_customer ? 1 : 0,
                     'max_discount_amount' => 0,
                     'max_purchase_amount' => 0,
-                    'min_purchase_amount' => 0
+                    'min_purchase_amount' => 0,
+                    'included_products'   => $includedProducts,
+                    'excluded_products'   => $excludedProducts,
+                    'included_categories' => [],
+                    'excluded_categories' => [],
+                    'is_recurring'        => Arr::get($formattedMeta, 'recurring_one_time', '') === 'first' ? 'no' : 'yes',
                 ]),
                 'start_date' => MigratorHelper::convertEddCouponDate($coupon->start_date),
                 'end_date'   => MigratorHelper::convertEddCouponDate($coupon->end_date),
+                'notes'      => $coupon->description ?: '',
                 'status'     => $status,
                 'use_count'  => $coupon->use_count,
                 'created_at' => $coupon->date_created, //$coupon->post_date_gmt,
@@ -619,6 +593,12 @@ class MigratorCli
 
         update_post_meta($createdPostId, '_edd_migrated_from', $product->ID);
         update_post_meta($product->ID, '_fcart_migrated_id', $createdPostId);
+
+        // Migrate featured image
+        $thumbnailId = get_post_thumbnail_id($product->ID);
+        if ($thumbnailId) {
+            set_post_thumbnail($createdPostId, $thumbnailId);
+        }
 
 
         $priceVariations = [];
@@ -871,28 +851,40 @@ class MigratorCli
                     continue;
                 }
 
+                // Map EDD file condition to FCT variation IDs
+                // EDD condition: "all" = all variations, or a specific price_id like "1", "2"
+                $fileCondition = Arr::get($file, 'condition', 'all');
+                $variationIds = [];
+                if ($fileCondition !== 'all' && $fileCondition !== '' && !empty($createdVariations)) {
+                    $eddPriceId = (int)$fileCondition;
+                    if (isset($createdVariations[$eddPriceId])) {
+                        $variationIds[] = (int)$createdVariations[$eddPriceId];
+                    }
+                }
+
                 // get the extension name from file path
                 $fileName = basename($filePath);
                 $fileExtension = explode('.', $fileName);
                 $fileExtension = $fileExtension[count($fileExtension) - 1];
 
                 $downloadFile = [
-                    'download_identifier' => md5($filePath . $createdPostId . wp_generate_uuid4() . $index),
-                    'post_id'             => $createdPostId,
-                    'driver'              => $driver,
-                    'title'               => $fileName,
-                    'type'                => $fileExtension,
-                    'file_name'           => $fileName,
-                    'file_path'           => $filePath,
-                    'file_url'            => $fileUrl,
-                    'serial'              => $index,
-                    'settings'            => json_encode([
+                    'download_identifier'  => md5($filePath . $createdPostId . wp_generate_uuid4() . $index),
+                    'post_id'              => $createdPostId,
+                    'product_variation_id'  => json_encode($variationIds),
+                    'driver'               => $driver,
+                    'title'                => $fileName,
+                    'type'                 => $fileExtension,
+                    'file_name'            => $fileName,
+                    'file_path'            => $filePath,
+                    'file_url'             => $fileUrl,
+                    'serial'               => $index,
+                    'settings'             => json_encode([
                         'bucket'          => $bucket,
                         'download_limit'  => '',
                         'download_expiry' => '',
                     ]),
-                    'created_at'          => MigratorHelper::getPostDate($product, 'post_date'), //$product->post_date_gmt,
-                    'updated_at'          => current_time('mysql')
+                    'created_at'           => MigratorHelper::getPostDate($product, 'post_date'),
+                    'updated_at'           => current_time('mysql')
                 ];
 
                 fluentCart('db')->table('fct_product_downloads')
@@ -933,12 +925,15 @@ class MigratorCli
                 $billingSummary = "{$price['amount']} {$repeatIUnit} until cancelled";
             }
 
+            $signupFee = absint(MigratorHelper::toCents(Arr::get($price, 'signup_fee', 0)));
+
             $priceInfo = [
                 'payment_type'     => 'subscription',
                 'times'            => $times,
                 'repeat_interval'  => $repeatInterval,
                 'billing_summary'  => $billingSummary,
-                'manage_setup_fee' => 'no',
+                'manage_setup_fee' => $signupFee > 0 ? 'yes' : 'no',
+                'setup_fee'        => $signupFee,
                 'installment'      => $times ? 'yes' : 'no',
                 'trial_days'       => Arr::get($price, 'trial-quantity', 0),
             ];

@@ -292,6 +292,7 @@ class PaymentMigrate
                 'rate',
                 'other_info',
                 'line_meta',
+                'cart_index',
                 'created_at',
                 'updated_at',
             ]);
@@ -680,6 +681,8 @@ class PaymentMigrate
         $vendorCustomerId = null;
         if ($this->paymentMethod == 'stripe') {
             $vendorCustomerId = Arr::get($this->formattedMeta, '_edds_stripe_customer_id');
+        } elseif ($this->paymentMethod == 'paypal_commerce') {
+            $vendorCustomerId = Arr::get($this->formattedMeta, '_edd_paypal_subscriber_id');
         }
 
         // Calculate subscription tax totals
@@ -728,7 +731,7 @@ class PaymentMigrate
             'quantity'               => 1,
             'variation_id'           => Arr::get($fctProductDetails, 'variation_id', NULL),
             'billing_interval'       => $this->getPeriodSlug($eddSubscription->period),
-            'signup_fee'             => MigratorHelper::toCents($eddSubscription->initial_amount, $this->eddCurrency),
+            'signup_fee'             => max(0, MigratorHelper::toCents($eddSubscription->initial_amount, $this->eddCurrency) - $recurringAmountCents),
             'initial_tax_total'      => $initialTaxTotal,
             'recurring_amount'       => $recurringAmountCents,
             'recurring_tax_total'    => $recurringTaxTotal,
@@ -737,7 +740,7 @@ class PaymentMigrate
             'bill_count'             => 0,
             'expire_at'              => $eddSubscription->expiration,
             'trial_ends_at'          => NULL,
-            'canceled_at'            => NULL,
+            'canceled_at'            => ($eddSubscription->status === 'cancelled') ? $eddSubscription->date_modified : NULL,
             'restored_at'            => NULL,
             'collection_method'      => 'automatic',
             'next_billing_date'      => $eddSubscription->expiration,
@@ -752,7 +755,8 @@ class PaymentMigrate
             'created_at'             => $eddSubscription->created,
             'updated_at'             => current_time('mysql'),
             'config'                 => [
-                'edd_id' => $eddSubscription->id
+                'edd_id'   => $eddSubscription->id,
+                'currency' => $this->eddCurrency,
             ],
         ];
 
@@ -825,7 +829,9 @@ class PaymentMigrate
                     'meta'                => \json_encode([]),
                 ];
 
-                $this->refundData['created_at'] = $refund->date_created;
+                if (empty($this->refundData['created_at'])) {
+                    $this->refundData['created_at'] = $refund->date_created;
+                }
 
             }
             $this->orderTotals['total_refund'] = $totalRefundAmount;
@@ -1021,7 +1027,7 @@ class PaymentMigrate
 
         $this->licenses = $licenses;
 
-        if ($this->licenses && $this->renewwingLicense) {
+        if ($this->licenses && $this->renewwingLicense && defined('WP_CLI') && WP_CLI) {
             \WP_CLI::line('Got new licenses for renewal license: ' . $this->payment->id);
         }
     }
@@ -1269,34 +1275,13 @@ class PaymentMigrate
                 'for_shipping'   => $fctRate->for_shipping ?? '',
                 'country'        => $rateCountry,
                 'is_compound'    => (bool)($fctRate->is_compound ?? false),
-                'taxable_amount' => $isInclusive
+                'taxable_amount' => ((float)$fctRate->rate > 0)
                     ? (int)round($taxAmount * 100 / (float)$fctRate->rate)
-                    : (int)round($taxAmount * 100 / (float)$fctRate->rate),
+                    : 0,
             ];
         }
 
         return $meta;
-    }
-
-    private function getPaymentStatus($eddStatus)
-    {
-        $maps = [
-            'edd_subscription' => Status::PAYMENT_PAID,
-            'publish'          => Status::PAYMENT_PAID,
-            'processing'       => Status::PAYMENT_PAID,
-            'revoked'          => Status::PAYMENT_PENDING,
-            'refunded'         => Status::PAYMENT_REFUNDED,
-            'pending'          => Status::PAYMENT_PENDING,
-            'failed'           => Status::PAYMENT_PENDING,
-            'cancelled'        => Status::ORDER_CANCELED,
-            'abandoned'        => Status::PAYMENT_PENDING,
-        ];
-
-        if (isset($maps[$eddStatus])) {
-            return $maps[$eddStatus];
-        }
-
-        return '';
     }
 
     private function getSubscriptionStatus($eddSubscription)
@@ -1311,8 +1296,9 @@ class PaymentMigrate
             'expired'   => Status::SUBSCRIPTION_EXPIRED,
             'completed' => Status::SUBSCRIPTION_COMPLETED,
             'pending'   => Status::SUBSCRIPTION_PENDING,
-            'cancelled' => Status::SUBSCRIPTION_CANCELED,
-            'trialling' => Status::SUBSCRIPTION_TRIALING,
+            'cancelled'       => Status::SUBSCRIPTION_CANCELED,
+            'trialling'       => Status::SUBSCRIPTION_TRIALING,
+            'needs_attention' => Status::SUBSCRIPTION_FAILING,
         ];
 
         if (isset($maps[$eddStatus])) {
@@ -1327,7 +1313,7 @@ class PaymentMigrate
         $parentPayment = fluentCart('db')->table('edd_orders')->where('id', $eddSubscription->parent_payment_id)->first();
 
         if ($parentPayment) {
-            $parentStatus = $this->getPaymentStatus($parentPayment->status);
+            $parentStatus = MigratorHelper::getPaymentStatus($parentPayment->status);
             if ($parentStatus == Status::PAYMENT_PAID) {
                 return Status::SUBSCRIPTION_ACTIVE;
             }
@@ -1389,6 +1375,11 @@ class PaymentMigrate
                 'state'     => $orderAddress->region,
                 'postcode'  => $orderAddress->postal_code,
                 'country'   => $orderAddress->country,
+                'meta'      => json_encode([
+                    'other_data' => [
+                        'company_name' => '',
+                    ],
+                ]),
             ];
         }
 

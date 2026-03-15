@@ -53,11 +53,7 @@ class Commands
         }
 
         if (Arr::get($assoc_args, 'reset')) {
-            // prompt for confirmation
-            if (!\WP_CLI\Utils\make_progress_bar('Are you sure you want to reset the migration? (y/n)', 1)) {
-                \WP_CLI::line('Migration reset cancelled.');
-                return;
-            }
+            \WP_CLI::confirm('Are you sure you want to reset the migration?');
 
             $this->migrate_fresh($args, $assoc_args, false);
             delete_option('__fluent_cart_edd3_migration_steps');
@@ -173,6 +169,7 @@ class Commands
                         $progress->tick();
                     }
 
+                    MigratorHelper::resetCaches();
                     $page++;
                 }
 
@@ -240,11 +237,7 @@ class Commands
             return;
         }
 
-        // prompt for confirmation
-        if (!\WP_CLI\Utils\make_progress_bar('Are you sure you want to reset the migration? (y/n)', 1)) {
-            \WP_CLI::line('Migration reset cancelled.');
-            return;
-        }
+        \WP_CLI::confirm('Are you sure you want to reset the migration?');
 
         $this->migrate_fresh($args, $assoc_args, false);
         delete_option('__fluent_cart_edd3_migration_steps');
@@ -491,7 +484,7 @@ class Commands
 
 
                     foreach ($order->transactions as $transaction) {
-                        if ($transaction->status == 'paid') {
+                        if ($transaction->status == 'succeeded') {
                             if (empty($totalPayments[$order['currency']])) {
                                 $totalPayments[$order['currency']] = $transaction['total'];
                             } else {
@@ -505,11 +498,13 @@ class Commands
                     }, $totalPayments);
                 }
 
+                $purchaseCount = $orders->count();
                 $updateData = [
                     'user_id'             => $customer->getWpUserId(true),
                     'purchase_value'      => $totalPayments,
                     'ltv'                 => $ltv,
-                    'purchase_count'      => $orders->count(),
+                    'aov'                 => $purchaseCount > 0 ? (int)($ltv / $purchaseCount) : 0,
+                    'purchase_count'      => $purchaseCount,
                     'first_purchase_date' => $orders->min('created_at') . '',
                     'last_purchase_date'  => $orders->max('created_at') . '',
                 ];
@@ -627,7 +622,7 @@ class Commands
         delete_option('_fluent_edd_failed_payment_logs');
 
         global $wpdb;
-        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=0;");
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=0;");
 
         try {
             DBMigrator::refresh();
@@ -635,7 +630,7 @@ class Commands
 
         }
 
-        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=1;");
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
 
         // Delete the post metas
         $wpdb->query("DELETE pm FROM {$wpdb->prefix}postmeta pm INNER JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID WHERE p.post_type = 'fluent-products'");
