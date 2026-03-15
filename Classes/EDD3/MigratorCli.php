@@ -7,6 +7,7 @@ use FluentCart\App\Models\Meta;
 use FluentCart\App\Models\Order;
 use FluentCart\App\Models\ProductDetail;
 use FluentCart\App\Models\ProductVariation;
+use FluentCart\App\Models\TaxClass;
 use FluentCart\Framework\Support\Arr;
 
 class MigratorCli
@@ -197,6 +198,7 @@ class MigratorCli
 
         MigratorHelper::setCachedSubscriptions($paymentIds);
         MigratorHelper::setCachedLicenses($paymentIds);
+        MigratorHelper::setCachedTaxAdjustments($paymentIds);
     }
 
     public function verifyLicenses()
@@ -409,6 +411,118 @@ class MigratorCli
         }
 
         return $createdIds;
+    }
+
+    public function migrateTaxRates()
+    {
+        $eddSettings = get_option('edd_settings', []);
+        $taxesEnabled = !empty($eddSettings['enable_taxes']);
+
+        if (!$taxesEnabled) {
+            \WP_CLI::line('EDD Taxes are not enabled. Skipping tax rate migration.');
+            return [];
+        }
+
+        // Enable FluentCart tax settings mapped from EDD
+        $this->syncTaxSettings($eddSettings);
+
+        // Initialize default tax classes (Standard, Reduced, Zero) via FluentCart's built-in method
+        $taxClassController = new \FluentCart\App\Http\Controllers\TaxClassController();
+        $taxClassController->checkAndCreateInitialTaxClasses();
+        \WP_CLI::line('Default tax classes initialized.');
+
+        // Collect unique countries from EDD tax rates
+        $eddCountries = [];
+
+        global $wpdb;
+        $tableExists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}edd_tax_rates'");
+        if ($tableExists) {
+            $eddRates = fluentCart('db')->table('edd_tax_rates')
+                ->where('status', 'active')
+                ->get();
+
+            foreach ($eddRates as $eddRate) {
+                if ($eddRate->country) {
+                    $eddCountries[] = $eddRate->country;
+                }
+            }
+        }
+
+        // Also include EDD base country
+        $baseCountry = Arr::get($eddSettings, 'base_country', '');
+        if ($baseCountry) {
+            $eddCountries[] = $baseCountry;
+        }
+
+        $eddCountries = array_unique(array_filter($eddCountries));
+
+        // Generate default FluentCart tax rates for these countries using built-in rate data
+        if ($eddCountries) {
+            $taxManager = \FluentCart\App\Services\Tax\TaxManager::getInstance();
+            $taxManager->generateTaxClasses($eddCountries);
+            \WP_CLI::line('Generated default tax rates for countries: ' . implode(', ', $eddCountries));
+        }
+
+        // Build a mapping from EDD tax_rate IDs to FluentCart tax_rate IDs (by country+state match)
+        $rateMap = [];
+        if ($tableExists && !empty($eddRates)) {
+            foreach ($eddRates as $eddRate) {
+                $country = $eddRate->country ?: '';
+                $state = $eddRate->state ?: '';
+
+                $query = fluentCart('db')->table('fct_tax_rates')
+                    ->where('country', $country);
+
+                if ($state) {
+                    $query->where('state', $state);
+                }
+
+                $fctRate = $query->first();
+
+                if ($fctRate) {
+                    $rateMap[$eddRate->id] = $fctRate->id;
+                }
+            }
+        }
+
+        // Store the mapping for order migration
+        update_option('_edd_fct_tax_rate_maps', $rateMap);
+
+        \WP_CLI::line('Mapped ' . count($rateMap) . ' EDD tax rates to FluentCart rates.');
+        \WP_CLI::line('Admin can adjust tax rates in FluentCart settings after migration.');
+
+        return $rateMap;
+    }
+
+    private function syncTaxSettings($eddSettings)
+    {
+        $pricesIncludeTax = Arr::get($eddSettings, 'prices_include_tax', 'no') === 'yes';
+
+        $fctTaxSettings = get_option('fluent_cart_tax_configuration_settings', []);
+
+        $fctTaxSettings['enable_tax']            = 'yes';
+        $fctTaxSettings['tax_inclusion']          = $pricesIncludeTax ? 'included' : 'excluded';
+        $fctTaxSettings['tax_calculation_basis']  = Arr::get($fctTaxSettings, 'tax_calculation_basis', 'billing');
+        $fctTaxSettings['tax_rounding']           = Arr::get($fctTaxSettings, 'tax_rounding', 'item');
+        $fctTaxSettings['price_suffix']           = Arr::get($fctTaxSettings, 'price_suffix', '');
+
+        if (empty($fctTaxSettings['eu_vat_settings'])) {
+            $fctTaxSettings['eu_vat_settings'] = [
+                'require_vat_number'              => 'no',
+                'local_reverse_charge'            => 'no',
+                'vat_reverse_excluded_categories' => [],
+                'method'                          => 'home',
+                'home_country'                    => Arr::get($eddSettings, 'base_country', ''),
+                'home_vat'                        => '',
+                'oss_vat'                         => '',
+            ];
+        }
+
+        update_option('fluent_cart_tax_configuration_settings', $fctTaxSettings, true);
+
+        \WP_CLI::line('FluentCart tax settings enabled:');
+        \WP_CLI::line('  - Prices include tax: ' . ($pricesIncludeTax ? 'yes' : 'no'));
+        \WP_CLI::line('  - Calculation basis: ' . $fctTaxSettings['tax_calculation_basis']);
     }
 
     public function replaceVendorIpAddresses($countLimit = 30)

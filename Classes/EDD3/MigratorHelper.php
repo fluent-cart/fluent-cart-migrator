@@ -16,6 +16,8 @@ class MigratorHelper
 
     public static $cachedLicenses = [];
 
+    public static $cachedTaxAdjustments = [];
+
     public static function getPaymentStatus($orderStatus)
     {
         $maps = [
@@ -466,17 +468,21 @@ class MigratorHelper
             $quantity = 1;
         }
 
-        $unitPrice = self::toCents($eddCartItem->amount, $payment->currency);
+        // Use subtotal (net/tax-excluded amount) for unit price since tax is tracked separately
+        // EDD's `amount` is the gross price (includes tax for inclusive-tax stores)
+        // EDD's `subtotal` is always the net price (tax-excluded)
+        $itemSubtotal = self::toCents($eddCartItem->subtotal, $payment->currency);
+        $unitPrice = (int)round($itemSubtotal / $quantity);
         $tax = self::toCents($eddCartItem->tax, $payment->currency);
         $discount = self::toCents($eddCartItem->discount, $payment->currency);
-        $lineTotal = ($quantity * $unitPrice) + $tax - $discount;
+        $lineTotal = $itemSubtotal + $tax - $discount;
 
         $originalDiscount = $discount;
 
         $pricing = [
             'unit_price'     => $unitPrice,
             'quantity'       => $quantity,
-            'subtotal'       => $quantity * $unitPrice,
+            'subtotal'       => $itemSubtotal,
             'tax_amount'     => $tax,
             'discount_total' => $discount,
             'line_total'     => $lineTotal,
@@ -871,6 +877,10 @@ class MigratorHelper
             ->where('order_id', $orderId)
             ->delete();
 
+        fluentCart('db')->table('fct_order_tax_rate')
+            ->where('order_id', $orderId)
+            ->delete();
+
         fluentCart('db')->table('fct_order_download_permissions')
             ->where('order_id', $orderId)
             ->delete();
@@ -1035,6 +1045,74 @@ class MigratorHelper
 
         return isset($maps[$gateway]) ? $maps[$gateway] : $gateway;
 
+    }
+
+    public static function setCachedTaxAdjustments($paymentIds)
+    {
+        $adjustments = fluentCart('db')->table('edd_order_adjustments')
+            ->whereIn('object_id', $paymentIds)
+            ->where('object_type', 'order')
+            ->where('type', 'tax')
+            ->get();
+
+        $formatted = [];
+        foreach ($adjustments as $adj) {
+            if (!isset($formatted[$adj->object_id])) {
+                $formatted[$adj->object_id] = [];
+            }
+            $formatted[$adj->object_id][] = $adj;
+        }
+
+        self::$cachedTaxAdjustments = $formatted;
+    }
+
+    public static function getTaxAdjustments($paymentId)
+    {
+        if (isset(self::$cachedTaxAdjustments[$paymentId])) {
+            return self::$cachedTaxAdjustments[$paymentId];
+        }
+
+        return fluentCart('db')->table('edd_order_adjustments')
+            ->where('object_id', $paymentId)
+            ->where('object_type', 'order')
+            ->where('type', 'tax')
+            ->get();
+    }
+
+    public static function getEddTaxBehavior()
+    {
+        static $behavior = null;
+        if ($behavior !== null) {
+            return $behavior;
+        }
+
+        $eddSettings = get_option('edd_settings', []);
+        $taxesEnabled = !empty($eddSettings['enable_taxes']);
+
+        if (!$taxesEnabled) {
+            $behavior = 0; // no_tax
+            return $behavior;
+        }
+
+        $pricesIncludeTax = Arr::get($eddSettings, 'prices_include_tax', 'no') === 'yes';
+        $behavior = $pricesIncludeTax ? 2 : 1; // 2 = inclusive, 1 = exclusive
+
+        return $behavior;
+    }
+
+    public static function getTaxRateMap()
+    {
+        static $map = null;
+        if ($map !== null) {
+            return $map;
+        }
+
+        $map = get_option('_edd_fct_tax_rate_maps', []);
+        if (!is_array($map)) {
+            $map = [];
+        }
+
+        return $map;
     }
 
     public static function canMigrate()

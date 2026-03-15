@@ -18,6 +18,8 @@ class Commands
 
     public function migrate_from_edd($args, $assoc_args = [])
     {
+        $taxSettings = get_option('edd_settings', []);
+
         // load edd files
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/MigratorCli.php';
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/MigratorHelper.php';
@@ -77,10 +79,11 @@ class Commands
 
         if (Arr::get($assoc_args, 'all')) {
             $assoc_args = [
-                'products' => true,
-                'coupons'  => true,
-                'payments' => true,
-                'recount'  => true
+                'products'  => true,
+                'tax_rates' => true,
+                'coupons'   => true,
+                'payments'  => true,
+                'recount'   => true
             ];
         }
 
@@ -106,6 +109,15 @@ class Commands
             } else {
                 \WP_CLI::line('Products Migration already done. Skipping...');
             }
+        }
+
+        if (Arr::get($assoc_args, 'tax_rates')) {
+            \WP_CLI::line('Starting Tax Rates Migration');
+            $taxRates = $eddCli->migrateTaxRates();
+            if ($taxRates) {
+                \WP_CLI::line('Migrated ' . count($taxRates) . ' Tax Rate mappings');
+            }
+            \WP_CLI::line('---------------------------------------');
         }
 
         if (Arr::get($assoc_args, 'coupons')) {
