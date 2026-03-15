@@ -24,6 +24,12 @@ class Commands
 
         $eddCli = new \FluentCartMigrator\Classes\Edd3\MigratorCli();
 
+
+//        $results = (new MigratorCli())->migratePayments(1, 100);
+//
+//        dd($results);
+
+
         if (Arr::get($assoc_args, 'stats')) {
             $eddCli->stats($assoc_args);
             return;

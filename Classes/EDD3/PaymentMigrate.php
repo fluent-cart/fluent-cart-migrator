@@ -80,6 +80,8 @@ class PaymentMigrate
 
     private $eddCurrency = '';
 
+    private $hasBundle = false;
+
     public function __construct($payment, $formattedMeta = [])
     {
         $this->payment = $payment;
@@ -271,9 +273,10 @@ class PaymentMigrate
         }
         // Completed Main Order Data Migration
 
+
         // 2. Add Order Items Data
         foreach ($this->orderItems as $orderItem) {
-            $orderItem = Arr::only($orderItem, [
+            $filteredOrderItem = Arr::only($orderItem, [
                 'order_id',
                 'post_id',
                 'fulfillment_type',
@@ -296,11 +299,41 @@ class PaymentMigrate
                 'created_at',
                 'updated_at',
             ]);
+            $filteredOrderItem['order_id'] = $createdOrderId;
+            $createdItemId = fluentCart('db')->table('fct_order_items')
+                ->insertGetId($filteredOrderItem);
 
-            $orderItem['order_id'] = $createdOrderId;
 
-            fluentCart('db')->table('fct_order_items')
-                ->insert($orderItem);
+            if (!empty($orderItem['bundle_items'])) {
+                $createdBundleItemIds = [];
+                foreach ($orderItem['bundle_items'] as $bundleItem) {
+                    $bundleItem['created_at'] = $filteredOrderItem['created_at'];
+                    $bundleItem['updated_at'] = $filteredOrderItem['updated_at'];
+                    $bundleItem['line_meta'] = [
+                        'bundle_parent_item_id' => $createdItemId
+                    ];
+
+                    $bundleItem['line_meta'] = json_encode($bundleItem['line_meta']);
+                    $bundleItem['order_id'] = $createdOrderId;
+                    $bundleItem['other_info'] = json_encode(Arr::get($bundleItem, 'other_info', []));
+                    $createdBundleItemIds[] = fluentCart('db')->table('fct_order_items')
+                        ->insertGetId($bundleItem);
+                }
+
+                $parentItemLineMeta = json_decode($filteredOrderItem['line_meta'], true);
+                if (!is_array($parentItemLineMeta)) {
+                    $parentItemLineMeta = [];
+                }
+
+                $parentItemLineMeta['bundle_item_ids'] = $createdBundleItemIds;
+
+                // now update the parent item with the bundle item ids
+                fluentCart('db')->table('fct_order_items')
+                    ->where('id', $createdItemId)
+                    ->update(['line_meta' => json_encode($parentItemLineMeta)]);
+
+                $this->hasBundle = true;
+            }
         }
 
         $createdSubscriptionId = null;
@@ -342,7 +375,6 @@ class PaymentMigrate
         // 5. Let's handle refund Data
         $createdRefundId = null;
         if ($this->refundTransactions) {
-
             foreach ($this->refundTransactions as $refundData) {
                 $refundData['order_id'] = $createdOrderId;
                 if ($createdSubscriptionId) {
@@ -457,12 +489,12 @@ class PaymentMigrate
                 $coupon = MigratorHelper::getCouponByCode($codeData['code']);
 
                 $discountData = [
-                    'order_id'    => $this->payment->id,
-                    'code'        => $codeData['code'],
-                    'amount'      => $codeData['amount'],
-                    'created_at'  => $orderData['created_at'],
-                    'updated_at'  => $orderData['updated_at'],
-                    'coupon_id'   => $coupon ? $coupon->id : 0
+                    'order_id'   => $this->payment->id,
+                    'code'       => $codeData['code'],
+                    'amount'     => $codeData['amount'],
+                    'created_at' => $orderData['created_at'],
+                    'updated_at' => $orderData['updated_at'],
+                    'coupon_id'  => $coupon ? $coupon->id : 0
                 ];
 
                 fluentCart('db')->table('fct_applied_coupons')->insert($discountData);

@@ -108,9 +108,10 @@ class MigratorHelper
             }
 
             $productDetails = self::getTransformedProductDetails($license->download_id, $license->price_id);
-            if (is_wp_error($productDetails)) {
+            if (is_wp_error($productDetails) || !empty($productDetails['is_bundle_product'])) {
                 continue;
             }
+
             $licenseData = [
                 'status'             => $license->status,
                 'limit'              => self::getLicenseActivationCount($license),
@@ -368,6 +369,7 @@ class MigratorHelper
 
             $variation = ProductVariation::find($variationId);
 
+
             if (!$variation) {
                 return new \WP_Error('edd_migrator_error', 'Variation not found.');
             }
@@ -380,6 +382,10 @@ class MigratorHelper
 
             $data['variation_id'] = $variation->id;
 
+            if (!empty($variation->other_info['bundle_child_ids'])) {
+                $data['is_bundle_product'] = true;
+                $data['bundle_child_ids'] = $variation->other_info['bundle_child_ids'];
+            }
         } else {
             // get the first variation
             $variation = ProductVariation::where('post_id', $product->ID)
@@ -391,6 +397,11 @@ class MigratorHelper
                 }
                 $data['variation_id'] = $variation->id;
                 $data['variation_title'] = $variation->variation_title;
+
+                if (!empty($variation->other_info['bundle_child_ids'])) {
+                    $data['is_bundle_product'] = true;
+                    $data['bundle_child_ids'] = $variation->other_info['bundle_child_ids'];
+                }
             }
         }
 
@@ -445,90 +456,9 @@ class MigratorHelper
     public static function formatOrderItem($payment, $eddCartItem, $transactionType)
     {
         $productDetails = self::getTransformedProductDetails($eddCartItem->product_id, $eddCartItem->price_id);
-        $otherInfo = [];
 
         if (is_wp_error($productDetails)) {
-
             return $productDetails;
-
-            // Maybe this is a bundle
-            $bundledProductDetails = self::getBundleProductDetails($eddCartItem);
-            if (is_wp_error($bundledProductDetails) || !$bundledProductDetails) {
-                if (!$bundledProductDetails) {
-                    return new \WP_Error('invalid_product', 'Product could not be found for' . $eddCartItem['id'], $eddCartItem);
-                }
-
-                return $bundledProductDetails;
-            }
-
-            $bundleTotal = self::toCents(Arr::get($eddCartItem, 'subtotal', 0), $payment->currency) - self::toCents(Arr::get($eddCartItem, 'discount', 0), $payment->currency);
-            if ($bundleTotal < 0) {
-                dd('yak', $eddCartItem, $payment);
-            }
-
-            $bundleCount = count($bundledProductDetails);
-            $pricePerItem = (int)($bundleTotal / $bundleCount);
-
-
-            $otherInfo['was_edd_bundled'] = 'yes';
-            $quantity = 1;
-            $orderItems = [];
-
-            foreach ($bundledProductDetails as $productDetails) {
-                $orderItems[] = [
-                    'order_id'           => $payment->id,
-                    'post_id'            => $productDetails['id'],
-                    'fulfillment_type'   => 'digital',
-                    'payment_type'       => $transactionType,
-                    'post_title'         => $productDetails['title'],
-                    'title'              => $productDetails['variation_title'],
-                    'object_id'          => Arr::get($productDetails, 'variation_id', NULL),
-                    'quantity'           => $quantity,
-                    'unit_price'         => $pricePerItem,
-                    'cost'               => 0,
-                    'subtotal'           => $pricePerItem,
-                    'tax_amount'         => 0,
-                    'shipping_charge'    => 0,
-                    'discount_total'     => 0, // this is mainly coupon discount
-                    'line_total'         => $pricePerItem,
-                    'refund_total'       => 0,
-                    'rate'               => 1,
-                    'other_info'         => \json_encode($otherInfo),
-                    'line_meta'          => \json_encode([]),
-                    'created_at'         => self::getPostDate($payment, 'post_date'), //$payment->post_date_gmt,
-                    'updated_at'         => self::getPostDate($payment, 'post_modified'), //$payment->post_modified_gmt
-                    '_fallback_discount' => (int)(self::toCents(Arr::get($eddCartItem, 'discount', 0), $payment->currency) / $bundleCount)
-                ];
-            }
-
-            $totalFallbackDiscount = array_sum(array_column($orderItems, '_fallback_discount'));
-
-            if ($totalFallbackDiscount) {
-
-                $originalDiscount = self::toCents(Arr::get($eddCartItem, 'discount', 0), $payment->currency);
-
-                if ($totalFallbackDiscount < $originalDiscount) {
-                    $extraDiscount = $originalDiscount - $totalFallbackDiscount;
-                    // add that to the last item
-                    $lastIndex = count($orderItems) - 1;
-                    $orderItems[$lastIndex]['_fallback_discount'] += $extraDiscount;
-                }
-            }
-
-
-            $itemSubtotals = array_sum(array_column($orderItems, 'subtotal'));
-
-            if ($itemSubtotals < $bundleTotal) {
-                $diff = $bundleTotal - $itemSubtotals;
-                // add that to the last item
-                $lastIndex = count($orderItems) - 1;
-                $orderItems[$lastIndex]['subtotal'] += $diff;
-                $orderItems[$lastIndex]['unit_price'] += $diff;
-                $orderItems[$lastIndex]['line_total'] += $diff;
-            }
-
-
-            return $orderItems;
         }
 
         $quantity = (int)$eddCartItem->quantity;
@@ -603,8 +533,8 @@ class MigratorHelper
             'line_total'         => $pricing['line_total'],
             'refund_total'       => 0,
             'rate'               => 1,
-            'other_info'         => \json_encode($otherInfo),
-            'line_meta'          => \json_encode([]),
+            'other_info'         => $otherInfo,
+            'line_meta'          => [],
             'created_at'         => self::getPostDate($payment, 'post_date'), //$payment->post_date_gmt,
             'updated_at'         => self::getPostDate($payment, 'post_date'), // $payment->post_date_gmt
             '_fallback_discount' => $originalDiscount
@@ -613,6 +543,41 @@ class MigratorHelper
         if ($originalDiscount == $pricing['discount_total']) {
             $orderItem['_fallback_discount'] = 0;
         }
+
+        if (!empty($productDetails['bundle_child_ids'])) {
+            $bundledVariations = ProductVariation::whereIn('id', $productDetails['bundle_child_ids'])->get();
+            $childItems = [];
+            foreach ($bundledVariations as $bundleItem) {
+                $childItems[] = [
+                    'payment_type'     => 'bundle',
+                    'post_id'          => $bundleItem->post_id,
+                    'object_id'        => $bundleItem->id,
+                    'post_title'       => $bundleItem->product ? $bundleItem->product->post_title : '',
+                    'title'            => $bundleItem->variation_title,
+                    'fulfillment_type' => Arr::get($bundleItem, 'fulfillment_type', 'digital'),
+                    'quantity'         => $quantity,
+                    'cost'             => 0,
+                    'unit_price'       => 0,
+                    'subtotal'         => 0,
+                    'tax_amount'       => 0,
+                    'shipping_charge'  => 0,
+                    'discount_total'   => 0,
+                    'other_info'       => [
+                        'bundle_parent_product_id'   => Arr::get($productDetails, 'id', 0),
+                        'bundle_parent_variation_id' => Arr::get($productDetails, 'variation_id', 0)
+                    ],
+                ];
+            }
+
+            if ($childItems) {
+                $orderItem['line_meta']['bundle_child_ids'] = $productDetails['bundle_child_ids'];
+                $orderItem['line_meta']['is_bundle_product'] = 'yes';
+                $orderItem['bundle_items'] = $childItems;
+            }
+        }
+
+        $orderItem['other_info'] = \json_encode($orderItem['other_info']);
+        $orderItem['line_meta'] = \json_encode($orderItem['line_meta']);
 
         return [$orderItem];
     }
