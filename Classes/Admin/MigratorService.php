@@ -12,9 +12,9 @@ class MigratorService
 {
     private function loadEddClasses()
     {
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/MigratorCli.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/MigratorHelper.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/PaymentMigrate.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorCli.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorHelper.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/PaymentMigrate.php';
     }
 
     public function getSources()

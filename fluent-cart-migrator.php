@@ -42,7 +42,7 @@ class FluentCartMigrator
     private function handleEddLegacyLicenses()
     {
         // let's handle the previous EDD Licensinge EndPoints
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/EddLicenseHandler.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/EddLicenseHandler.php';
         $eddLicenseHandler = new \FluentCartMigrator\Classes\Edd3\EddLicenseHandler();
         $eddLicenseHandler->register();
 
