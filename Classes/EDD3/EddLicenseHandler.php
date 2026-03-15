@@ -2,7 +2,6 @@
 
 namespace FluentCartMigrator\Classes\Edd3;
 
-use FluentCart\App\App;
 use FluentCart\App\Models\Subscription;
 use FluentCart\Framework\Support\Arr;
 use FluentCartPro\App\Modules\Licensing\Hooks\Handlers\LicenseApiHandler;
@@ -39,7 +38,7 @@ class EddLicenseHandler
                 return; // EDD is already active, no need to register the handler again
             }
 
-            $action = (string) Arr::get($_REQUEST, 'edd_action', '');
+            $action = (string)Arr::get($_REQUEST, 'edd_action', '');
             $validActionMaps = [
                 'activate_license'   => 'activateLicense',
                 'deactivate_license' => 'deactivateLicense',
@@ -153,7 +152,6 @@ class EddLicenseHandler
 
         $encoded_data_array = wp_parse_args($encoded_data_array, $defaults);
 
-
         $txtnType = Arr::get($encoded_data_array, 'txn_type', '');
 
         if (!$txtnType) {
@@ -191,13 +189,8 @@ class EddLicenseHandler
                 return;
             }
 
-            $gateway = App::gateway($subscription->current_payment_method);
-
-            if ($gateway) {
-                $gateway->subscriptions->fetchAndUpdate($subscription->vendor_subscription_id, $subscription->order, $subscription);
-            }
+            $subscription->reSyncFromRemote();
         }
-
     }
 
     public function handlePackageDownload($requestUri)
@@ -389,7 +382,6 @@ class EddLicenseHandler
 
     public function getVersion($data = [])
     {
-
         $formattedData = [
             'license_key' => Arr::get($data, 'license'),
             'site_url'    => Arr::get($data, 'url', ''),
