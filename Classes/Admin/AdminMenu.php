@@ -11,8 +11,9 @@ class AdminMenu
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
     }
 
-    public function addMigratorSubmenu(&$submenu)
+    public function addMigratorSubmenu()
     {
+        global $submenu;
         $submenu['fluent-cart']['migrator'] = [
             __('Migrator', 'fluent-cart-migrator'),
             'manage_options',
@@ -59,14 +60,6 @@ class AdminMenu
             FLUENTCART_MIGRATOR_VERSION,
             true
         );
-
-        // Add type="module" attribute
-        add_filter('script_loader_tag', function ($tag, $handle) {
-            if ($handle === 'fct-migrator-app') {
-                $tag = str_replace(' src', ' type="module" src', $tag);
-            }
-            return $tag;
-        }, 10, 2);
 
         wp_localize_script('fct-migrator-app', 'fctMigrator', [
             'restUrl'   => rest_url('fct-migrator/v1/'),
