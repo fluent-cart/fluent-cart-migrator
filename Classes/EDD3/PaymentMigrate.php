@@ -404,7 +404,7 @@ class PaymentMigrate
             $licenseId = fluentCart('db')->table('fct_licenses')
                 ->insertGetId($licenseData);
 
-            if ($checkExist) {
+            if ($checkExist && defined('WP_CLI') && WP_CLI) {
                 \WP_CLI::line('License ID: ' . $licenseId . ' created for Order ID: ' . $createdOrderId . ' => ' . $licenseData['license_key']);
             }
 
@@ -945,7 +945,7 @@ class PaymentMigrate
 
         $this->licenses = $licenses;
 
-        if ($this->licenses && $this->renewwingLicense) {
+        if ($this->licenses && $this->renewwingLicense && defined('WP_CLI') && WP_CLI) {
             \WP_CLI::line('Got new licenses for renewal license: ' . $this->payment->id);
         }
     }

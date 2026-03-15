@@ -63,11 +63,21 @@ class MigratorCli
             ->count();
 
 
-        \WP_CLI::line('Total Orders: ' . $orderCounts);
-        \WP_CLI::line('Total Transactions: ' . $transactions);
-        \WP_CLI::line('Gatways: ' . implode(', ', $gateways));
-        \WP_CLI::line('Order Types: ' . implode(', ', $types));
-        \WP_CLI::line('Available Statuses: ' . implode(', ', $statuses));
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::line('Total Orders: ' . $orderCounts);
+            \WP_CLI::line('Total Transactions: ' . $transactions);
+            \WP_CLI::line('Gatways: ' . implode(', ', $gateways));
+            \WP_CLI::line('Order Types: ' . implode(', ', $types));
+            \WP_CLI::line('Available Statuses: ' . implode(', ', $statuses));
+        }
+
+        return [
+            'order_count'       => $orderCounts,
+            'transaction_count' => $transactions,
+            'gateways'          => $gateways,
+            'types'             => $types,
+            'statuses'          => $statuses,
+        ];
     }
 
     public function migrate_products($willUpdate = false)
@@ -158,7 +168,7 @@ class MigratorCli
                 continue;
             }
 
-            if ($doingTest) {
+            if ($doingTest && defined('WP_CLI') && WP_CLI) {
                 \WP_CLI::line('Payment ID: ' . $payment->id . ' - Migration Success');
             }
         }
@@ -223,7 +233,9 @@ class MigratorCli
                 if (!$fluentLicense) {
 
                     if ($eddLicense->status == 'expired') {
-                        \WP_CLI::line('404 Expired: ' . $eddLicense->license_key . ' => ' . $eddLicense->id);
+                        if (defined('WP_CLI') && WP_CLI) {
+                            \WP_CLI::line('404 Expired: ' . $eddLicense->license_key . ' => ' . $eddLicense->id);
+                        }
                         continue;
                     }
 
@@ -234,13 +246,15 @@ class MigratorCli
                         ->first();
 
                     if ($payment && $payment->post_status != 'failed' && !in_array($eddLicense->download_id, $ignoredProductIds)) {
-                        \WP_CLI::line('License not found: ' . $eddLicense->license_key . ' => ' . $eddLicense->id . ' => ' . $payment->ID);
+                        if (defined('WP_CLI') && WP_CLI) {
+                            \WP_CLI::line('License not found: ' . $eddLicense->license_key . ' => ' . $eddLicense->id . ' => ' . $payment->ID);
+                        }
                     }
 
                     continue;
                 }
 
-                if ($fluentLicense->status != $eddLicense->status) {
+                if ($fluentLicense->status != $eddLicense->status && defined('WP_CLI') && WP_CLI) {
                     \WP_CLI::line('License Status Mismatch: ' . $eddLicense->license_key . ' => EDD: ' . $eddLicense->status . ' => Fluent: ' . $fluentLicense->status);
                 }
 
@@ -311,7 +325,7 @@ class MigratorCli
             }
 
             $page++;
-            if ($page % 100 === 0) {
+            if ($page % 100 === 0 && defined('WP_CLI') && WP_CLI) {
                 \WP_CLI::line('Verified Page: ' . $page);
             }
         }
@@ -874,7 +888,9 @@ class MigratorCli
 
     private function print($text)
     {
-        \WP_CLI::line($text);
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::line($text);
+        }
     }
 
 
