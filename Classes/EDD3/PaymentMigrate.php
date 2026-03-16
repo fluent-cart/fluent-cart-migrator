@@ -528,22 +528,26 @@ class PaymentMigrate
         $invalidStatuses = ['pending', 'failed'];
         if (!in_array($this->orderStatus, $invalidStatuses)) {
             $utmDetails = Arr::get($this->formattedMeta, '_f_utm_details', []);
+            if (!is_array($utmDetails)) {
+                $utmDetails = [];
+            }
+
             $orderOperation = [
-                'order_id'        => $createdOrderId,
-                'created_via'     => 'migration',
-                'emails_sent'     => 1,
-                'sales_recorded'  => 1,
-                'utm_campaign'    => Arr::get($utmDetails, 'utm_c', ''),
-                'utm_medium'      => Arr::get($utmDetails, 'utm_m', ''),
-                'utm_source'      => Arr::get($utmDetails, 'utm_s', ''),
-                'utm_content'     => Arr::get($utmDetails, 'utm_con', ''),
-                'utm_term'        => Arr::get($utmDetails, 'utm_t', ''),
-                'utm_id'          => '',
-                'cart_hash'       => $orderData['uuid'],
-                'refer_url'       => Arr::get($utmDetails, 'refer', ''),
-                'meta'            => \json_encode([]),
-                'created_at'      => $this->payment->date_created,
-                'updated_at'      => $this->payment->date_modified,
+                'order_id'       => $createdOrderId,
+                'created_via'    => 'migration',
+                'emails_sent'    => 1,
+                'sales_recorded' => 1,
+                'utm_campaign'   => Arr::get($utmDetails, 'utm_c', ''),
+                'utm_medium'     => Arr::get($utmDetails, 'utm_m', ''),
+                'utm_source'     => Arr::get($utmDetails, 'utm_s', ''),
+                'utm_content'    => Arr::get($utmDetails, 'utm_con', ''),
+                'utm_term'       => Arr::get($utmDetails, 'utm_t', ''),
+                'utm_id'         => '',
+                'cart_hash'      => $orderData['uuid'],
+                'refer_url'      => Arr::get($utmDetails, 'refer', ''),
+                'meta'           => \json_encode([]),
+                'created_at'     => $this->payment->date_created,
+                'updated_at'     => $this->payment->date_modified,
             ];
             fluentCart('db')->table('fct_order_operations')
                 ->insert($orderOperation);
@@ -1256,9 +1260,9 @@ class PaymentMigrate
         $rateCountry = $fctRate ? $fctRate->country : $billingCountry;
 
         $meta = [
-            'inclusive'   => $isInclusive,
-            'rates'       => [],
-            'tax_country' => $rateCountry ?: $billingCountry,
+            'inclusive'     => $isInclusive,
+            'rates'         => [],
+            'tax_country'   => $rateCountry ?: $billingCountry,
             'migrated_from' => 'edd',
         ];
 
@@ -1288,11 +1292,11 @@ class PaymentMigrate
 
         $maps = [
             // for subscriptions
-            'active'    => Status::SUBSCRIPTION_ACTIVE,
-            'failing'   => Status::SUBSCRIPTION_FAILING,
-            'expired'   => Status::SUBSCRIPTION_EXPIRED,
-            'completed' => Status::SUBSCRIPTION_COMPLETED,
-            'pending'   => Status::SUBSCRIPTION_PENDING,
+            'active'          => Status::SUBSCRIPTION_ACTIVE,
+            'failing'         => Status::SUBSCRIPTION_FAILING,
+            'expired'         => Status::SUBSCRIPTION_EXPIRED,
+            'completed'       => Status::SUBSCRIPTION_COMPLETED,
+            'pending'         => Status::SUBSCRIPTION_PENDING,
             'cancelled'       => Status::SUBSCRIPTION_CANCELED,
             'trialling'       => Status::SUBSCRIPTION_TRIALING,
             'needs_attention' => Status::SUBSCRIPTION_FAILING,
