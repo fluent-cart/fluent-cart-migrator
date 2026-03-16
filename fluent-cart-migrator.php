@@ -33,7 +33,7 @@ class FluentCartMigrator
         // REST API — registered unconditionally because REST requests
         // from the admin Vue app hit /wp-json/ where is_admin() is false
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Admin/RestApi.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Admin/MigratorService.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/MigratorService.php';
         (new \FluentCartMigrator\Classes\Admin\RestApi())->register();
 
         $this->handleEddLegacyLicenses();

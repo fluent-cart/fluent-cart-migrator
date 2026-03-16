@@ -5,7 +5,7 @@ namespace FluentCartMigrator\Classes;
 use FluentCart\App\Models\Customer;
 use FluentCart\App\Models\Subscription;
 use FluentCart\Framework\Support\Arr;
-use FluentCartMigrator\Classes\Admin\MigratorService;
+use FluentCartMigrator\Classes\MigratorService;
 
 
 class Commands

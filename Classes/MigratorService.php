@@ -1,6 +1,6 @@
 <?php
 
-namespace FluentCartMigrator\Classes\Admin;
+namespace FluentCartMigrator\Classes;
 
 use FluentCart\App\App;
 use FluentCart\App\Models\AppliedCoupon;

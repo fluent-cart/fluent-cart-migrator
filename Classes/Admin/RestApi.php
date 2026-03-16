@@ -2,6 +2,8 @@
 
 namespace FluentCartMigrator\Classes\Admin;
 
+use FluentCartMigrator\Classes\MigratorService;
+
 class RestApi
 {
     private $namespace = 'fct-migrator/v1';
