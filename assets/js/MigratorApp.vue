@@ -281,7 +281,7 @@
                         <strong>Recount Stats</strong>
                         <div v-if="runProgress.recount.status === 'running' || runProgress.recount.status === 'completed'" class="fct-recount-subs">
                             <span v-for="(st, name) in runProgress.recount.substeps" :key="name" class="fct-recount-sub" :class="'is-' + st">
-                                {{ name }}
+                                {{ substepLabels[name] || name }}
                                 <span v-if="st === 'completed'">&#10003;</span>
                                 <span v-else-if="st === 'running'" class="spinner is-active" style="float:none;margin:0 0 0 2px;"></span>
                             </span>
@@ -435,7 +435,7 @@ const runProgress = reactive({
     products: { status: 'pending', total: 0, migrated: 0, failed: 0, errors: [] },
     coupons: { status: 'pending', total: 0, migrated: 0 },
     payments: { status: 'pending', page: 0, processed: 0, hasMore: true, errorsCount: 0 },
-    recount: { status: 'pending', substeps: { coupons: 'pending', customers: 'pending', subscriptions: 'pending' } },
+    recount: { status: 'pending', substeps: { fix_reactivations: 'pending', fix_subs_uuid: 'pending', coupons: 'pending', customers: 'pending', subscriptions: 'pending' } },
 });
 const startTime = ref(null);
 const endTime = ref(null);
@@ -473,6 +473,14 @@ const stepLabels = {
     complete: 'Complete',
 };
 const stepOrder = ['source', 'version', 'overview', 'config', 'running', 'complete'];
+
+const substepLabels = {
+    fix_reactivations: 'Fix Reactivations',
+    fix_subs_uuid: 'Fix Subscriptions UUID',
+    coupons: 'Coupons',
+    customers: 'Customers',
+    subscriptions: 'Subscriptions',
+};
 
 const activeStepIndex = computed(() => stepOrder.indexOf(currentStep.value));
 
@@ -571,11 +579,19 @@ function isStepCompleted(step) {
 
 // ─── Step 5: Runner ──────────────────────────────────────
 async function startMigration() {
+    error.value = null;
+
+    try {
+        await apiRequest('GET', 'can-migrate');
+    } catch (e) {
+        error.value = e.message;
+        return;
+    }
+
     isRunning.value = true;
     isPaused.value = false;
     startTime.value = Date.now();
     endTime.value = null;
-    error.value = null;
     currentStep.value = 'running';
     saveState();
 
@@ -583,7 +599,7 @@ async function startMigration() {
     Object.keys(runProgress).forEach(key => {
         if (key === 'recount') {
             runProgress[key].status = 'pending';
-            runProgress[key].substeps = { coupons: 'pending', customers: 'pending', subscriptions: 'pending' };
+            runProgress[key].substeps = { fix_reactivations: 'pending', fix_subs_uuid: 'pending', coupons: 'pending', customers: 'pending', subscriptions: 'pending' };
         } else if (key === 'payments') {
             Object.assign(runProgress[key], { status: 'pending', page: 0, processed: 0, hasMore: true, errorsCount: 0 });
         } else {
@@ -621,7 +637,10 @@ async function startMigration() {
         } catch (e) {
             runProgress[step].status = 'error';
             error.value = `Error in ${step}: ${e.message}`;
-            break;
+            endTime.value = Date.now();
+            isRunning.value = false;
+            saveState();
+            return;
         }
     }
 
@@ -654,23 +673,35 @@ async function runPayments() {
         ? migration.last_order_page
         : 1;
     let hasMore = true;
+    let retries = 0;
+    const maxRetries = 2;
 
     while (hasMore && !isPaused.value) {
-        const result = await apiRequest('POST', 'migrate/payments', {
-            page,
-            per_page: batchSize.value,
-        });
-        hasMore = result.has_more;
-        runProgress.payments.page = page;
-        runProgress.payments.processed += result.processed;
-        runProgress.payments.hasMore = hasMore;
-        runProgress.payments.errorsCount = result.errors_in_batch;
-        page++;
+        try {
+            const result = await apiRequest('POST', 'migrate/payments', {
+                page,
+                per_page: batchSize.value,
+            });
+            hasMore = result.has_more;
+            runProgress.payments.page = page;
+            runProgress.payments.processed += result.processed;
+            runProgress.payments.hasMore = hasMore;
+            runProgress.payments.errorsCount = result.errors_in_batch;
+            page++;
+            retries = 0;
+        } catch (e) {
+            if (retries < maxRetries) {
+                retries++;
+                await new Promise(r => setTimeout(r, 2000));
+            } else {
+                throw e;
+            }
+        }
     }
 }
 
 async function runRecount() {
-    const substeps = ['coupons', 'customers', 'subscriptions'];
+    const substeps = ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'];
     for (const sub of substeps) {
         if (isPaused.value) break;
         runProgress.recount.substeps[sub] = 'running';

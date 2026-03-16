@@ -5,8 +5,11 @@ namespace FluentCartMigrator\Classes\Admin;
 use FluentCart\App\App;
 use FluentCart\App\Models\AppliedCoupon;
 use FluentCart\App\Models\Customer;
+use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
+use FluentCart\Database\DBMigrator;
 use FluentCartMigrator\Classes\Edd3\MigratorCli;
+use FluentCartMigrator\Classes\Edd3\MigratorHelper;
 
 class MigratorService
 {
@@ -15,6 +18,12 @@ class MigratorService
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorCli.php';
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorHelper.php';
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/PaymentMigrate.php';
+    }
+
+    public function canMigrate()
+    {
+        $this->loadEddClasses();
+        return MigratorHelper::canMigrate();
     }
 
     public function getSources()
@@ -53,7 +62,6 @@ class MigratorService
         $eddCli = new MigratorCli();
         $stats  = $eddCli->stats();
 
-        // Additional counts
         $customersCount    = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_customers");
         $productsCount     = (int) $wpdb->get_var(
             $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}posts WHERE post_type = %s", 'download')
@@ -99,6 +107,20 @@ class MigratorService
 
     public function migrateProducts()
     {
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        if (is_array($migrationSteps) && ($migrationSteps['products'] ?? '') === 'yes') {
+            return [
+                'success'         => true,
+                'step'            => 'products',
+                'total'           => 0,
+                'migrated'        => 0,
+                'failed'          => 0,
+                'errors'          => [],
+                'skipped'         => true,
+                'migration_state' => $migrationSteps,
+            ];
+        }
+
         $this->loadEddClasses();
 
         $eddCli  = new MigratorCli();
@@ -179,7 +201,6 @@ class MigratorService
 
         if (!$hasMore) {
             $migrationSteps['payments'] = 'yes';
-            // Replace vendor IP addresses after all payments are done
             $eddCli->replaceVendorIpAddresses();
         }
 
@@ -202,6 +223,10 @@ class MigratorService
     public function recountStats($substep)
     {
         switch ($substep) {
+            case 'fix_reactivations':
+                return $this->fixReactivations();
+            case 'fix_subs_uuid':
+                return $this->fixSubsUuid();
             case 'coupons':
                 return $this->recountCoupons();
             case 'customers':
@@ -213,7 +238,7 @@ class MigratorService
         }
     }
 
-    private function recountCoupons()
+    public function recountCoupons()
     {
         $appliedCoupons = AppliedCoupon::whereHas('order', function ($query) {
             $query->whereIn('payment_status', ['paid', 'partially_refunded', 'require_capture']);
@@ -236,7 +261,10 @@ class MigratorService
         ];
     }
 
-    private function recountCustomers()
+    /**
+     * @param callable|null $onProgress Called per customer for progress reporting
+     */
+    public function recountCustomers($onProgress = null)
     {
         $completed  = false;
         $page       = 1;
@@ -293,6 +321,10 @@ class MigratorService
                 ]);
 
                 $totalCount++;
+
+                if ($onProgress) {
+                    $onProgress($customer);
+                }
             }
 
             $page++;
@@ -305,7 +337,10 @@ class MigratorService
         ];
     }
 
-    private function recountSubscriptions()
+    /**
+     * @param callable|null $onProgress Called per subscription for progress reporting
+     */
+    public function recountSubscriptions($onProgress = null)
     {
         $completed  = false;
         $page       = 1;
@@ -327,6 +362,10 @@ class MigratorService
             $parentOrderIds     = [];
 
             foreach ($subscriptions as $subscription) {
+                if ($onProgress) {
+                    $onProgress($subscription);
+                }
+
                 $keyedSubscriptions[$subscription->parent_order_id] = $subscription;
                 $parentOrderIds[] = $subscription->parent_order_id;
             }
@@ -352,12 +391,25 @@ class MigratorService
                 if (!isset($keyedSubscriptions[$orderId])) {
                     continue;
                 }
+
+                $hasChanges = false;
                 $subscription = $keyedSubscriptions[$orderId];
+
                 if ($subscription->bill_count != $count) {
-                    unset($subscription->preventsLazyLoading);
                     $subscription->bill_count = $count;
+                    $hasChanges = true;
+                }
+
+                if ($subscription->bill_times > 0 && $subscription->bill_count >= $subscription->bill_times) {
+                    $subscription->status = 'completed';
+                    $hasChanges = true;
+                }
+
+                if ($hasChanges) {
+                    unset($subscription->preventsLazyLoading);
                     $subscription->save();
                 }
+
                 $totalCount++;
             }
 
@@ -371,16 +423,167 @@ class MigratorService
         ];
     }
 
-    public function resetMigration()
+    /**
+     * @param callable|null $onLog Called with ($type, $message) for logging skipped items
+     */
+    public function fixReactivations($onLog = null)
     {
-        if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
-            return new \WP_Error(
-                'dev_mode_required',
-                'Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.',
-                ['status' => 403]
-            );
+        $orphans = OrderTransaction::where('order_type', 'renewal')
+            ->whereDoesntHave('subscription')
+            ->get();
+
+        $fixedCount = 0;
+
+        foreach ($orphans as $orphan) {
+            $order = $orphan->order;
+            $parentOrderId = $order->parent_id;
+
+            if (!$parentOrderId) {
+                if ($onLog) {
+                    $onLog('skip', 'No Parent Order for Order ID: ' . $order->id);
+                }
+                continue;
+            }
+
+            $rightSubscription = Subscription::where('parent_order_id', $parentOrderId)
+                ->orderBy('id', 'DESC')
+                ->first();
+
+            if (!$rightSubscription) {
+                if ($onLog) {
+                    $onLog('skip', 'No Subscription Found for Parent Order ID: ' . $parentOrderId . ' - Order ID: ' . $order->id);
+                }
+                continue;
+            }
+
+            $orphan->subscription_id = $rightSubscription->id;
+            $orphan->save();
+
+            $rightSubscription->reSyncFromRemote();
+            $fixedCount++;
         }
 
+        return [
+            'success' => true,
+            'fixed'   => $fixedCount,
+            'total'   => $orphans->count(),
+        ];
+    }
+
+    public function fixSubsUuid()
+    {
+        $subscriptions = Subscription::query()
+            ->whereNull('uuid')
+            ->orWhere('uuid', '')
+            ->get();
+
+        foreach ($subscriptions as $subscription) {
+            $subscription->uuid = md5($subscription->id . wp_generate_uuid4() . microtime(true));
+            $subscription->save();
+        }
+
+        return [
+            'success' => true,
+            'fixed'   => $subscriptions->count(),
+        ];
+    }
+
+    /**
+     * @param callable|null $onIssue Called with ($type, $message) for each issue found
+     */
+    public function verifyLicenses($onIssue = null)
+    {
+        $this->loadEddClasses();
+
+        $issues = [];
+        $page = 1;
+        $totalChecked = 0;
+
+        while (true) {
+            $eddLicenses = fluentCart('db')->table('edd_licenses')
+                ->limit(100)
+                ->offset(($page - 1) * 100)
+                ->get();
+
+            if (!$eddLicenses->count()) {
+                break;
+            }
+
+            foreach ($eddLicenses as $eddLicense) {
+                $totalChecked++;
+                $fluentLicense = fluentCart('db')->table('fct_licenses')
+                    ->where('license_key', $eddLicense->license_key)
+                    ->first();
+
+                if (!$fluentLicense) {
+                    if ($eddLicense->status == 'expired') {
+                        $msg = '404 Expired: ' . $eddLicense->license_key . ' => ' . $eddLicense->id;
+                        if ($onIssue) {
+                            $onIssue('expired', $msg);
+                        }
+                        continue;
+                    }
+
+                    $payment = fluentCart('db')->table('posts')
+                        ->where('post_type', 'edd_payment')
+                        ->where('ID', $eddLicense->payment_id)
+                        ->first();
+
+                    if ($payment && $payment->post_status != 'failed') {
+                        $issue = [
+                            'type'        => 'missing',
+                            'license_key' => $eddLicense->license_key,
+                            'edd_id'      => $eddLicense->id,
+                            'payment_id'  => $payment->ID,
+                            'message'     => 'License not found: ' . $eddLicense->license_key . ' => ' . $eddLicense->id . ' => ' . $payment->ID,
+                        ];
+                        $issues[] = $issue;
+                        if ($onIssue) {
+                            $onIssue('missing', $issue['message']);
+                        }
+                    }
+
+                    continue;
+                }
+
+                if ($fluentLicense->status != $eddLicense->status) {
+                    $issue = [
+                        'type'        => 'status_mismatch',
+                        'license_key' => $eddLicense->license_key,
+                        'edd_status'  => $eddLicense->status,
+                        'fct_status'  => $fluentLicense->status,
+                        'message'     => 'License Status Mismatch: ' . $eddLicense->license_key . ' => EDD: ' . $eddLicense->status . ' => Fluent: ' . $fluentLicense->status,
+                    ];
+                    $issues[] = $issue;
+                    if ($onIssue) {
+                        $onIssue('status_mismatch', $issue['message']);
+                    }
+                }
+            }
+
+            $page++;
+        }
+
+        return [
+            'success'       => true,
+            'total_checked' => $totalChecked,
+            'issues_count'  => count($issues),
+            'issues'        => $issues,
+        ];
+    }
+
+    public function getLogs()
+    {
+        $logs = get_option('_fluent_edd_failed_payment_logs', []);
+
+        return [
+            'logs'  => $logs ?: [],
+            'count' => is_array($logs) ? count($logs) : 0,
+        ];
+    }
+
+    public function wipeMigratedData()
+    {
         global $wpdb;
 
         delete_option('__fluent_cart_edd3_migration_steps');
@@ -389,7 +592,7 @@ class MigratorService
 
         $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=0;");
         try {
-            \FluentCart\Database\DBMigrator::refresh();
+            DBMigrator::refresh();
         } catch (\Exception $e) {
             // Ignore
         }
@@ -407,5 +610,18 @@ class MigratorService
             'success' => true,
             'message' => 'All migrated data and migration state have been reset.',
         ];
+    }
+
+    public function resetMigration()
+    {
+        if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
+            return new \WP_Error(
+                'dev_mode_required',
+                'Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.',
+                ['status' => 403]
+            );
+        }
+
+        return $this->wipeMigratedData();
     }
 }

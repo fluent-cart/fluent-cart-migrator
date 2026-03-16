@@ -31,6 +31,12 @@ class RestApi
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
+        register_rest_route($this->namespace, '/can-migrate', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'canMigrate'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
         register_rest_route($this->namespace, '/migrate/products', [
             'methods'             => 'POST',
             'callback'            => [$this, 'migrateProducts'],
@@ -58,6 +64,12 @@ class RestApi
         register_rest_route($this->namespace, '/logs', [
             'methods'             => 'GET',
             'callback'            => [$this, 'getLogs'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/verify-licenses', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'verifyLicenses'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
@@ -97,6 +109,18 @@ class RestApi
         return rest_ensure_response($service->getStatus());
     }
 
+    public function canMigrate()
+    {
+        $service = new MigratorService();
+        $result = $service->canMigrate();
+
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        return rest_ensure_response(['can_migrate' => true]);
+    }
+
     public function migrateProducts()
     {
         $service = new MigratorService();
@@ -125,7 +149,7 @@ class RestApi
     {
         $substep = $request->get_param('substep');
 
-        if (!in_array($substep, ['coupons', 'customers', 'subscriptions'])) {
+        if (!in_array($substep, ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'])) {
             return new \WP_Error('invalid_substep', 'Invalid substep: ' . $substep, ['status' => 400]);
         }
 
@@ -136,11 +160,15 @@ class RestApi
 
     public function getLogs()
     {
-        $logs = get_option('_fluent_edd_failed_payment_logs', []);
-        return rest_ensure_response([
-            'logs'  => $logs ?: [],
-            'count' => is_array($logs) ? count($logs) : 0,
-        ]);
+        $service = new MigratorService();
+        return rest_ensure_response($service->getLogs());
+    }
+
+    public function verifyLicenses()
+    {
+        $service = new MigratorService();
+        $result = $service->verifyLicenses();
+        return rest_ensure_response($result);
     }
 
     public function resetMigration()
