@@ -117,7 +117,7 @@
                 <!-- Resume banner -->
                 <div v-if="migrationStatus?.migration" class="fct-notice fct-notice--info">
                     <p><strong>Previous migration detected.</strong> Some steps may already be completed.</p>
-                    <button @click="resetMigration" class="button button-link-delete" style="margin-top:4px;">Reset Migration Progress</button>
+                    <button v-if="isDevMode" @click="resetMigration" class="button button-link-delete" style="margin-top:4px;">Reset Migration Progress</button>
                 </div>
 
                 <div v-if="stats" class="fct-stats-grid">
@@ -352,13 +352,56 @@
                 <button @click="goToFluentCart" class="button button-primary">View FluentCart Dashboard</button>
             </div>
         </div>
+
+        <!-- Confirm Modal -->
+        <div v-if="confirmModal.show" class="fct-modal-overlay" @click.self="confirmModal.show = false">
+            <div class="fct-modal">
+                <h3>{{ confirmModal.title }}</h3>
+                <p>{{ confirmModal.message }}</p>
+                <ul v-if="confirmModal.items.length" class="fct-modal-list">
+                    <li v-for="item in confirmModal.items" :key="item">{{ item }}</li>
+                </ul>
+                <p class="fct-modal-warning">This action cannot be undone.</p>
+                <div class="fct-modal-actions">
+                    <button @click="confirmModal.show = false" class="button">Cancel</button>
+                    <button @click="confirmModal.onConfirm()" class="button fct-btn-danger">{{ confirmModal.confirmText }}</button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 
+// ─── Session Persistence ─────────────────────────────────
+const STORAGE_KEY = 'fctMigratorState';
+
+function saveState() {
+    const state = {
+        step: currentStep.value,
+        source: selectedSource.value,
+    };
+    if (currentStep.value === 'running' || currentStep.value === 'complete') {
+        state.runProgress = JSON.parse(JSON.stringify(runProgress));
+        state.stepsToRun = JSON.parse(JSON.stringify(stepsToRun));
+        state.startTime = startTime.value;
+        state.endTime = endTime.value;
+    }
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadState() {
+    try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+        return null;
+    }
+}
+
 // ─── State ───────────────────────────────────────────────
+const isDevMode = !!fctMigrator.devMode;
 const currentStep = ref('source');
 const loading = ref(false);
 const error = ref(null);
@@ -398,6 +441,16 @@ const startTime = ref(null);
 const endTime = ref(null);
 const errorLog = ref([]);
 const showErrorLog = ref(false);
+
+// Confirm modal
+const confirmModal = reactive({
+    show: false,
+    title: '',
+    message: '',
+    items: [],
+    confirmText: 'Confirm',
+    onConfirm: () => {},
+});
 
 // Completion
 const duration = computed(() => {
@@ -479,6 +532,7 @@ function selectSource(source) {
     if (!source.detected || source.coming_soon) return;
     selectedSource.value = source;
     currentStep.value = 'version';
+    saveState();
 }
 
 // ─── Step 2: Version Gate ────────────────────────────────
@@ -523,6 +577,7 @@ async function startMigration() {
     endTime.value = null;
     error.value = null;
     currentStep.value = 'running';
+    saveState();
 
     // Reset progress
     Object.keys(runProgress).forEach(key => {
@@ -561,6 +616,7 @@ async function startMigration() {
 
             if (!isPaused.value) {
                 runProgress[step].status = 'completed';
+                saveState();
             }
         } catch (e) {
             runProgress[step].status = 'error';
@@ -573,6 +629,7 @@ async function startMigration() {
         endTime.value = Date.now();
         isRunning.value = false;
         currentStep.value = 'complete';
+        sessionStorage.removeItem(STORAGE_KEY);
         await loadLogs();
     }
 }
@@ -652,6 +709,7 @@ function runAgain() {
 // ─── Navigation ──────────────────────────────────────────
 function goToStep(step) {
     currentStep.value = step;
+    saveState();
     if (step === 'overview') {
         loadOverview();
     }
@@ -670,14 +728,22 @@ function goBack() {
 }
 
 // ─── Reset ──────────────────────────────────────────────
-async function resetMigration() {
-    if (!confirm('Are you sure you want to reset all migration progress? This cannot be undone.')) return;
+function resetMigration() {
+    confirmModal.title = 'Reset Migration';
+    confirmModal.message = 'This will permanently delete all migrated data from FluentCart, including:';
+    confirmModal.items = ['Products and variations', 'Orders and transactions', 'Customers and subscriptions', 'Coupons', 'Migration progress'];
+    confirmModal.confirmText = 'Yes, Reset Everything';
+    confirmModal.onConfirm = doReset;
+    confirmModal.show = true;
+}
+
+async function doReset() {
+    confirmModal.show = false;
     loading.value = true;
     try {
         await apiRequest('POST', 'reset');
         migrationStatus.value = { migration: null, failed_log_count: 0 };
-        currentStep.value = 'overview';
-        await loadOverview();
+        goToStep('overview');
     } catch (e) {
         error.value = 'Reset failed: ' + e.message;
     } finally {
@@ -686,8 +752,23 @@ async function resetMigration() {
 }
 
 // ─── Init ────────────────────────────────────────────────
-onMounted(() => {
+onMounted(async () => {
     loading.value = true;
-    loadSources();
+    await loadSources();
+
+    const saved = loadState();
+    if (saved?.source && saved?.step) {
+        selectedSource.value = saved.source;
+
+        // Restore progress data for running/complete
+        if ((saved.step === 'running' || saved.step === 'complete') && saved.runProgress) {
+            Object.assign(runProgress, saved.runProgress);
+            Object.assign(stepsToRun, saved.stepsToRun);
+            startTime.value = saved.startTime;
+            endTime.value = saved.endTime;
+        }
+
+        goToStep(saved.step);
+    }
 });
 </script>

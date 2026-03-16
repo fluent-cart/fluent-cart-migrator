@@ -373,12 +373,39 @@ class MigratorService
 
     public function resetMigration()
     {
+        if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
+            return new \WP_Error(
+                'dev_mode_required',
+                'Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.',
+                ['status' => 403]
+            );
+        }
+
+        global $wpdb;
+
         delete_option('__fluent_cart_edd3_migration_steps');
         delete_option('_fluent_edd_failed_payment_logs');
+        delete_option('fluent_cart_plugin_once_activated');
+
+        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=0;");
+        try {
+            \FluentCart\Database\DBMigrator::refresh();
+        } catch (\Exception $e) {
+            // Ignore
+        }
+        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=1;");
+
+        $wpdb->query("DELETE pm FROM {$wpdb->prefix}postmeta pm INNER JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID WHERE p.post_type = 'fluent-products'");
+        $wpdb->query("DELETE FROM {$wpdb->prefix}posts WHERE post_type = 'fluent-products'");
+
+        $postmetas = ['_edd_migrated_from', '_fcart_migrated_id', '__edd_migrated_variation_maps'];
+        foreach ($postmetas as $postMeta) {
+            $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}postmeta WHERE meta_key = %s", $postMeta));
+        }
 
         return [
             'success' => true,
-            'message' => 'Migration state has been reset.',
+            'message' => 'All migrated data and migration state have been reset.',
         ];
     }
 }

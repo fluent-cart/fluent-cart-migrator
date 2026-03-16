@@ -78,6 +78,7 @@ class AdminMenu
             'nonce'     => wp_create_nonce('wp_rest'),
             'migration' => get_option('__fluent_cart_edd3_migration_steps', false),
             'adminUrl'  => admin_url(),
+            'devMode'   => defined('FLUENT_CART_DEV_MODE') && FLUENT_CART_DEV_MODE,
         ]);
     }
 }

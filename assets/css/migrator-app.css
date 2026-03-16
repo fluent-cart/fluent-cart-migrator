@@ -471,3 +471,72 @@
     border-radius: 6px;
 }
 
+/* ─── Confirm Modal ─────────────────────────────────────── */
+.fct-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+}
+
+.fct-modal {
+    background: #fff;
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 480px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.fct-modal h3 {
+    margin: 0 0 12px;
+    font-size: 18px;
+    color: #1d2327;
+}
+
+.fct-modal p {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: #50575e;
+}
+
+.fct-modal-list {
+    margin: 0 0 16px;
+    padding-left: 20px;
+    font-size: 13px;
+    color: #50575e;
+}
+
+.fct-modal-list li {
+    margin-bottom: 4px;
+}
+
+.fct-modal-warning {
+    font-weight: 600;
+    color: #d63638;
+}
+
+.fct-modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #eee;
+}
+
+.fct-btn-danger {
+    background: #d63638;
+    border-color: #d63638;
+    color: #fff;
+}
+
+.fct-btn-danger:hover {
+    background: #b32d2e;
+    border-color: #b32d2e;
+    color: #fff;
+}
+
