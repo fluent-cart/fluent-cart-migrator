@@ -82,6 +82,8 @@ class PaymentMigrate
 
     private $hasBundle = false;
 
+    private $taxBehavior = 0;
+
     public function __construct($payment, $formattedMeta = [])
     {
         $this->payment = $payment;
@@ -104,6 +106,7 @@ class PaymentMigrate
         $this->paymentMethod = MigratorHelper::getGatewaySlug($payment->gateway);
         $this->parentOrderId = $this->payment->parent ? (int)$this->payment->parent : null;
 
+        $this->taxBehavior = MigratorHelper::getEddTaxBehavior();
     }
 
     public function setupData()
@@ -289,6 +292,7 @@ class PaymentMigrate
                 'rate',
                 'other_info',
                 'line_meta',
+                'cart_index',
                 'created_at',
                 'updated_at',
             ]);
@@ -515,26 +519,34 @@ class PaymentMigrate
                 ->insert($address);
         }
 
-        // 11. Add Order Optional Info
+        // 11. Create order tax rate records
+        if ($this->orderTotals['tax_total'] > 0) {
+            $this->createOrderTaxRates($createdOrderId);
+        }
+
+        // 12. Add Order Optional Info
         $invalidStatuses = ['pending', 'failed'];
         if (!in_array($this->orderStatus, $invalidStatuses)) {
             $utmDetails = Arr::get($this->formattedMeta, '_f_utm_details', []);
             $orderOperation = [
-                'order_id'       => $createdOrderId,
-                'created_via'    => 'migration',
-                'emails_sent'    => 1,
-                'sales_recorded' => 1,
-                'utm_campaign'   => Arr::get($utmDetails, 'utm_c', ''),
-                'utm_medium'     => Arr::get($utmDetails, 'utm_m', ''),
-                'utm_source'     => Arr::get($utmDetails, 'utm_s', ''),
-                'utm_content'    => Arr::get($utmDetails, 'utm_con', ''),
-                'utm_term'       => Arr::get($utmDetails, 'utm_t', ''),
-                'utm_id'         => '',
-                'cart_hash'      => $orderData['uuid'],
-                'refer_url'      => Arr::get($utmDetails, 'refer', ''),
-                'meta'           => \json_encode([]),
-                'created_at'     => $this->payment->date_created,
-                'updated_at'     => $this->payment->date_modified,
+                'order_id'        => $createdOrderId,
+                'created_via'     => 'migration',
+                'emails_sent'     => 1,
+                'sales_recorded'  => 1,
+                'has_tax'         => $this->orderTotals['tax_total'] > 0 ? 1 : 0,
+                'has_discount'    => ($this->orderTotals['coupon_discount_total'] > 0 || $this->orderTotals['manual_discount_total'] > 0) ? 1 : 0,
+                'coupons_counted' => $this->orderTotals['coupon_discount_total'] > 0 ? 1 : 0,
+                'utm_campaign'    => Arr::get($utmDetails, 'utm_c', ''),
+                'utm_medium'      => Arr::get($utmDetails, 'utm_m', ''),
+                'utm_source'      => Arr::get($utmDetails, 'utm_s', ''),
+                'utm_content'     => Arr::get($utmDetails, 'utm_con', ''),
+                'utm_term'        => Arr::get($utmDetails, 'utm_t', ''),
+                'utm_id'          => '',
+                'cart_hash'       => $orderData['uuid'],
+                'refer_url'       => Arr::get($utmDetails, 'refer', ''),
+                'meta'            => \json_encode([]),
+                'created_at'      => $this->payment->date_created,
+                'updated_at'      => $this->payment->date_modified,
             ];
             fluentCart('db')->table('fct_order_operations')
                 ->insert($orderOperation);
@@ -669,6 +681,45 @@ class PaymentMigrate
         $vendorCustomerId = null;
         if ($this->paymentMethod == 'stripe') {
             $vendorCustomerId = Arr::get($this->formattedMeta, '_edds_stripe_customer_id');
+        } elseif ($this->paymentMethod == 'paypal_commerce') {
+            $vendorCustomerId = Arr::get($this->formattedMeta, '_edd_paypal_subscriber_id');
+        }
+
+        // Calculate subscription tax totals
+        $orderTax = MigratorHelper::toCents($this->payment->tax, $this->eddCurrency);
+        $orderSubtotal = MigratorHelper::toCents($this->payment->subtotal, $this->eddCurrency);
+        $recurringAmountCents = MigratorHelper::toCents($eddSubscription->recurring_amount, $this->eddCurrency);
+
+        $initialTaxTotal = $orderTax; // default to full order tax
+
+        // Try to get per-item tax for more accuracy (when order has multiple items)
+        $eddSubItemQuery = fluentCart('db')->table('edd_order_items')
+            ->where('order_id', $this->payment->id)
+            ->where('product_id', $eddSubscription->product_id);
+        if ($eddSubscription->price_id) {
+            $eddSubItemQuery->where('price_id', $eddSubscription->price_id);
+        }
+        $eddSubItem = $eddSubItemQuery->first();
+
+        if ($eddSubItem) {
+            $initialTaxTotal = MigratorHelper::toCents($eddSubItem->tax, $this->eddCurrency);
+        }
+
+        $recurringTaxTotal = 0;
+        $recurringTotal = $recurringAmountCents;
+
+        if ($orderSubtotal > 0 && $orderTax > 0) {
+            $effectiveRate = $orderTax / $orderSubtotal;
+
+            if ($this->taxBehavior == 2) {
+                // Inclusive: EDD recurring_amount already includes tax
+                $recurringTaxTotal = (int)round($recurringAmountCents * $effectiveRate / (1 + $effectiveRate));
+                $recurringTotal = $recurringAmountCents; // already includes tax
+            } else {
+                // Exclusive: EDD recurring_amount is pre-tax
+                $recurringTaxTotal = (int)round($recurringAmountCents * $effectiveRate);
+                $recurringTotal = $recurringAmountCents + $recurringTaxTotal;
+            }
         }
 
         $this->subscripionData = [
@@ -680,16 +731,16 @@ class PaymentMigrate
             'quantity'               => 1,
             'variation_id'           => Arr::get($fctProductDetails, 'variation_id', NULL),
             'billing_interval'       => $this->getPeriodSlug($eddSubscription->period),
-            'signup_fee'             => MigratorHelper::toCents($eddSubscription->initial_amount, $this->eddCurrency),
-            'initial_tax_total'      => 0,
-            'recurring_amount'       => MigratorHelper::toCents($eddSubscription->recurring_amount, $this->eddCurrency),
-            'recurring_tax_total'    => 0,
-            'recurring_total'        => MigratorHelper::toCents($eddSubscription->recurring_amount, $this->eddCurrency),
+            'signup_fee'             => max(0, MigratorHelper::toCents($eddSubscription->initial_amount, $this->eddCurrency) - $recurringAmountCents),
+            'initial_tax_total'      => $initialTaxTotal,
+            'recurring_amount'       => $recurringAmountCents,
+            'recurring_tax_total'    => $recurringTaxTotal,
+            'recurring_total'        => $recurringTotal,
             'bill_times'             => $eddSubscription->bill_times,
             'bill_count'             => 0,
             'expire_at'              => $eddSubscription->expiration,
             'trial_ends_at'          => NULL,
-            'canceled_at'            => NULL,
+            'canceled_at'            => ($eddSubscription->status === 'cancelled') ? $eddSubscription->date_modified : NULL,
             'restored_at'            => NULL,
             'collection_method'      => 'automatic',
             'next_billing_date'      => $eddSubscription->expiration,
@@ -704,7 +755,8 @@ class PaymentMigrate
             'created_at'             => $eddSubscription->created,
             'updated_at'             => current_time('mysql'),
             'config'                 => [
-                'edd_id' => $eddSubscription->id
+                'edd_id'   => $eddSubscription->id,
+                'currency' => $this->eddCurrency,
             ],
         ];
 
@@ -777,7 +829,9 @@ class PaymentMigrate
                     'meta'                => \json_encode([]),
                 ];
 
-                $this->refundData['created_at'] = $refund->date_created;
+                if (empty($this->refundData['created_at'])) {
+                    $this->refundData['created_at'] = $refund->date_created;
+                }
 
             }
             $this->orderTotals['total_refund'] = $totalRefundAmount;
@@ -869,7 +923,8 @@ class PaymentMigrate
             'coupon_discount_total' => $this->orderTotals['coupon_discount_total'],
             'shipping_tax'          => 0,
             'shipping_total'        => 0,
-            'tax_total'             => MigratorHelper::toCents($this->payment->tax, $this->eddCurrency),
+            'tax_total'             => $this->orderTotals['tax_total'],
+            'tax_behavior'          => ($this->orderTotals['tax_total'] > 0) ? $this->taxBehavior : 0,
             'total_amount'          => $this->orderTotals['total_amount'],
             'total_paid'            => $this->orderTotals['total_paid'],
             'total_refund'          => $this->orderTotals['total_refund'],
@@ -981,7 +1036,8 @@ class PaymentMigrate
     {
         $this->orderTotals['subtotal'] = array_sum(array_column($this->orderItems, 'subtotal'));
         $this->orderTotals['coupon_discount_total'] = array_sum(array_column($this->orderItems, 'discount_total'));
-        $taxTotal = array_sum(array_column($this->orderItems, 'tax_amount'));
+        $this->orderTotals['tax_total'] = MigratorHelper::toCents($this->payment->tax, $this->eddCurrency);
+        $taxTotal = $this->orderTotals['tax_total'];
         $this->orderTotals['total_amount'] = $this->orderTotals['subtotal'] - $this->orderTotals['coupon_discount_total'] - $this->orderTotals['manual_discount_total'] + $taxTotal;
 
         if ($this->mainTransaction) {
@@ -1142,25 +1198,90 @@ class PaymentMigrate
         $this->calculateTotals();
     }
 
-    private function getPaymentStatus($eddStatus)
+    private function createOrderTaxRates($createdOrderId)
     {
-        $maps = [
-            'edd_subscription' => Status::PAYMENT_PAID,
-            'publish'          => Status::PAYMENT_PAID,
-            'processing'       => Status::PAYMENT_PAID,
-            'revoked'          => Status::PAYMENT_PENDING,
-            'refunded'         => Status::PAYMENT_REFUNDED,
-            'pending'          => Status::PAYMENT_PENDING,
-            'failed'           => Status::PAYMENT_PENDING,
-            'cancelled'        => Status::ORDER_CANCELED,
-            'abandoned'        => Status::PAYMENT_PENDING,
+        $taxAdjustments = MigratorHelper::getTaxAdjustments($this->payment->id);
+        $taxRateMap = MigratorHelper::getTaxRateMap();
+        $billingCountry = $this->billingAddress ? ($this->billingAddress['country'] ?? '') : '';
+        $isInclusive = $this->taxBehavior == 2;
+
+        if ($taxAdjustments && count($taxAdjustments) > 0) {
+            foreach ($taxAdjustments as $taxAdj) {
+                $fctTaxRateId = null;
+                if (!empty($taxAdj->type_id) && isset($taxRateMap[$taxAdj->type_id])) {
+                    $fctTaxRateId = $taxRateMap[$taxAdj->type_id];
+                }
+
+                $taxAmount = absint(MigratorHelper::toCents($taxAdj->total, $this->eddCurrency));
+
+                if (!$taxAmount) {
+                    continue;
+                }
+
+                $fctRate = $fctTaxRateId ? fluentCart('db')->table('fct_tax_rates')->where('id', $fctTaxRateId)->first() : null;
+
+                fluentCart('db')->table('fct_order_tax_rate')->insert([
+                    'order_id'     => $createdOrderId,
+                    'tax_rate_id'  => $fctTaxRateId,
+                    'shipping_tax' => 0,
+                    'order_tax'    => $taxAmount,
+                    'total_tax'    => $taxAmount,
+                    'meta'         => json_encode($this->buildTaxRateMeta($fctRate, $taxAmount, $billingCountry, $isInclusive)),
+                    'created_at'   => $this->payment->date_created,
+                    'updated_at'   => $this->payment->date_modified,
+                ]);
+            }
+        } else if (!empty($this->payment->tax_rate_id)) {
+            // Fallback: use the order-level tax_rate_id
+            $fctTaxRateId = null;
+            if (isset($taxRateMap[$this->payment->tax_rate_id])) {
+                $fctTaxRateId = $taxRateMap[$this->payment->tax_rate_id];
+            }
+
+            $fctRate = $fctTaxRateId ? fluentCart('db')->table('fct_tax_rates')->where('id', $fctTaxRateId)->first() : null;
+            $taxAmount = $this->orderTotals['tax_total'];
+
+            fluentCart('db')->table('fct_order_tax_rate')->insert([
+                'order_id'     => $createdOrderId,
+                'tax_rate_id'  => $fctTaxRateId,
+                'shipping_tax' => 0,
+                'order_tax'    => $taxAmount,
+                'total_tax'    => $taxAmount,
+                'meta'         => json_encode($this->buildTaxRateMeta($fctRate, $taxAmount, $billingCountry, $isInclusive)),
+                'created_at'   => $this->payment->date_created,
+                'updated_at'   => $this->payment->date_modified,
+            ]);
+        }
+    }
+
+    private function buildTaxRateMeta($fctRate, $taxAmount, $billingCountry, $isInclusive)
+    {
+        $rateCountry = $fctRate ? $fctRate->country : $billingCountry;
+
+        $meta = [
+            'inclusive'   => $isInclusive,
+            'rates'       => [],
+            'tax_country' => $rateCountry ?: $billingCountry,
+            'migrated_from' => 'edd',
         ];
 
-        if (isset($maps[$eddStatus])) {
-            return $maps[$eddStatus];
+        if ($fctRate) {
+            $meta['rates'][] = [
+                'rate_id'        => (int)$fctRate->id,
+                'label'          => $fctRate->name ?? ($rateCountry . ' Tax'),
+                'tax_amount'     => $taxAmount,
+                'rate'           => $fctRate->rate,
+                'rate_percent'   => $fctRate->rate,
+                'for_shipping'   => $fctRate->for_shipping ?? '',
+                'country'        => $rateCountry,
+                'is_compound'    => (bool)($fctRate->is_compound ?? false),
+                'taxable_amount' => ((float)$fctRate->rate > 0)
+                    ? (int)round($taxAmount * 100 / (float)$fctRate->rate)
+                    : 0,
+            ];
         }
 
-        return '';
+        return $meta;
     }
 
     private function getSubscriptionStatus($eddSubscription)
@@ -1175,8 +1296,9 @@ class PaymentMigrate
             'expired'   => Status::SUBSCRIPTION_EXPIRED,
             'completed' => Status::SUBSCRIPTION_COMPLETED,
             'pending'   => Status::SUBSCRIPTION_PENDING,
-            'cancelled' => Status::SUBSCRIPTION_CANCELED,
-            'trialling' => Status::SUBSCRIPTION_TRIALING,
+            'cancelled'       => Status::SUBSCRIPTION_CANCELED,
+            'trialling'       => Status::SUBSCRIPTION_TRIALING,
+            'needs_attention' => Status::SUBSCRIPTION_FAILING,
         ];
 
         if (isset($maps[$eddStatus])) {
@@ -1188,10 +1310,10 @@ class PaymentMigrate
         }
 
         // subscription status is not mapped, So we have to guess it!
-        $parentPayment = fluentCart('db')->table('edd_payments')->where('id', $eddSubscription->parent_payment_id)->first();
+        $parentPayment = fluentCart('db')->table('edd_orders')->where('id', $eddSubscription->parent_payment_id)->first();
 
         if ($parentPayment) {
-            $parentStatus = $this->getPaymentStatus($parentPayment->status);
+            $parentStatus = MigratorHelper::getPaymentStatus($parentPayment->status);
             if ($parentStatus == Status::PAYMENT_PAID) {
                 return Status::SUBSCRIPTION_ACTIVE;
             }
@@ -1253,6 +1375,11 @@ class PaymentMigrate
                 'state'     => $orderAddress->region,
                 'postcode'  => $orderAddress->postal_code,
                 'country'   => $orderAddress->country,
+                'meta'      => json_encode([
+                    'other_data' => [
+                        'company_name' => '',
+                    ],
+                ]),
             ];
         }
 

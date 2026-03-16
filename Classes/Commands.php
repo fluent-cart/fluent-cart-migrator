@@ -63,10 +63,7 @@ class Commands
         }
 
         if (Arr::get($assoc_args, 'reset')) {
-            if (!\WP_CLI\Utils\make_progress_bar('Are you sure you want to reset the migration? (y/n)', 1)) {
-                \WP_CLI::line('Migration reset cancelled.');
-                return;
-            }
+            \WP_CLI::confirm('Are you sure you want to reset the migration?');
 
             $this->getMigratorService()->wipeMigratedData();
             \WP_CLI::line('All data has been reset.');
@@ -87,10 +84,11 @@ class Commands
 
         if (Arr::get($assoc_args, 'all')) {
             $assoc_args = [
-                'products' => true,
-                'coupons'  => true,
-                'payments' => true,
-                'recount'  => true
+                'products'  => true,
+                'tax_rates' => true,
+                'coupons'   => true,
+                'payments'  => true,
+                'recount'   => true
             ];
         }
 
@@ -109,6 +107,15 @@ class Commands
             } else {
                 \WP_CLI::line('Products Migration already done. Skipping...');
             }
+        }
+
+        if (Arr::get($assoc_args, 'tax_rates')) {
+            \WP_CLI::line('Starting Tax Rates Migration');
+            $taxRates = $eddCli->migrateTaxRates();
+            if ($taxRates) {
+                \WP_CLI::line('Migrated ' . count($taxRates) . ' Tax Rate mappings');
+            }
+            \WP_CLI::line('---------------------------------------');
         }
 
         if (Arr::get($assoc_args, 'coupons')) {
@@ -155,6 +162,7 @@ class Commands
                         break;
                     }
 
+                    MigratorHelper::resetCaches();
                     $page++;
                 }
 
@@ -217,11 +225,7 @@ class Commands
             return;
         }
 
-        // prompt for confirmation
-        if (!\WP_CLI\Utils\make_progress_bar('Are you sure you want to reset the migration? (y/n)', 1)) {
-            \WP_CLI::line('Migration reset cancelled.');
-            return;
-        }
+        \WP_CLI::confirm('Are you sure you want to reset the migration?');
 
         $this->getMigratorService()->wipeMigratedData();
         \WP_CLI::line('All data has been reset.');

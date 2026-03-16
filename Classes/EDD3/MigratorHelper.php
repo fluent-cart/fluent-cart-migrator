@@ -16,6 +16,15 @@ class MigratorHelper
 
     public static $cachedLicenses = [];
 
+    public static $cachedTaxAdjustments = [];
+
+    public static function resetCaches()
+    {
+        self::$cachedSubscriptions = [];
+        self::$cachedLicenses = [];
+        self::$cachedTaxAdjustments = [];
+    }
+
     public static function getPaymentStatus($orderStatus)
     {
         $maps = [
@@ -149,6 +158,7 @@ class MigratorHelper
                     'product_id'        => $productDetails['id'],
                     'variation_id'      => Arr::get($productDetails, 'variation_id', NULL),
                     'activation_method' => 'key_based',
+                    'activation_hash'   => md5($activation->site_name . '_' . $license->license_key),
                     'created_at'        => $license->date_created,
                     'updated_at'        => $license->date_created,
                 ];
@@ -214,20 +224,27 @@ class MigratorHelper
 
     public static function convertEddCouponDate($dateString)
     {
-        // Check if the input string is empty
         if (!$dateString) {
             return NULL;
         }
 
-        // Create a DateTime object from the input string using the expected format
-        $dateTime = \DateTime::createFromFormat('m/d/Y H:i:s', $dateString);
+        // EDD3 stores dates in MySQL datetime format (Y-m-d H:i:s)
+        $dateTime = \DateTime::createFromFormat('Y-m-d H:i:s', $dateString);
 
-        // Check if the conversion was successful
+        // Fallback: EDD2 used m/d/Y H:i:s format
         if ($dateTime === false) {
-            return NULL;
+            $dateTime = \DateTime::createFromFormat('m/d/Y H:i:s', $dateString);
         }
 
-        // Return the date in MySQL format
+        // Last resort: let PHP parse it
+        if ($dateTime === false) {
+            try {
+                $dateTime = new \DateTime($dateString);
+            } catch (\Exception $e) {
+                return NULL;
+            }
+        }
+
         return $dateTime->format('Y-m-d H:i:s');
     }
 
@@ -466,26 +483,30 @@ class MigratorHelper
             $quantity = 1;
         }
 
-        $unitPrice = self::toCents($eddCartItem->amount, $payment->currency);
+        // Use subtotal (net/tax-excluded amount) for unit price since tax is tracked separately
+        // EDD's `amount` is the gross price (includes tax for inclusive-tax stores)
+        // EDD's `subtotal` is always the net price (tax-excluded)
+        $itemSubtotal = self::toCents($eddCartItem->subtotal, $payment->currency);
+        $unitPrice = (int)round($itemSubtotal / $quantity);
         $tax = self::toCents($eddCartItem->tax, $payment->currency);
         $discount = self::toCents($eddCartItem->discount, $payment->currency);
-        $lineTotal = ($quantity * $unitPrice) + $tax - $discount;
+        $lineTotal = $itemSubtotal + $tax - $discount;
 
         $originalDiscount = $discount;
 
         $pricing = [
             'unit_price'     => $unitPrice,
             'quantity'       => $quantity,
-            'subtotal'       => $quantity * $unitPrice,
+            'subtotal'       => $itemSubtotal,
             'tax_amount'     => $tax,
             'discount_total' => $discount,
             'line_total'     => $lineTotal,
         ];
 
         if ($lineTotal < 0) { // it's a free product with 100% discount
-            $lineTotal = 0;
             $pricing['discount_total'] = $pricing['subtotal'];
             $pricing['tax_amount'] = 0;
+            $pricing['line_total'] = 0;
         }
 
         $otherInfo = [];
@@ -683,10 +704,16 @@ class MigratorHelper
     public static function toCents($number, $currency = '')
     {
         $float = floatval($number);
-        $cents = $float * 100;
 
-        if (!$cents) {
+        if (!$float) {
             return 0;
+        }
+
+        // Zero-decimal currencies (JPY, KRW, etc.) are already in smallest unit
+        if ($currency && \FluentCart\App\Helpers\CurrenciesHelper::isZeroDecimal($currency)) {
+            $cents = $float;
+        } else {
+            $cents = $float * 100;
         }
 
         $cents = apply_filters('fluentcart_migrator_edd3_to_cents', $cents, $number, $currency);
@@ -750,12 +777,12 @@ class MigratorHelper
             ];
         }
 
-        // Also migrate the inline notes field from edd_subscriptions
+        // Also migrate the inline notes field from edd_subscriptions (if column exists)
         $eddSub = fluentCart('db')->table('edd_subscriptions')
             ->where('id', $eddSubscriptionId)
             ->first();
 
-        if ($eddSub && !empty($eddSub->notes)) {
+        if ($eddSub && isset($eddSub->notes) && !empty($eddSub->notes)) {
             $formattedActivities[] = [
                 'status'      => 'info',
                 'log_type'    => 'activity',
@@ -842,10 +869,52 @@ class MigratorHelper
 
     public static function deleteOrderById($orderId)
     {
-        fluentCart('db')->table('fct_orders')
-            ->where('id', $orderId)
+        // Delete child/renewal orders first (recursive)
+        $childOrderIds = fluentCart('db')->table('fct_orders')
+            ->where('parent_id', $orderId)
+            ->pluck('id')
+            ->toArray();
+
+        foreach ($childOrderIds as $childId) {
+            self::deleteOrderById($childId);
+        }
+
+        // Delete subscriptions and their activities
+        $subscriptions = fluentCart('db')->table('fct_subscriptions')
+            ->where('parent_order_id', $orderId)
+            ->get();
+
+        foreach ($subscriptions as $subscription) {
+            fluentCart('db')->table('fct_subscription_meta')
+                ->where('subscription_id', $subscription->id)
+                ->delete();
+
+            fluentCart('db')->table('fct_activity')
+                ->where('module_id', $subscription->id)
+                ->where('module_type', 'FluentCart\App\Models\Subscription')
+                ->delete();
+        }
+
+        fluentCart('db')->table('fct_subscriptions')
+            ->where('parent_order_id', $orderId)
             ->delete();
 
+        // Delete licenses and their activations
+        $licenses = fluentCart('db')->table('fct_licenses')
+            ->where('order_id', $orderId)
+            ->get();
+
+        foreach ($licenses as $license) {
+            fluentCart('db')->table('fct_license_activations')
+                ->where('license_id', $license->id)
+                ->delete();
+        }
+
+        fluentCart('db')->table('fct_licenses')
+            ->where('order_id', $orderId)
+            ->delete();
+
+        // Delete order-related records
         fluentCart('db')->table('fct_order_items')
             ->where('order_id', $orderId)
             ->delete();
@@ -871,6 +940,10 @@ class MigratorHelper
             ->where('order_id', $orderId)
             ->delete();
 
+        fluentCart('db')->table('fct_order_tax_rate')
+            ->where('order_id', $orderId)
+            ->delete();
+
         fluentCart('db')->table('fct_order_download_permissions')
             ->where('order_id', $orderId)
             ->delete();
@@ -879,32 +952,9 @@ class MigratorHelper
             ->where('order_id', $orderId)
             ->delete();
 
-        $licenses = fluentCart('db')->table('fct_licenses')
-            ->where('order_id', $orderId)
-            ->get();
-
-        foreach ($licenses as $license) {
-            fluentCart('db')->table('fct_license_activations')
-                ->where('license_id', $license->id)
-                ->delete();
-        }
-
-        fluentCart('db')->table('fct_licenses')
-            ->where('order_id', $orderId)
-            ->delete();
-
-        $subscriptions = fluentCart('db')->table('fct_subscriptions')
-            ->where('parent_order_id', $orderId)
-            ->get();
-
-        foreach ($subscriptions as $subscription) {
-            fluentCart('db')->table('fct_subscription_meta')
-                ->where('subscription_id', $subscription->id)
-                ->delete();
-        }
-
-        fluentCart('db')->table('fct_subscriptions')
-            ->where('parent_order_id', $orderId)
+        // Delete the order itself last
+        fluentCart('db')->table('fct_orders')
+            ->where('id', $orderId)
             ->delete();
     }
 
@@ -1035,6 +1085,74 @@ class MigratorHelper
 
         return isset($maps[$gateway]) ? $maps[$gateway] : $gateway;
 
+    }
+
+    public static function setCachedTaxAdjustments($paymentIds)
+    {
+        $adjustments = fluentCart('db')->table('edd_order_adjustments')
+            ->whereIn('object_id', $paymentIds)
+            ->where('object_type', 'order')
+            ->where('type', 'tax')
+            ->get();
+
+        $formatted = [];
+        foreach ($adjustments as $adj) {
+            if (!isset($formatted[$adj->object_id])) {
+                $formatted[$adj->object_id] = [];
+            }
+            $formatted[$adj->object_id][] = $adj;
+        }
+
+        self::$cachedTaxAdjustments = $formatted;
+    }
+
+    public static function getTaxAdjustments($paymentId)
+    {
+        if (isset(self::$cachedTaxAdjustments[$paymentId])) {
+            return self::$cachedTaxAdjustments[$paymentId];
+        }
+
+        return fluentCart('db')->table('edd_order_adjustments')
+            ->where('object_id', $paymentId)
+            ->where('object_type', 'order')
+            ->where('type', 'tax')
+            ->get();
+    }
+
+    public static function getEddTaxBehavior()
+    {
+        static $behavior = null;
+        if ($behavior !== null) {
+            return $behavior;
+        }
+
+        $eddSettings = get_option('edd_settings', []);
+        $taxesEnabled = !empty($eddSettings['enable_taxes']);
+
+        if (!$taxesEnabled) {
+            $behavior = 0; // no_tax
+            return $behavior;
+        }
+
+        $pricesIncludeTax = Arr::get($eddSettings, 'prices_include_tax', 'no') === 'yes';
+        $behavior = $pricesIncludeTax ? 2 : 1; // 2 = inclusive, 1 = exclusive
+
+        return $behavior;
+    }
+
+    public static function getTaxRateMap()
+    {
+        static $map = null;
+        if ($map !== null) {
+            return $map;
+        }
+
+        $map = get_option('_edd_fct_tax_rate_maps', []);
+        if (!is_array($map)) {
+            $map = [];
+        }
+
+        return $map;
     }
 
     public static function canMigrate()
