@@ -9,6 +9,7 @@ class AdminMenu
         add_action('fluent_cart/admin_submenu_added', [$this, 'addMigratorSubmenu']);
         add_action('admin_menu', [$this, 'registerStandalonePage'], 99);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
+        add_action('in_admin_header', [$this, 'removeAdminNotices'], 999);
     }
 
     public function addMigratorSubmenu()
@@ -38,6 +39,17 @@ class AdminMenu
     public function renderPage()
     {
         include FLUENTCART_MIGRATOR_PLUGIN_PATH . 'views/admin-page.php';
+    }
+
+    public function removeAdminNotices()
+    {
+        $screen = get_current_screen();
+        if (!$screen || $screen->id !== 'admin_page_fluent-cart-migrator') {
+            return;
+        }
+
+        remove_all_actions('admin_notices');
+        remove_all_actions('all_admin_notices');
     }
 
     public function enqueueAssets($hook)
