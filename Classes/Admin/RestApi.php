@@ -51,6 +51,12 @@ class RestApi
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
+        register_rest_route($this->namespace, '/migrate/tax-rates', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'migrateTaxRates'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
         register_rest_route($this->namespace, '/migrate/payments', [
             'methods'             => 'POST',
             'callback'            => [$this, 'migratePayments'],
@@ -127,6 +133,13 @@ class RestApi
     {
         $service = new MigratorService();
         $result = $service->migrateProducts();
+        return rest_ensure_response($result);
+    }
+
+    public function migrateTaxRates()
+    {
+        $service = new MigratorService();
+        $result = $service->migrateTaxRates();
         return rest_ensure_response($result);
     }
 

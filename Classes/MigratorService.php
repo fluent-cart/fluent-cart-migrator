@@ -160,6 +160,36 @@ class MigratorService
         ];
     }
 
+    public function migrateTaxRates()
+    {
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        if (is_array($migrationSteps) && ($migrationSteps['tax_rates'] ?? '') === 'yes') {
+            return [
+                'success'         => true,
+                'step'            => 'tax_rates',
+                'skipped'         => true,
+                'migration_state' => $migrationSteps,
+            ];
+        }
+
+        $this->loadEddClasses();
+
+        $eddCli = new MigratorCli();
+        $result = $eddCli->migrateTaxRates();
+
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        if (!is_array($migrationSteps)) {
+            $migrationSteps = [];
+        }
+        $migrationSteps['tax_rates'] = 'yes';
+        update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
+
+        $result['step'] = 'tax_rates';
+        $result['migration_state'] = $migrationSteps;
+
+        return $result;
+    }
+
     public function migrateCoupons()
     {
         $this->loadEddClasses();
@@ -187,6 +217,7 @@ class MigratorService
     {
         $this->loadEddClasses();
 
+        MigratorHelper::resetCaches();
         $eddCli  = new MigratorCli();
         $results = $eddCli->migratePayments($page, $perPage);
 

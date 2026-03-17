@@ -11,13 +11,6 @@ use FluentCartMigrator\Classes\MigratorService;
 class Commands
 {
 
-    private function loadEddClasses()
-    {
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorCli.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorHelper.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/PaymentMigrate.php';
-    }
-
     private function getMigratorService()
     {
         return new MigratorService();
@@ -25,8 +18,6 @@ class Commands
 
     public function migrate_from_edd($args, $assoc_args = [])
     {
-        $this->loadEddClasses();
-
         $canMigrate = $this->getMigratorService()->canMigrate();
 
         if (is_wp_error($canMigrate)) {
@@ -111,9 +102,15 @@ class Commands
 
         if (Arr::get($assoc_args, 'tax_rates')) {
             \WP_CLI::line('Starting Tax Rates Migration');
-            $taxRates = $eddCli->migrateTaxRates();
-            if ($taxRates) {
-                \WP_CLI::line('Migrated ' . count($taxRates) . ' Tax Rate mappings');
+            $result = $service->migrateTaxRates();
+            if (!empty($result['skipped']) && !empty($result['migration_state'])) {
+                \WP_CLI::line('Tax rates already migrated. Skipping...');
+            } else if (!empty($result['skipped'])) {
+                \WP_CLI::line($result['message']);
+            } else {
+                \WP_CLI::line('Generated tax rates for countries: ' . implode(', ', $result['countries']));
+                \WP_CLI::line('Mapped ' . $result['mapped'] . ' EDD tax rates to FluentCart rates');
+                \WP_CLI::line('Prices include tax: ' . ($result['prices_include_tax'] ? 'yes' : 'no'));
             }
             \WP_CLI::line('---------------------------------------');
         }
@@ -162,7 +159,6 @@ class Commands
                         break;
                     }
 
-                    MigratorHelper::resetCaches();
                     $page++;
                 }
 
