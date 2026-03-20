@@ -2,6 +2,7 @@
 
 namespace FluentCartMigrator\Classes;
 
+use FluentCart\Api\StoreSettings;
 use FluentCart\App\App;
 use FluentCart\App\Models\AppliedCoupon;
 use FluentCart\App\Models\Customer;
@@ -10,8 +11,8 @@ use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
 use FluentCart\Database\DBMigrator;
 use FluentCart\Framework\Support\Arr;
-use FluentCartMigrator\Classes\Edd3\MigratorCli;
-use FluentCartMigrator\Classes\Edd3\MigratorHelper;
+use FluentCartMigrator\Classes\EDD3\MigratorCli;
+use FluentCartMigrator\Classes\EDD3\MigratorHelper;
 
 class Commands
 {
@@ -21,9 +22,9 @@ class Commands
         $taxSettings = get_option('edd_settings', []);
 
         // load edd files
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/MigratorCli.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/MigratorHelper.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Edd3/PaymentMigrate.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorCli.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorHelper.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/PaymentMigrate.php';
 
         $canMigrate = MigratorHelper::canMigrate();
 
@@ -32,7 +33,7 @@ class Commands
             return;
         }
 
-        $eddCli = new \FluentCartMigrator\Classes\Edd3\MigratorCli();
+        $eddCli = new \FluentCartMigrator\Classes\EDD3\MigratorCli();
 
         // $eddCli->migratePayments(); die();
 
@@ -66,6 +67,7 @@ class Commands
         if (!is_array($migrationSteps) || !$migrationSteps) {
             $migrationSteps = [
                 'products'        => 'no',
+                'tax_rates'       => 'no',
                 'coupons'         => 'no',
                 'payments'        => 'no',
                 'last_order_page' => 1,
@@ -86,6 +88,8 @@ class Commands
         $startingAt = time();
 
         \WP_CLI::line('Starting EDD3 Migration at: ' . date('Y-m-d H:i:s'));
+
+        $this->maybeMigrateStoreSettings($taxSettings);
 
         if (Arr::get($assoc_args, 'products')) {
             if ($migrationSteps['products'] !== 'yes') {
@@ -108,12 +112,18 @@ class Commands
         }
 
         if (Arr::get($assoc_args, 'tax_rates')) {
-            \WP_CLI::line('Starting Tax Rates Migration');
-            $taxRates = $eddCli->migrateTaxRates();
-            if ($taxRates) {
-                \WP_CLI::line('Migrated ' . count($taxRates) . ' Tax Rate mappings');
+            if (Arr::get($migrationSteps, 'tax_rates') !== 'yes') {
+                \WP_CLI::line('Starting Tax Rates Migration');
+                $taxRates = $eddCli->migrateTaxRates();
+                if ($taxRates) {
+                    $migrationSteps['tax_rates'] = 'yes';
+                    update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
+                    \WP_CLI::line('Migrated ' . count($taxRates) . ' Tax Rate mappings');
+                }
+                \WP_CLI::line('---------------------------------------');
+            } else {
+                \WP_CLI::line('Tax Rates Migration already done. Skipping...');
             }
-            \WP_CLI::line('---------------------------------------');
         }
 
         if (Arr::get($assoc_args, 'coupons')) {
@@ -670,6 +680,55 @@ class Commands
         }
 
         \WP_CLI::line('Fixed UUID for ' . $subscriptions->count() . ' subscriptions');
+    }
+
+    private function maybeMigrateStoreSettings($eddSettings)
+    {
+        $storeSettings = new StoreSettings();
+        $existingSettings = get_option('fluent_cart_store_settings', []);
+
+        $settingsMap = [
+            'entity_name'        => 'store_name',
+            'business_address'   => 'store_address1',
+            'business_address_2' => 'store_address2',
+            'business_city'      => 'store_city',
+            'base_state'         => 'store_state',
+            'base_country'       => 'store_country',
+            'business_postal_code' => 'store_postcode',
+            'currency'           => 'currency',
+        ];
+
+        $toUpdate = [];
+
+        foreach ($settingsMap as $eddKey => $fctKey) {
+            $eddValue = Arr::get($eddSettings, $eddKey, '');
+            $existingValue = Arr::get($existingSettings, $fctKey, '');
+
+            if (!empty($eddValue) && empty($existingValue)) {
+                $toUpdate[$fctKey] = $eddValue;
+            }
+        }
+
+        // Currency position: EDD uses 'before'/'after', FluentCart uses the same
+        $eddCurrencyPosition = Arr::get($eddSettings, 'currency_position', '');
+        $existingCurrencyPosition = Arr::get($existingSettings, 'currency_position', '');
+        if (!empty($eddCurrencyPosition) && empty($existingCurrencyPosition)) {
+            $toUpdate['currency_position'] = $eddCurrencyPosition;
+        }
+
+        // Decimal separator: EDD uses '.' or ',', FluentCart uses 'dot' or 'comma'
+        $eddDecimalSep = Arr::get($eddSettings, 'decimal_separator', '');
+        $existingDecimalSep = Arr::get($existingSettings, 'decimal_separator', '');
+        if (!empty($eddDecimalSep) && empty($existingDecimalSep)) {
+            $toUpdate['decimal_separator'] = $eddDecimalSep === ',' ? 'comma' : 'dot';
+        }
+
+        if (empty($toUpdate)) {
+            return;
+        }
+
+        $storeSettings->save($toUpdate);
+        \WP_CLI::line('Migrated store settings: ' . implode(', ', array_keys($toUpdate)));
     }
 
     protected function get_user_input($question)
