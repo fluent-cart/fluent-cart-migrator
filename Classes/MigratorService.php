@@ -192,6 +192,18 @@ class MigratorService
 
     public function migrateCoupons()
     {
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        if (is_array($migrationSteps) && ($migrationSteps['coupons'] ?? '') === 'yes') {
+            return [
+                'success'         => true,
+                'step'            => 'coupons',
+                'total'           => 0,
+                'migrated'        => 0,
+                'skipped'         => true,
+                'migration_state' => $migrationSteps,
+            ];
+        }
+
         $this->loadEddClasses();
 
         $eddCli     = new MigratorCli();
@@ -215,6 +227,20 @@ class MigratorService
 
     public function migratePayments($page = 1, $perPage = 100)
     {
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        if (is_array($migrationSteps) && ($migrationSteps['payments'] ?? '') === 'yes') {
+            return [
+                'success'         => true,
+                'step'            => 'payments',
+                'page'            => $page,
+                'processed'       => 0,
+                'has_more'        => false,
+                'errors_in_batch' => 0,
+                'skipped'         => true,
+                'migration_state' => $migrationSteps,
+            ];
+        }
+
         $this->loadEddClasses();
 
         MigratorHelper::resetCaches();

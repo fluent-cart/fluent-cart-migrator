@@ -180,7 +180,6 @@
 }
 
 .fct-source-icon {
-    font-size: 36px;
     line-height: 1;
 }
 
@@ -374,6 +373,37 @@
     color: #d63638;
 }
 
+/* ─── Progress Bar ──────────────────────────────────────── */
+.fct-progress-bar-wrap {
+    margin-top: 8px;
+}
+
+.fct-progress-bar {
+    height: 8px;
+    background: #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.fct-progress-fill {
+    height: 100%;
+    background: #2271b1;
+    border-radius: 4px;
+    transition: width 0.4s ease;
+    min-width: 2%;
+}
+
+.fct-runner-step.is-completed .fct-progress-fill {
+    background: #00a32a;
+}
+
+.fct-progress-text {
+    display: block;
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+}
+
 /* ─── Recount Substeps ───────────────────────────────────── */
 .fct-recount-subs {
     display: flex;
@@ -400,6 +430,21 @@
 }
 
 /* ─── Completion ─────────────────────────────────────────── */
+.fct-complete-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.fct-complete-header h2 {
+    margin-bottom: 0;
+}
+
+.fct-complete-header .fct-step-desc {
+    margin-bottom: 0;
+}
+
 .fct-completion-summary {
     padding: 16px;
     background: #f9f9f9;
@@ -415,6 +460,51 @@
 
 .fct-completion-row + .fct-completion-row {
     border-top: 1px solid #eee;
+}
+
+/* ─── Next Steps ────────────────────────────────────────── */
+.fct-next-steps {
+    margin: 20px 0;
+}
+
+.fct-next-steps h3 {
+    font-size: 14px;
+    margin: 0 0 12px;
+    color: #1d2327;
+}
+
+.fct-next-steps-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.fct-next-step-card {
+    display: block;
+    padding: 14px 16px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.fct-next-step-card:hover {
+    border-color: #2271b1;
+    box-shadow: 0 0 0 1px #2271b1;
+    color: inherit;
+}
+
+.fct-next-step-card strong {
+    display: block;
+    font-size: 13px;
+    color: #1d2327;
+    margin-bottom: 2px;
+}
+
+.fct-next-step-card span {
+    font-size: 12px;
+    color: #666;
 }
 
 /* ─── Error Log ──────────────────────────────────────────── */

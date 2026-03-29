@@ -55,8 +55,14 @@
                         @click="selectSource(source)"
                     >
                         <div class="fct-source-icon">
-                            <span v-if="source.key === 'edd'">&#128230;</span>
-                            <span v-else>&#128722;</span>
+                            <svg v-if="source.key === 'edd'" width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <rect width="36" height="36" rx="8" fill="#1F2B3A"/>
+                                <path d="M10 11h16v2H10zm0 4h12v2H10zm0 4h14v2H10zm0 4h10v2H10z" fill="#5EAADB"/>
+                            </svg>
+                            <svg v-else width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <rect width="36" height="36" rx="8" fill="#7B51AD"/>
+                                <path d="M11 14h14l-2 8H13l-2-8zm3 10a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm8 0a1.5 1.5 0 110 3 1.5 1.5 0 010-3z" fill="#fff"/>
+                            </svg>
                         </div>
                         <h3>{{ source.name }}</h3>
                         <span v-if="source.coming_soon" class="fct-badge fct-badge--muted">Coming Soon</span>
@@ -260,12 +266,20 @@
                     <div class="fct-runner-info">
                         <strong>Payments</strong>
                         <span v-if="runProgress.payments.status === 'running' || runProgress.payments.status === 'completed'">
-                            &mdash; Page {{ runProgress.payments.page }}<span v-if="totalPaymentsEstimate"> of ~{{ totalPaymentsEstimate }}</span>
-                            | {{ runProgress.payments.processed }} orders processed
+                            &mdash; {{ runProgress.payments.processed }} orders processed
+                            <span v-if="runProgress.payments.errorsCount" class="fct-text-warning">
+                                ({{ runProgress.payments.errorsCount }} errors logged)
+                            </span>
                         </span>
-                        <span v-if="runProgress.payments.errorsCount" class="fct-text-warning">
-                            ({{ runProgress.payments.errorsCount }} errors logged)
-                        </span>
+                        <div v-if="(runProgress.payments.status === 'running' || runProgress.payments.status === 'completed') && totalPaymentsEstimate" class="fct-progress-bar-wrap">
+                            <div class="fct-progress-bar">
+                                <div class="fct-progress-fill" :style="{ width: paymentsProgress + '%' }"></div>
+                            </div>
+                            <span class="fct-progress-text">
+                                Page {{ Math.min(runProgress.payments.page, totalPaymentsEstimate) }} of ~{{ totalPaymentsEstimate }}
+                                <span v-if="paymentsEta"> &middot; ~{{ paymentsEta }} remaining</span>
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -302,8 +316,17 @@
 
         <!-- STEP 6: Complete -->
         <div v-if="currentStep === 'complete'" class="fct-step">
-            <h2>Migration Complete</h2>
-            <p class="fct-step-desc">Duration: {{ duration }}</p>
+            <div class="fct-complete-header">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="24" cy="24" r="24" fill="#d4edda"/>
+                    <circle cx="24" cy="24" r="18" fill="#00a32a"/>
+                    <path d="M15 24l6 6 12-12" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+                <div>
+                    <h2>Migration Complete</h2>
+                    <p class="fct-step-desc">Finished in {{ duration }}</p>
+                </div>
+            </div>
 
             <div class="fct-completion-summary">
                 <div v-if="stepsToRun.products" class="fct-completion-row">
@@ -319,6 +342,29 @@
                 </div>
                 <div v-if="stepsToRun.recount" class="fct-completion-row">
                     <strong>Recount:</strong> Completed
+                </div>
+            </div>
+
+            <!-- What's Next -->
+            <div class="fct-next-steps">
+                <h3>What's Next?</h3>
+                <div class="fct-next-steps-grid">
+                    <a :href="adminUrl + 'admin.php?page=fluent-cart#/products'" class="fct-next-step-card" target="_blank">
+                        <strong>Verify Products</strong>
+                        <span>Check that all products and pricing migrated correctly.</span>
+                    </a>
+                    <a :href="adminUrl + 'admin.php?page=fluent-cart#/orders'" class="fct-next-step-card" target="_blank">
+                        <strong>Review Orders</strong>
+                        <span>Spot-check a few orders to confirm data integrity.</span>
+                    </a>
+                    <a :href="adminUrl + 'admin.php?page=fluent-cart#/customers'" class="fct-next-step-card" target="_blank">
+                        <strong>Check Customers</strong>
+                        <span>Verify customer records and purchase history.</span>
+                    </a>
+                    <a :href="adminUrl + 'admin.php?page=fluent-cart#/settings/store-settings/'" class="fct-next-step-card" target="_blank">
+                        <strong>Configure Settings</strong>
+                        <span>Set up payment gateways, emails, and store options.</span>
+                    </a>
                 </div>
             </div>
 
@@ -402,6 +448,7 @@ function loadState() {
 
 // ─── State ───────────────────────────────────────────────
 const isDevMode = !!fctMigrator.devMode;
+const adminUrl = fctMigrator.adminUrl;
 const currentStep = ref('source');
 const loading = ref(false);
 const error = ref(null);
@@ -487,6 +534,25 @@ const activeStepIndex = computed(() => stepOrder.indexOf(currentStep.value));
 const totalPaymentsEstimate = computed(() => {
     if (!stats.value) return 0;
     return Math.ceil(stats.value.orders_count / batchSize.value);
+});
+
+const paymentsProgress = computed(() => {
+    if (!totalPaymentsEstimate.value || !runProgress.payments.page) return 0;
+    return Math.min(100, Math.round((runProgress.payments.page / totalPaymentsEstimate.value) * 100));
+});
+
+const paymentsEta = computed(() => {
+    if (!startTime.value || !runProgress.payments.page || runProgress.payments.status !== 'running') return '';
+    const elapsed = Date.now() - startTime.value;
+    const pagesLeft = totalPaymentsEstimate.value - runProgress.payments.page;
+    if (pagesLeft <= 0) return '';
+    const msPerPage = elapsed / runProgress.payments.page;
+    const remaining = Math.round((msPerPage * pagesLeft) / 1000);
+    if (remaining < 60) return remaining + 's';
+    if (remaining < 3600) return Math.round(remaining / 60) + ' min';
+    const h = Math.floor(remaining / 3600);
+    const m = Math.round((remaining % 3600) / 60);
+    return h + 'h ' + m + 'm';
 });
 
 const errorLogEntries = computed(() => {
@@ -588,24 +654,29 @@ async function startMigration() {
         return;
     }
 
+    const isResuming = isPaused.value;
     isRunning.value = true;
     isPaused.value = false;
-    startTime.value = Date.now();
+    if (!isResuming) {
+        startTime.value = Date.now();
+    }
     endTime.value = null;
     currentStep.value = 'running';
     saveState();
 
-    // Reset progress
-    Object.keys(runProgress).forEach(key => {
-        if (key === 'recount') {
-            runProgress[key].status = 'pending';
-            runProgress[key].substeps = { fix_reactivations: 'pending', fix_subs_uuid: 'pending', coupons: 'pending', customers: 'pending', subscriptions: 'pending' };
-        } else if (key === 'payments') {
-            Object.assign(runProgress[key], { status: 'pending', page: 0, processed: 0, hasMore: true, errorsCount: 0 });
-        } else {
-            Object.assign(runProgress[key], { status: 'pending', total: 0, migrated: 0, failed: 0, errors: [] });
-        }
-    });
+    // Reset progress only for a fresh start, not when resuming
+    if (!isResuming) {
+        Object.keys(runProgress).forEach(key => {
+            if (key === 'recount') {
+                runProgress[key].status = 'pending';
+                runProgress[key].substeps = { fix_reactivations: 'pending', fix_subs_uuid: 'pending', coupons: 'pending', customers: 'pending', subscriptions: 'pending' };
+            } else if (key === 'payments') {
+                Object.assign(runProgress[key], { status: 'pending', page: 0, processed: 0, hasMore: true, errorsCount: 0 });
+            } else {
+                Object.assign(runProgress[key], { status: 'pending', total: 0, migrated: 0, failed: 0, errors: [] });
+            }
+        });
+    }
 
     const steps = [];
     if (stepsToRun.products) steps.push('products');
@@ -730,7 +801,7 @@ async function loadLogs() {
 }
 
 function goToFluentCart() {
-    window.location.href = fctMigrator.adminUrl + 'admin.php?page=fluent-cart#/';
+    window.location.href = adminUrl + 'admin.php?page=fluent-cart#/';
 }
 
 function runAgain() {
@@ -800,6 +871,13 @@ onMounted(async () => {
         }
 
         goToStep(saved.step);
+    } else if (fctMigrator.migration && sources.value.length) {
+        // No session state but server has migration progress — find the source and resume from overview
+        const eddSource = sources.value.find(s => s.key === 'edd' && s.detected);
+        if (eddSource) {
+            selectedSource.value = eddSource;
+            goToStep('overview');
+        }
     }
 });
 </script>
