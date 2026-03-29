@@ -2,11 +2,13 @@
 
 namespace FluentCartMigrator\Classes;
 
+use FluentCart\Api\StoreSettings;
+use FluentCart\App\App;
 use FluentCart\App\Models\Customer;
 use FluentCart\App\Models\Subscription;
+use FluentCart\Database\DBMigrator;
 use FluentCart\Framework\Support\Arr;
 use FluentCartMigrator\Classes\MigratorService;
-
 
 class Commands
 {
@@ -18,6 +20,8 @@ class Commands
 
     public function migrate_from_edd($args, $assoc_args = [])
     {
+        $taxSettings = get_option('edd_settings', []);
+
         $canMigrate = $this->getMigratorService()->canMigrate();
 
         if (is_wp_error($canMigrate)) {
@@ -25,7 +29,7 @@ class Commands
             return;
         }
 
-        // CLI-specific diagnostic flags — these stay in Commands
+        // CLI-specific diagnostic flags
         if (Arr::get($assoc_args, 'stats')) {
             $stats = $this->getMigratorService()->getEddStats();
             \WP_CLI::line('Products: ' . $stats['products_count']);
@@ -66,6 +70,7 @@ class Commands
         if (!is_array($migrationSteps) || !$migrationSteps) {
             $migrationSteps = [
                 'products'        => 'no',
+                'tax_rates'       => 'no',
                 'coupons'         => 'no',
                 'payments'        => 'no',
                 'last_order_page' => 1,
@@ -88,6 +93,8 @@ class Commands
 
         \WP_CLI::line('Starting EDD3 Migration at: ' . date('Y-m-d H:i:s'));
 
+        $this->maybeMigrateStoreSettings($taxSettings);
+
         if (Arr::get($assoc_args, 'products')) {
             if ($migrationSteps['products'] !== 'yes') {
                 \WP_CLI::line('Starting Migrating products');
@@ -101,24 +108,27 @@ class Commands
         }
 
         if (Arr::get($assoc_args, 'tax_rates')) {
-            \WP_CLI::line('Starting Tax Rates Migration');
-            $result = $service->migrateTaxRates();
-            if (!empty($result['skipped']) && !empty($result['migration_state'])) {
-                \WP_CLI::line('Tax rates already migrated. Skipping...');
-            } else if (!empty($result['skipped'])) {
-                \WP_CLI::line($result['message']);
+            if (Arr::get($migrationSteps, 'tax_rates') !== 'yes') {
+                \WP_CLI::line('Starting Tax Rates Migration');
+                $result = $service->migrateTaxRates();
+                if (!empty($result['skipped'])) {
+                    \WP_CLI::line($result['message'] ?? 'Tax rates skipped.');
+                } else {
+                    $migrationSteps = $result['migration_state'] ?? $migrationSteps;
+                    \WP_CLI::line('Generated tax rates for countries: ' . implode(', ', $result['countries'] ?? []));
+                    \WP_CLI::line('Mapped ' . ($result['mapped'] ?? 0) . ' EDD tax rates to FluentCart rates');
+                    \WP_CLI::line('Prices include tax: ' . (!empty($result['prices_include_tax']) ? 'yes' : 'no'));
+                }
+                \WP_CLI::line('---------------------------------------');
             } else {
-                \WP_CLI::line('Generated tax rates for countries: ' . implode(', ', $result['countries']));
-                \WP_CLI::line('Mapped ' . $result['mapped'] . ' EDD tax rates to FluentCart rates');
-                \WP_CLI::line('Prices include tax: ' . ($result['prices_include_tax'] ? 'yes' : 'no'));
+                \WP_CLI::line('Tax Rates Migration already done. Skipping...');
             }
-            \WP_CLI::line('---------------------------------------');
         }
 
         if (Arr::get($assoc_args, 'coupons')) {
             \WP_CLI::line('Starting Coupon Codes');
             $result = $service->migrateCoupons();
-            $migrationSteps = $result['migration_state'];
+            $migrationSteps = $result['migration_state'] ?? $migrationSteps;
             \WP_CLI::line('Migrated ' . $result['migrated'] . ' Coupon Codes');
             \WP_CLI::line('---------------------------------------');
         }
@@ -411,6 +421,120 @@ class Commands
         \WP_CLI::line('Deleted ' . count($termTaxonomyIds));
 
 
+    }
+
+    public function migrate_fresh($args, $assoc_args, $checkDev = true)
+    {
+        delete_option('fluent_cart_plugin_once_activated');
+        if ($checkDev && App::config()->get('using_faker') === false) {
+            if (class_exists('WP_CLI')) {
+                echo \WP_CLI::colorize('%yYou Are Not In Dev Mode');
+            } else {
+                echo "You Are Not In Dev Mode";
+            }
+            return;
+        }
+
+        delete_option('__fluent_cart_edd3_migration_steps');
+        delete_option('_fluent_edd_failed_payment_logs');
+
+        global $wpdb;
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=0;");
+
+        try {
+            DBMigrator::refresh();
+        } catch (\Exception $e) {
+
+        }
+
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
+
+        // Delete the post metas
+        $wpdb->query("DELETE pm FROM {$wpdb->prefix}postmeta pm INNER JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID WHERE p.post_type = 'fluent-products'");
+        // Delete the posts
+        $wpdb->query("DELETE FROM {$wpdb->prefix}posts WHERE post_type = 'fluent-products'");
+
+        // Delete the post metas
+        $postmetas = ['_edd_migrated_from', '_fcart_migrated_id', '__edd_migrated_variation_maps'];
+        foreach ($postmetas as $postMeta) {
+            $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}postmeta WHERE meta_key = %s", $postMeta));
+        }
+
+        if (class_exists('WP_CLI')) {
+            \WP_CLI::line('All Data has been resetted');
+        } else {
+            echo "All Done!";
+        }
+
+    }
+
+    public function fix_subs_uuid()
+    {
+        $subscriptions = \FluentCart\App\Models\Subscription::query()
+            ->whereNull('uuid')
+            ->orWhere('uuid', '')
+            ->get();
+
+        if ($subscriptions->isEmpty()) {
+            \WP_CLI::line('No subscriptions found to fix UUID');
+            return;
+        }
+
+        foreach ($subscriptions as $subscription) {
+            $subscription->uuid = md5($subscription->id . wp_generate_uuid4() . microtime(true));
+            $subscription->save();
+        }
+
+        \WP_CLI::line('Fixed UUID for ' . $subscriptions->count() . ' subscriptions');
+    }
+
+    private function maybeMigrateStoreSettings($eddSettings)
+    {
+        $storeSettings = new StoreSettings();
+        $existingSettings = get_option('fluent_cart_store_settings', []);
+
+        $settingsMap = [
+            'entity_name'        => 'store_name',
+            'business_address'   => 'store_address1',
+            'business_address_2' => 'store_address2',
+            'business_city'      => 'store_city',
+            'base_state'         => 'store_state',
+            'base_country'       => 'store_country',
+            'business_postal_code' => 'store_postcode',
+            'currency'           => 'currency',
+        ];
+
+        $toUpdate = [];
+
+        foreach ($settingsMap as $eddKey => $fctKey) {
+            $eddValue = Arr::get($eddSettings, $eddKey, '');
+            $existingValue = Arr::get($existingSettings, $fctKey, '');
+
+            if (!empty($eddValue) && empty($existingValue)) {
+                $toUpdate[$fctKey] = $eddValue;
+            }
+        }
+
+        // Currency position: EDD uses 'before'/'after', FluentCart uses the same
+        $eddCurrencyPosition = Arr::get($eddSettings, 'currency_position', '');
+        $existingCurrencyPosition = Arr::get($existingSettings, 'currency_position', '');
+        if (!empty($eddCurrencyPosition) && empty($existingCurrencyPosition)) {
+            $toUpdate['currency_position'] = $eddCurrencyPosition;
+        }
+
+        // Decimal separator: EDD uses '.' or ',', FluentCart uses 'dot' or 'comma'
+        $eddDecimalSep = Arr::get($eddSettings, 'decimal_separator', '');
+        $existingDecimalSep = Arr::get($existingSettings, 'decimal_separator', '');
+        if (!empty($eddDecimalSep) && empty($existingDecimalSep)) {
+            $toUpdate['decimal_separator'] = $eddDecimalSep === ',' ? 'comma' : 'dot';
+        }
+
+        if (empty($toUpdate)) {
+            return;
+        }
+
+        $storeSettings->save($toUpdate);
+        \WP_CLI::line('Migrated store settings: ' . implode(', ', array_keys($toUpdate)));
     }
 
     protected function get_user_input($question)

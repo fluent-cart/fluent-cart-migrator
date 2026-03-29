@@ -1,6 +1,6 @@
 <?php
 
-namespace FluentCartMigrator\Classes\Edd3;
+namespace FluentCartMigrator\Classes\EDD3;
 
 use FluentCart\Api\ModuleSettings;
 use FluentCart\App\Helpers\Status;

@@ -43,7 +43,7 @@ class FluentCartMigrator
     {
         // let's handle the previous EDD Licensinge EndPoints
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/EddLicenseHandler.php';
-        $eddLicenseHandler = new \FluentCartMigrator\Classes\Edd3\EddLicenseHandler();
+        $eddLicenseHandler = new \FluentCartMigrator\Classes\EDD3\EddLicenseHandler();
         $eddLicenseHandler->register();
 
         // Let's resolve the stripe's previous IPN Data which has charge id instead of payment intent id
