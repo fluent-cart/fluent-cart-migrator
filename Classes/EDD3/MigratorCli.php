@@ -64,11 +64,21 @@ class MigratorCli
             ->count();
 
 
-        \WP_CLI::line('Total Orders: ' . $orderCounts);
-        \WP_CLI::line('Total Transactions: ' . $transactions);
-        \WP_CLI::line('Gatways: ' . implode(', ', $gateways));
-        \WP_CLI::line('Order Types: ' . implode(', ', $types));
-        \WP_CLI::line('Available Statuses: ' . implode(', ', $statuses));
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::line('Total Orders: ' . $orderCounts);
+            \WP_CLI::line('Total Transactions: ' . $transactions);
+            \WP_CLI::line('Gatways: ' . implode(', ', $gateways));
+            \WP_CLI::line('Order Types: ' . implode(', ', $types));
+            \WP_CLI::line('Available Statuses: ' . implode(', ', $statuses));
+        }
+
+        return [
+            'order_count'       => $orderCounts,
+            'transaction_count' => $transactions,
+            'gateways'          => $gateways,
+            'types'             => $types,
+            'statuses'          => $statuses,
+        ];
     }
 
     public function migrate_products($willUpdate = false)
@@ -159,7 +169,7 @@ class MigratorCli
                 continue;
             }
 
-            if ($doingTest) {
+            if ($doingTest && defined('WP_CLI') && WP_CLI) {
                 \WP_CLI::line('Payment ID: ' . $payment->id . ' - Migration Success');
             }
         }
@@ -199,59 +209,6 @@ class MigratorCli
         MigratorHelper::setCachedSubscriptions($paymentIds);
         MigratorHelper::setCachedLicenses($paymentIds);
         MigratorHelper::setCachedTaxAdjustments($paymentIds);
-    }
-
-    public function verifyLicenses()
-    {
-        $page = 1;
-        $ignoredProductIds = [];
-        $connectedLicenseSkippedIds = [];
-
-        while (true) {
-            $eddLicenses = fluentCart('db')->table('edd_licenses')
-                ->limit(100)
-                ->offset(($page - 1) * 100)
-                ->get();
-
-            if (!$eddLicenses->count()) {
-                break;
-            }
-
-            foreach ($eddLicenses as $eddLicense) {
-                $fluentLicense = fluentCart('db')->table('fct_licenses')
-                    ->where('license_key', $eddLicense->license_key)
-                    ->first();
-
-                if (!$fluentLicense) {
-
-                    if ($eddLicense->status == 'expired') {
-                        \WP_CLI::line('404 Expired: ' . $eddLicense->license_key . ' => ' . $eddLicense->id);
-                        continue;
-                    }
-
-                    // maybe the payment is not exist
-                    $payment = fluentCart('db')->table('posts')
-                        ->where('post_type', 'edd_payment')
-                        ->where('ID', $eddLicense->payment_id)
-                        ->first();
-
-                    if ($payment && $payment->post_status != 'failed' && !in_array($eddLicense->download_id, $ignoredProductIds)) {
-                        \WP_CLI::line('License not found: ' . $eddLicense->license_key . ' => ' . $eddLicense->id . ' => ' . $payment->ID);
-                    }
-
-                    continue;
-                }
-
-                if ($fluentLicense->status != $eddLicense->status) {
-                    \WP_CLI::line('License Status Mismatch: ' . $eddLicense->license_key . ' => EDD: ' . $eddLicense->status . ' => Fluent: ' . $fluentLicense->status);
-                }
-            }
-
-            $page++;
-            if ($page % 100 === 0) {
-                \WP_CLI::line('Verified Page: ' . $page);
-            }
-        }
     }
 
     public function migrateCouponCodes()
@@ -393,8 +350,13 @@ class MigratorCli
         $taxesEnabled = !empty($eddSettings['enable_taxes']);
 
         if (!$taxesEnabled) {
-            \WP_CLI::line('EDD Taxes are not enabled. Skipping tax rate migration.');
-            return [];
+            return [
+                'success'   => true,
+                'skipped'   => true,
+                'message'   => 'EDD Taxes are not enabled. Skipping tax rate migration.',
+                'countries' => [],
+                'mapped'    => 0,
+            ];
         }
 
         // Enable FluentCart tax settings mapped from EDD
@@ -403,10 +365,10 @@ class MigratorCli
         // Initialize default tax classes (Standard, Reduced, Zero) via FluentCart's built-in method
         $taxClassController = new \FluentCart\App\Http\Controllers\TaxClassController();
         $taxClassController->checkAndCreateInitialTaxClasses();
-        \WP_CLI::line('Default tax classes initialized.');
 
         // Collect unique countries from EDD tax rates
         $eddCountries = [];
+        $eddRates = null;
 
         global $wpdb;
         $tableExists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}edd_tax_rates'");
@@ -434,7 +396,6 @@ class MigratorCli
         if ($eddCountries) {
             $taxManager = \FluentCart\App\Services\Tax\TaxManager::getInstance();
             $taxManager->generateTaxClasses($eddCountries);
-            \WP_CLI::line('Generated default tax rates for countries: ' . implode(', ', $eddCountries));
         }
 
         // Build a mapping from EDD tax_rate IDs to FluentCart tax_rate IDs (by country+state match)
@@ -462,10 +423,15 @@ class MigratorCli
         // Store the mapping for order migration
         update_option('_edd_fct_tax_rate_maps', $rateMap);
 
-        \WP_CLI::line('Mapped ' . count($rateMap) . ' EDD tax rates to FluentCart rates.');
-        \WP_CLI::line('Admin can adjust tax rates in FluentCart settings after migration.');
+        $pricesIncludeTax = Arr::get($eddSettings, 'prices_include_tax', 'no') === 'yes';
 
-        return $rateMap;
+        return [
+            'success'            => true,
+            'skipped'            => false,
+            'countries'          => array_values($eddCountries),
+            'mapped'             => count($rateMap),
+            'prices_include_tax' => $pricesIncludeTax,
+        ];
     }
 
     private function syncTaxSettings($eddSettings)
@@ -493,10 +459,6 @@ class MigratorCli
         }
 
         update_option('fluent_cart_tax_configuration_settings', $fctTaxSettings, true);
-
-        \WP_CLI::line('FluentCart tax settings enabled:');
-        \WP_CLI::line('  - Prices include tax: ' . ($pricesIncludeTax ? 'yes' : 'no'));
-        \WP_CLI::line('  - Calculation basis: ' . $fctTaxSettings['tax_calculation_basis']);
     }
 
     public function replaceVendorIpAddresses($countLimit = 30)
@@ -1003,7 +965,9 @@ class MigratorCli
 
     private function print($text)
     {
-        \WP_CLI::line($text);
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::line($text);
+        }
     }
 
 

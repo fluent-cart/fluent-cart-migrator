@@ -24,6 +24,18 @@ class FluentCartMigrator
             \WP_CLI::add_command('fluent_cart_migrator', '\FluentCartMigrator\Classes\Commands');
         }
 
+        // Admin page (only in admin context)
+        if (is_admin()) {
+            require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Admin/AdminMenu.php';
+            (new \FluentCartMigrator\Classes\Admin\AdminMenu())->register();
+        }
+
+        // REST API — registered unconditionally because REST requests
+        // from the admin Vue app hit /wp-json/ where is_admin() is false
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Admin/RestApi.php';
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/MigratorService.php';
+        (new \FluentCartMigrator\Classes\Admin\RestApi())->register();
+
         $this->handleEddLegacyLicenses();
     }
 

@@ -1,0 +1,16 @@
+{
+  "name": "fluent-cart-migrator",
+  "private": true,
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "vite": "^6.0.0",
+    "vue": "^3.4.0"
+  },
+  "dependencies": {
+    "vue": "^3.4.0"
+  }
+}

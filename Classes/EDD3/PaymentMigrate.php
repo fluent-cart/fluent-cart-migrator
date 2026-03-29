@@ -403,7 +403,7 @@ class PaymentMigrate
             $licenseId = fluentCart('db')->table('fct_licenses')
                 ->insertGetId($licenseData);
 
-            if ($checkExist) {
+            if ($checkExist && defined('WP_CLI') && WP_CLI) {
                 \WP_CLI::line('License ID: ' . $licenseId . ' created for Order ID: ' . $createdOrderId . ' => ' . $licenseData['license_key']);
             }
 
@@ -731,7 +731,7 @@ class PaymentMigrate
             'item_name'              => Arr::get($fctProductDetails, 'full_title'),
             'quantity'               => 1,
             'variation_id'           => Arr::get($fctProductDetails, 'variation_id', NULL),
-            'billing_interval'       => $this->getPeriodSlug($eddSubscription->period),
+            'billing_interval'       => MigratorHelper::getPeriodSlug($eddSubscription->period),
             'signup_fee'             => max(0, MigratorHelper::toCents($eddSubscription->initial_amount, $this->eddCurrency) - $recurringAmountCents),
             'initial_tax_total'      => $initialTaxTotal,
             'recurring_amount'       => $recurringAmountCents,
@@ -1477,47 +1477,6 @@ class PaymentMigrate
         return $date;
     }
 
-    private function getPeriodSlug($slug)
-    {
-        $maps = [
-            'day'       => 'daily',
-            'week'      => 'weekly',
-            'month'     => 'monthly',
-            'quarter'   => 'quarterly',
-            'semi-year' => 'half-yearly',
-            'year'      => 'yearly'
-        ];
-
-        if (isset($maps[$slug])) {
-            return $maps[$slug];
-        }
-
-        return $slug;
-    }
-
-    private function getSiteID($siteName)
-    {
-        $site = fluentCart('db')
-            ->table('fct_license_sites')
-            ->where('site_url', $siteName)
-            ->first();
-
-        if ($site) {
-            return $site->id;
-        }
-
-        $siteId = fluentCart('db')
-            ->table('fct_license_sites')
-            ->insertGetId([
-                'site_url'   => $siteName,
-                'other'      => \json_encode([]),
-                'created_at' => $this->getPaymentDate('post_date'),
-                'updated_at' => $this->getPaymentDate('post_date')
-            ]);
-
-        return $siteId;
-    }
-
     protected function guessRefundDate()
     {
         if (!$this->activities) {
@@ -1603,7 +1562,7 @@ class PaymentMigrate
                     'item_name'              => Arr::get($fctProductDetails, 'full_title'),
                     'quantity'               => 1,
                     'variation_id'           => Arr::get($fctProductDetails, 'variation_id', NULL),
-                    'billing_interval'       => $this->getPeriodSlug($period),
+                    'billing_interval'       => MigratorHelper::getPeriodSlug($period),
                     'signup_fee'             => 0,
                     'initial_tax_total'      => 0,
                     'recurring_amount'       => $itemPrice,

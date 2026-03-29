@@ -4,60 +4,63 @@ namespace FluentCartMigrator\Classes;
 
 use FluentCart\Api\StoreSettings;
 use FluentCart\App\App;
-use FluentCart\App\Models\AppliedCoupon;
 use FluentCart\App\Models\Customer;
-use FluentCart\App\Models\Order;
-use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
 use FluentCart\Database\DBMigrator;
 use FluentCart\Framework\Support\Arr;
-use FluentCartMigrator\Classes\EDD3\MigratorCli;
-use FluentCartMigrator\Classes\EDD3\MigratorHelper;
+use FluentCartMigrator\Classes\MigratorService;
 
 class Commands
 {
+
+    private function getMigratorService()
+    {
+        return new MigratorService();
+    }
 
     public function migrate_from_edd($args, $assoc_args = [])
     {
         $taxSettings = get_option('edd_settings', []);
 
-        // load edd files
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorCli.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorHelper.php';
-        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/PaymentMigrate.php';
-
-        $canMigrate = MigratorHelper::canMigrate();
+        $canMigrate = $this->getMigratorService()->canMigrate();
 
         if (is_wp_error($canMigrate)) {
             \WP_CLI::error($canMigrate->get_error_message());
             return;
         }
 
-        $eddCli = new \FluentCartMigrator\Classes\EDD3\MigratorCli();
-
-        // $eddCli->migratePayments(); die();
-
+        // CLI-specific diagnostic flags
         if (Arr::get($assoc_args, 'stats')) {
-            $eddCli->stats($assoc_args);
+            $stats = $this->getMigratorService()->getEddStats();
+            \WP_CLI::line('Products: ' . $stats['products_count']);
+            \WP_CLI::line('Total Orders: ' . $stats['orders_count']);
+            \WP_CLI::line('Total Transactions: ' . $stats['transactions_count']);
+            \WP_CLI::line('Customers: ' . $stats['customers_count']);
+            \WP_CLI::line('Subscriptions: ' . $stats['subscriptions_count']);
+            \WP_CLI::line('Licenses: ' . $stats['licenses_count']);
+            \WP_CLI::line('Gateways: ' . implode(', ', $stats['gateways']));
+            \WP_CLI::line('Order Statuses: ' . implode(', ', $stats['statuses']));
             return;
         }
 
         if (Arr::get($assoc_args, 'verify_license')) {
-            $eddCli->verifyLicenses();
+            $result = $this->getMigratorService()->verifyLicenses(function ($type, $message) {
+                \WP_CLI::line($message);
+            });
+            \WP_CLI::line('Verified ' . $result['total_checked'] . ' licenses, ' . $result['issues_count'] . ' issues found.');
             return;
         }
 
         if (Arr::get($assoc_args, 'log')) {
-            $log = get_option('_fluent_edd_failed_payment_logs', []);
-            print_r($log);
+            $result = $this->getMigratorService()->getLogs();
+            print_r($result['logs']);
             return;
         }
 
         if (Arr::get($assoc_args, 'reset')) {
             \WP_CLI::confirm('Are you sure you want to reset the migration?');
 
-            $this->migrate_fresh($args, $assoc_args, false);
-            delete_option('__fluent_cart_edd3_migration_steps');
+            $this->getMigratorService()->wipeMigratedData();
             \WP_CLI::line('All data has been reset.');
             return;
         }
@@ -86,6 +89,7 @@ class Commands
         }
 
         $startingAt = time();
+        $service = $this->getMigratorService();
 
         \WP_CLI::line('Starting EDD3 Migration at: ' . date('Y-m-d H:i:s'));
 
@@ -94,17 +98,9 @@ class Commands
         if (Arr::get($assoc_args, 'products')) {
             if ($migrationSteps['products'] !== 'yes') {
                 \WP_CLI::line('Starting Migrating products');
-                $migratedProducts = $eddCli->migrate_products(true);
-                if ($migratedProducts) {
-                    $migrationSteps['products'] = 'yes';
-                    update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
-                }
-
-                $validMigrations = array_filter($migratedProducts, function ($value) {
-                    return !is_wp_error($value);
-                });
-
-                \WP_CLI::line('Migrated ' . count($validMigrations) . ' Products of ' . count($migratedProducts));
+                $result = $service->migrateProducts();
+                $migrationSteps = $result['migration_state'];
+                \WP_CLI::line('Migrated ' . $result['migrated'] . ' Products of ' . $result['total']);
                 \WP_CLI::line('---------------------------------------');
             } else {
                 \WP_CLI::line('Products Migration already done. Skipping...');
@@ -114,11 +110,14 @@ class Commands
         if (Arr::get($assoc_args, 'tax_rates')) {
             if (Arr::get($migrationSteps, 'tax_rates') !== 'yes') {
                 \WP_CLI::line('Starting Tax Rates Migration');
-                $taxRates = $eddCli->migrateTaxRates();
-                if ($taxRates) {
-                    $migrationSteps['tax_rates'] = 'yes';
-                    update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
-                    \WP_CLI::line('Migrated ' . count($taxRates) . ' Tax Rate mappings');
+                $result = $service->migrateTaxRates();
+                if (!empty($result['skipped'])) {
+                    \WP_CLI::line($result['message'] ?? 'Tax rates skipped.');
+                } else {
+                    $migrationSteps = $result['migration_state'] ?? $migrationSteps;
+                    \WP_CLI::line('Generated tax rates for countries: ' . implode(', ', $result['countries'] ?? []));
+                    \WP_CLI::line('Mapped ' . ($result['mapped'] ?? 0) . ' EDD tax rates to FluentCart rates');
+                    \WP_CLI::line('Prices include tax: ' . (!empty($result['prices_include_tax']) ? 'yes' : 'no'));
                 }
                 \WP_CLI::line('---------------------------------------');
             } else {
@@ -128,12 +127,9 @@ class Commands
 
         if (Arr::get($assoc_args, 'coupons')) {
             \WP_CLI::line('Starting Coupon Codes');
-            $coupons = $eddCli->migrateCouponCodes();
-            if ($coupons) {
-                $migrationSteps['coupons'] = 'yes';
-                update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
-            }
-            \WP_CLI::line('Migrated ' . count($coupons) . ' Coupon Codes ');
+            $result = $service->migrateCoupons();
+            $migrationSteps = $result['migration_state'] ?? $migrationSteps;
+            \WP_CLI::line('Migrated ' . $result['migrated'] . ' Coupon Codes');
             \WP_CLI::line('---------------------------------------');
         }
 
@@ -141,7 +137,6 @@ class Commands
             if (Arr::get($migrationSteps, 'payments') === 'yes') {
                 \WP_CLI::line('Orders Migration already done. Skipping...');
             } else {
-                $status = true;
                 $page = Arr::get($migrationSteps, 'last_order_page', 1);
                 if (!$page || $page < 1) {
                     $page = 1;
@@ -155,89 +150,78 @@ class Commands
                     ->count();
 
                 $perPage = 1000;
-
                 $totalOrdersCount = $totalOrdersCount - ($perPage * ($page - 1));
 
                 $progress = \WP_CLI\Utils\make_progress_bar('Migrating Payments: (' . number_format($totalOrdersCount) . ')', $totalOrdersCount);
 
-                while ($status) {
+                while (true) {
                     if ($page % 10 == 0) {
                         \WP_CLI::line('Migrating Page: ' . $page);
                     }
 
-                    $results = (new MigratorCli())->migratePayments($page, $perPage);
+                    $result = $service->migratePayments($page, $perPage);
 
-                    $migrationSteps['last_order_page'] = $page;
-                    update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
-
-                    if (!$results) {
-                        $status = false;
-                        break;
-                    }
-
-                    foreach ($results as $result) {
+                    for ($i = 0; $i < $result['processed']; $i++) {
                         $progress->tick();
                     }
 
-                    MigratorHelper::resetCaches();
+                    if (!$result['has_more']) {
+                        break;
+                    }
+
                     $page++;
                 }
 
                 $progress->finish();
-                $migrationSteps['payments'] = 'yes';
-                update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
-                $eddCli->replaceVendorIpAddresses();
                 \WP_CLI::line('All Payments Migration has been completed');
             }
         }
 
         if (Arr::get($assoc_args, 'recount')) {
-            // Recount stats now
-            $this->fix_reactivations();
-            $this->fix_subs_uuid();
-            $this->recountCoupons();
-            $this->recountCustomersStat();
-            $this->recountSubscriptions();
+            $this->runRecount($service);
         }
 
         \WP_CLI::line('Completed Migration at: ' . date('Y-m-d H:i:s'));
 
-        $endTime = time();
-        $duration = $endTime - $startingAt;
-        $durationFormatted = gmdate("H:i:s", $duration);
+        $durationFormatted = gmdate("H:i:s", time() - $startingAt);
         \WP_CLI::line('Total Duration: ' . $durationFormatted);
     }
 
-    public function fix_reactivations()
+    private function runRecount(MigratorService $service)
     {
-        $orphans = OrderTransaction::where('order_type', 'renewal')
-            ->whereDoesntHave('subscription')
-            ->get();
+        // Fix reactivations
+        $result = $service->fixReactivations(function ($type, $message) {
+            \WP_CLI::line($message);
+        });
+        \WP_CLI::line('Fixed ' . $result['fixed'] . ' reactivations of ' . $result['total'] . ' orphans');
 
-        foreach ($orphans as $orphan) {
-            $order = $orphan->order;
-            $parentOrderId = $order->parent_id;
-            if (!$parentOrderId) {
-                \WP_CLI::line('No Parent Order for Order ID: ' . $order->id);
-                continue;
-            }
-
-            $rightSubscription = Subscription::where('parent_order_id', $parentOrderId)
-                ->orderBy('id', 'DESC')
-                ->first();
-
-            if (!$rightSubscription) {
-                \WP_CLI::line('No Subscription Found for Parent Order ID: ' . $parentOrderId . ' - Order ID: ' . $order->id);
-                continue;
-            }
-
-            $orphan->subscription_id = $rightSubscription->id;
-            $orphan->save();
-
-            $rightSubscription->reSyncFromRemote();
+        // Fix subscription UUIDs
+        $result = $service->fixSubsUuid();
+        if ($result['fixed'] > 0) {
+            \WP_CLI::line('Fixed UUID for ' . $result['fixed'] . ' subscriptions');
+        } else {
+            \WP_CLI::line('No subscriptions found to fix UUID');
         }
 
-        \WP_CLI::line('Done');
+        // Recount coupons
+        $result = $service->recountCoupons();
+        \WP_CLI::line('Recounted ' . $result['recounted'] . ' Coupons');
+
+        // Recount customers with progress bar
+        $totalCustomers = Customer::count();
+        $progress = \WP_CLI\Utils\make_progress_bar('Recounting Customer stats: (' . number_format($totalCustomers) . ')', $totalCustomers);
+        $service->recountCustomers(function () use ($progress) {
+            $progress->tick();
+        });
+        $progress->finish();
+
+        // Recount subscriptions with progress bar
+        $totalSubs = Subscription::count();
+        $progress = \WP_CLI\Utils\make_progress_bar('Recounting Subscriptions Bills count: (' . number_format($totalSubs) . ')', $totalSubs);
+        $service->recountSubscriptions(function () use ($progress) {
+            $progress->tick();
+        });
+        $progress->finish();
     }
 
     public function reset($args, $assoc_args)
@@ -249,8 +233,8 @@ class Commands
 
         \WP_CLI::confirm('Are you sure you want to reset the migration?');
 
-        $this->migrate_fresh($args, $assoc_args, false);
-        delete_option('__fluent_cart_edd3_migration_steps');
+        $this->getMigratorService()->wipeMigratedData();
+        \WP_CLI::line('All data has been reset.');
     }
 
     public function edd_cleanup($args, $assoc_args = [])
@@ -439,183 +423,6 @@ class Commands
 
     }
 
-    private function recountCoupons()
-    {
-        $appliedCoupons = AppliedCoupon::whereHas('order', function ($query) {
-            $query->whereIn('payment_status', ['paid', 'partially_refunded', 'require_capture']);
-        })
-            ->selectRaw('coupon_id, code, COUNT(*) as count')
-            ->groupBy('coupon_id')
-            ->whereNotNull('coupon_id')
-            ->get();
-
-        foreach ($appliedCoupons as $appliedCoupon) {
-            fluentCart('db')->table('fct_coupons')->where('id', $appliedCoupon->coupon_id)
-                ->update(['use_count' => $appliedCoupon->count]);
-        }
-
-        \WP_CLI::line('Recounted ' . $appliedCoupons->count() . ' Coupons');
-    }
-
-    private function recountCustomersStat()
-    {
-        $completed = false;
-        $page = 1;
-        $perPage = 100;
-        $totalCustomers = Customer::count();
-
-        $progress = \WP_CLI\Utils\make_progress_bar('Recounting Customer stats: (' . number_format($totalCustomers) . ')', $totalCustomers);
-        while (!$completed) {
-            $customers = Customer::orderBy('id', 'ASC')
-                ->limit($perPage)
-                ->offset(($page - 1) * $perPage)
-                ->get();
-
-            if ($customers->isEmpty()) {
-                $completed = true;
-                break;
-            }
-
-            foreach ($customers as $customer) {
-                $orders = \FluentCart\App\Models\Order::query()->where('customer_id', $customer->id)
-                    ->with('transactions')
-                    ->get();
-
-                $totalPayments = [];
-                $ltv = 0;
-
-                foreach ($orders as $order) {
-                    $netPaid = $order->total_paid - $order->total_refund;
-                    if ($netPaid <= 0) {
-                        continue;
-                    }
-
-                    $ltv += $netPaid;
-
-
-                    foreach ($order->transactions as $transaction) {
-                        if ($transaction->status == 'succeeded') {
-                            if (empty($totalPayments[$order['currency']])) {
-                                $totalPayments[$order['currency']] = $transaction['total'];
-                            } else {
-                                $totalPayments[$order['currency']] += $transaction['total'];
-                            }
-                        }
-                    }
-
-                    $totalPayments = array_map(function ($value) {
-                        return (int)$value;
-                    }, $totalPayments);
-                }
-
-                $purchaseCount = $orders->count();
-                $updateData = [
-                    'user_id'             => $customer->getWpUserId(true),
-                    'purchase_value'      => $totalPayments,
-                    'ltv'                 => $ltv,
-                    'aov'                 => $purchaseCount > 0 ? (int)($ltv / $purchaseCount) : 0,
-                    'purchase_count'      => $purchaseCount,
-                    'first_purchase_date' => $orders->min('created_at') . '',
-                    'last_purchase_date'  => $orders->max('created_at') . '',
-                ];
-
-                App::db()->table('fct_customers')->where('id', $customer->id)->update($updateData);
-                $progress->tick();
-            }
-
-            $page++;
-        }
-
-        $progress->finish();
-    }
-
-    private function recountSubscriptions()
-    {
-        $completed = false;
-        $page = 1;
-        $perPage = 100;
-        $total = Subscription::count();
-
-        $progress = \WP_CLI\Utils\make_progress_bar('Recounting Subscriptions Bills count: (' . number_format($total) . ')', $total);
-        while (!$completed) {
-            $subscriptions = Subscription::orderBy('id', 'ASC')
-                ->limit($perPage)
-                ->offset(($page - 1) * $perPage)
-                ->get();
-
-            if ($subscriptions->isEmpty()) {
-                $completed = true;
-                break;
-            }
-
-            $keyedSubscriptions = [];
-            $parentOrderIds = [];
-
-            foreach ($subscriptions as $subscription) {
-                $progress->tick();
-                if (isset($keyedSubscriptions[$subscription->parent_order_id])) {
-                    // dd('Invalid Subscription Parent ID: '. $subscription->parent_order_id);
-                }
-
-                $keyedSubscriptions[$subscription->parent_order_id] = $subscription;
-                $parentOrderIds[] = $subscription->parent_order_id;
-            }
-
-            $renewals = \FluentCart\App\Models\Order::query()
-                ->where(function ($query) use ($parentOrderIds) {
-                    $query->whereIn('id', $parentOrderIds)
-                        ->orWhereIn('parent_id', $parentOrderIds);
-                })
-                ->whereIn('payment_status', ['paid', 'partially_refunded'])
-                ->get();
-
-            $counts = [];
-
-            foreach ($renewals as $renewal) {
-                if ($renewal->parent_id) {
-                    if (!isset($counts[$renewal->parent_id])) {
-                        $counts[$renewal->parent_id] = 0;
-                    }
-                    $counts[$renewal->parent_id]++;
-                } else {
-                    if (!isset($counts[$renewal->id])) {
-                        $counts[$renewal->id] = 0;
-                    }
-                    $counts[$renewal->id]++;
-                }
-            }
-
-            foreach ($counts as $orderId => $count) {
-                if (!isset($keyedSubscriptions[$orderId])) {
-                    \WP_CLI::line('Invalid Subscription. orderID: ' . $orderId);
-                    continue;
-                }
-
-                $hasChanges = false;
-
-                $subscription = $keyedSubscriptions[$orderId];
-                if ($subscription->bill_count != $count) {
-                    $hasChanges = true;
-                    $subscription->bill_count = $count;
-                }
-
-                if ($subscription->bill_times > 0 && $subscription->bill_count >= $subscription->bill_times) {
-                    $subscription->status = 'completed';
-                    $hasChanges = true;
-                }
-
-                if ($hasChanges) {
-                    unset($subscription->preventsLazyLoading);
-                    $subscription->save();
-                }
-            }
-
-            $page++;
-        }
-
-        $progress->finish();
-    }
-
     public function migrate_fresh($args, $assoc_args, $checkDev = true)
     {
         delete_option('fluent_cart_plugin_once_activated');
@@ -650,8 +457,7 @@ class Commands
         // Delete the post metas
         $postmetas = ['_edd_migrated_from', '_fcart_migrated_id', '__edd_migrated_variation_maps'];
         foreach ($postmetas as $postMeta) {
-            // delete from wp_postmeta table where meta_key = $postMeta
-            $wpdb->query("DELETE FROM {$wpdb->prefix}postmeta WHERE meta_key = '$postMeta'");
+            $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}postmeta WHERE meta_key = %s", $postMeta));
         }
 
         if (class_exists('WP_CLI')) {
