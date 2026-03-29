@@ -108,6 +108,8 @@ class MigratorService
 
     public function migrateProducts()
     {
+        $this->maybeMigrateStoreSettings();
+
         $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
         if (is_array($migrationSteps) && ($migrationSteps['products'] ?? '') === 'yes') {
             return [
@@ -683,5 +685,54 @@ class MigratorService
         }
 
         return $this->wipeMigratedData();
+    }
+
+    private function maybeMigrateStoreSettings()
+    {
+        $eddSettings = get_option('edd_settings', []);
+        if (empty($eddSettings)) {
+            return;
+        }
+
+        $storeSettings = new StoreSettings();
+        $existingSettings = get_option('fluent_cart_store_settings', []);
+
+        $settingsMap = [
+            'entity_name'          => 'store_name',
+            'business_address'     => 'store_address1',
+            'business_address_2'   => 'store_address2',
+            'business_city'        => 'store_city',
+            'base_state'           => 'store_state',
+            'base_country'         => 'store_country',
+            'business_postal_code' => 'store_postcode',
+            'currency'             => 'currency',
+        ];
+
+        $toUpdate = [];
+
+        foreach ($settingsMap as $eddKey => $fctKey) {
+            $eddValue = $eddSettings[$eddKey] ?? '';
+            $existingValue = $existingSettings[$fctKey] ?? '';
+
+            if (!empty($eddValue) && empty($existingValue)) {
+                $toUpdate[$fctKey] = $eddValue;
+            }
+        }
+
+        $eddCurrencyPosition = $eddSettings['currency_position'] ?? '';
+        $existingCurrencyPosition = $existingSettings['currency_position'] ?? '';
+        if (!empty($eddCurrencyPosition) && empty($existingCurrencyPosition)) {
+            $toUpdate['currency_position'] = $eddCurrencyPosition;
+        }
+
+        $eddDecimalSep = $eddSettings['decimal_separator'] ?? '';
+        $existingDecimalSep = $existingSettings['decimal_separator'] ?? '';
+        if (!empty($eddDecimalSep) && empty($existingDecimalSep)) {
+            $toUpdate['decimal_separator'] = $eddDecimalSep === ',' ? 'comma' : 'dot';
+        }
+
+        if (!empty($toUpdate)) {
+            $storeSettings->save($toUpdate);
+        }
     }
 }
