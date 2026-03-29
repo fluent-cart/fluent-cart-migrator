@@ -2,6 +2,7 @@
 
 namespace FluentCartMigrator\Classes;
 
+use FluentCart\Api\StoreSettings;
 use FluentCart\App\App;
 use FluentCart\App\Models\AppliedCoupon;
 use FluentCart\App\Models\Customer;
@@ -356,7 +357,7 @@ class MigratorService
                     $ltv += $netPaid;
 
                     foreach ($order->transactions as $transaction) {
-                        if ($transaction->status == 'paid') {
+                        if ($transaction->status == 'succeeded') {
                             if (empty($totalPayments[$order['currency']])) {
                                 $totalPayments[$order['currency']] = $transaction['total'];
                             } else {
@@ -368,11 +369,13 @@ class MigratorService
                     $totalPayments = array_map('intval', $totalPayments);
                 }
 
+                $purchaseCount = $orders->count();
                 App::db()->table('fct_customers')->where('id', $customer->id)->update([
                     'user_id'             => $customer->getWpUserId(true),
                     'purchase_value'      => $totalPayments,
                     'ltv'                 => $ltv,
-                    'purchase_count'      => $orders->count(),
+                    'aov'                 => $purchaseCount > 0 ? (int)($ltv / $purchaseCount) : 0,
+                    'purchase_count'      => $purchaseCount,
                     'first_purchase_date' => $orders->min('created_at') . '',
                     'last_purchase_date'  => $orders->max('created_at') . '',
                 ]);
