@@ -291,7 +291,7 @@ class MigratorCli
                     'max_per_customer'    => $coupon->once_per_customer ? 1 : 0,
                     'max_discount_amount' => 0,
                     'max_purchase_amount' => 0,
-                    'min_purchase_amount' => 0,
+                    'min_purchase_amount' => MigratorHelper::toCents(floatval($coupon->min_charge_amount ?? 0)),
                     'included_products'   => $includedProducts,
                     'excluded_products'   => $excludedProducts,
                     'included_categories' => [],
