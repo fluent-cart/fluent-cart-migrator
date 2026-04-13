@@ -66,6 +66,12 @@ class MigratorHelper
 
     public static function setCachedSubscriptions($paymentIds)
     {
+        global $wpdb;
+        $table = $wpdb->prefix . 'edd_subscriptions';
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+            return;
+        }
+
         $eddSubscriptions = fluentCart('db')->table('edd_subscriptions')
             ->whereIn('parent_payment_id', $paymentIds)
             ->get();
