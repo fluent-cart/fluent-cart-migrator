@@ -86,6 +86,12 @@ class RestApi
             'callback'            => [$this, 'resetMigration'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
+
+        register_rest_route($this->namespace, '/migration-summary', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'getMigrationSummary'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
     }
 
     public function checkPermission()
@@ -152,11 +158,18 @@ class RestApi
 
     public function migratePayments(\WP_REST_Request $request)
     {
-        $page    = (int) $request->get_param('page') ?: 1;
-        $perPage = (int) $request->get_param('per_page') ?: 100;
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        $page = 1;
+        if (is_array($migrationSteps) && !empty($migrationSteps['last_order_page'])) {
+            $page = (int) $migrationSteps['last_order_page'];
+            // If resuming, start from the next page
+            if ($page > 1 && ($migrationSteps['payments'] ?? '') !== 'yes') {
+                $page++;
+            }
+        }
 
         $service = new MigratorService();
-        $result = $service->migratePayments($page, $perPage);
+        $result  = $service->migratePayments($page, 100, 25);
         return rest_ensure_response($result);
     }
 
@@ -191,5 +204,13 @@ class RestApi
         $service = new MigratorService();
         $result = $service->resetMigration();
         return rest_ensure_response($result);
+    }
+
+    public function getMigrationSummary()
+    {
+        $service = new MigratorService();
+        $summary = $service->getMigrationSummary();
+
+        return rest_ensure_response(['summary' => $summary]);
     }
 }

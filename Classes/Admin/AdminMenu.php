@@ -74,11 +74,13 @@ class AdminMenu
         );
 
         wp_localize_script('fct-migrator-app', 'fctMigrator', [
-            'restUrl'   => rest_url('fct-migrator/v1/'),
-            'nonce'     => wp_create_nonce('wp_rest'),
-            'migration' => get_option('__fluent_cart_edd3_migration_steps', false),
-            'adminUrl'  => admin_url(),
-            'devMode'   => defined('FLUENT_CART_DEV_MODE') && FLUENT_CART_DEV_MODE,
+            'restUrl'          => rest_url('fct-migrator/v1/'),
+            'nonce'            => wp_create_nonce('wp_rest'),
+            'migration'        => get_option('__fluent_cart_edd3_migration_steps', false),
+            'migrationSummary' => get_option('__fluent_cart_migration_summary', null),
+            'adminUrl'         => admin_url(),
+            'pluginUrl'        => FLUENTCART_MIGRATOR_URL,
+            'devMode'          => defined('FLUENT_CART_DEV_MODE') && FLUENT_CART_DEV_MODE,
         ]);
     }
 }

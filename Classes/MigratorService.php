@@ -49,6 +49,12 @@ class MigratorService
                 'detected'    => false,
                 'coming_soon' => true,
             ],
+            [
+                'key'         => 'surecart',
+                'name'        => 'SureCart',
+                'detected'    => false,
+                'coming_soon' => true,
+            ],
         ];
 
         return ['sources' => $sources];
@@ -228,7 +234,17 @@ class MigratorService
         ];
     }
 
-    public function migratePayments($page = 1, $perPage = 100)
+    /**
+     * Migrate payments/orders.
+     *
+     * In "timed" mode (default for REST/UI), processes pages in a loop for up to
+     * $maxSeconds, then returns so the client can resume. This removes the need
+     * for a user-facing batch-size setting.
+     *
+     * CLI callers pass a high $maxSeconds (or 0 to disable) and a large $perPage
+     * since they don't have HTTP timeout concerns.
+     */
+    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25)
     {
         $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
         if (is_array($migrationSteps) && ($migrationSteps['payments'] ?? '') === 'yes') {
@@ -246,25 +262,51 @@ class MigratorService
 
         $this->loadEddClasses();
 
-        MigratorHelper::resetCaches();
-        $eddCli  = new MigratorCli();
-        $results = $eddCli->migratePayments($page, $perPage);
+        $startedAt      = time();
+        $totalProcessed = 0;
+        $hasMore        = true;
 
-        $hasMore   = $results !== null && !$results->isEmpty();
-        $processed = $results ? $results->count() : 0;
+        while ($hasMore) {
+            MigratorHelper::resetCaches();
+            $eddCli  = new MigratorCli();
+            $results = $eddCli->migratePayments($page, $perPage);
 
+            $batchCount = $results ? $results->count() : 0;
+            $hasMore    = $results !== null && !$results->isEmpty();
+            $totalProcessed += $batchCount;
+
+            $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+            if (!is_array($migrationSteps)) {
+                $migrationSteps = [];
+            }
+            $migrationSteps['last_order_page'] = $page;
+            update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
+
+            if (!$hasMore) {
+                break;
+            }
+
+            $page++;
+
+            // Time-box: return to the client if we've been running long enough
+            if ($maxSeconds > 0 && (time() - $startedAt) >= $maxSeconds) {
+                break;
+            }
+        }
+
+        // Finalize when no more rows
         $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
         if (!is_array($migrationSteps)) {
             $migrationSteps = [];
         }
-        $migrationSteps['last_order_page'] = $page;
 
         if (!$hasMore) {
             $migrationSteps['payments'] = 'yes';
+            $eddCli = $eddCli ?? new MigratorCli();
             $eddCli->replaceVendorIpAddresses();
+            update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
+            $this->buildAndSaveSummary();
         }
-
-        update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
 
         $failedLogs    = get_option('_fluent_edd_failed_payment_logs', []);
         $errorsInBatch = is_array($failedLogs) ? count($failedLogs) : 0;
@@ -273,7 +315,7 @@ class MigratorService
             'success'          => true,
             'step'             => 'payments',
             'page'             => $page,
-            'processed'        => $processed,
+            'processed'        => $totalProcessed,
             'has_more'         => $hasMore,
             'errors_in_batch'  => $errorsInBatch,
             'migration_state'  => $migrationSteps,
@@ -282,20 +324,37 @@ class MigratorService
 
     public function recountStats($substep)
     {
+        $result = null;
+
         switch ($substep) {
             case 'fix_reactivations':
-                return $this->fixReactivations();
+                $result = $this->fixReactivations();
+                break;
             case 'fix_subs_uuid':
-                return $this->fixSubsUuid();
+                $result = $this->fixSubsUuid();
+                break;
             case 'coupons':
-                return $this->recountCoupons();
+                $result = $this->recountCoupons();
+                break;
             case 'customers':
-                return $this->recountCustomers();
+                $result = $this->recountCustomers();
+                break;
             case 'subscriptions':
-                return $this->recountSubscriptions();
+                $result = $this->recountSubscriptions();
+                // Mark recount as done and refresh summary after final substep
+                $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+                if (!is_array($migrationSteps)) {
+                    $migrationSteps = [];
+                }
+                $migrationSteps['recount'] = 'yes';
+                update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
+                $this->buildAndSaveSummary();
+                break;
             default:
                 return ['success' => false, 'message' => 'Unknown substep'];
         }
+
+        return $result;
     }
 
     public function recountCoupons()
@@ -644,12 +703,66 @@ class MigratorService
         ];
     }
 
+    public function buildAndSaveSummary()
+    {
+        $this->loadEddClasses();
+
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        if (!is_array($migrationSteps)) {
+            $migrationSteps = [];
+        }
+
+        $failedLogs = get_option('_fluent_edd_failed_payment_logs', []);
+
+        $summary = [
+            'source'       => 'edd',
+            'completed_at' => current_time('mysql'),
+            'has_licenses' => false,
+            'steps'        => [
+                'products'  => ['done' => ($migrationSteps['products'] ?? '') === 'yes'],
+                'tax_rates' => ['done' => ($migrationSteps['tax_rates'] ?? '') === 'yes'],
+                'coupons'   => ['done' => ($migrationSteps['coupons'] ?? '') === 'yes'],
+                'payments'  => [
+                    'done'   => ($migrationSteps['payments'] ?? '') === 'yes',
+                    'errors' => is_array($failedLogs) ? count($failedLogs) : 0,
+                ],
+                'recount'   => ['done' => ($migrationSteps['recount'] ?? '') === 'yes'],
+            ],
+            'stats'        => [],
+        ];
+
+        // Gather counts from the EDD source tables
+        try {
+            $stats = $this->getEddStats();
+            $summary['stats'] = [
+                'products'      => $stats['products_count'] ?? 0,
+                'orders'        => $stats['orders_count'] ?? 0,
+                'customers'     => $stats['customers_count'] ?? 0,
+                'subscriptions' => $stats['subscriptions_count'] ?? 0,
+                'licenses'      => $stats['licenses_count'] ?? 0,
+            ];
+            $summary['has_licenses'] = !empty($stats['has_licenses']) && ($stats['licenses_count'] ?? 0) > 0;
+        } catch (\Exception $e) {
+            // Stats may not be available if EDD tables were removed
+        }
+
+        update_option('__fluent_cart_migration_summary', $summary, false);
+
+        return $summary;
+    }
+
+    public function getMigrationSummary()
+    {
+        return get_option('__fluent_cart_migration_summary', null);
+    }
+
     public function wipeMigratedData()
     {
         global $wpdb;
 
         delete_option('__fluent_cart_edd3_migration_steps');
         delete_option('_fluent_edd_failed_payment_logs');
+        delete_option('__fluent_cart_migration_summary');
         delete_option('fluent_cart_plugin_once_activated');
 
         $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=0;");

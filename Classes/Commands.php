@@ -159,7 +159,8 @@ class Commands
                         \WP_CLI::line('Migrating Page: ' . $page);
                     }
 
-                    $result = $service->migratePayments($page, $perPage);
+                    // CLI uses no time limit (maxSeconds=0) and large batch size
+                    $result = $service->migratePayments($page, $perPage, 0);
 
                     for ($i = 0; $i < $result['processed']; $i++) {
                         $progress->tick();
@@ -185,6 +186,10 @@ class Commands
 
         $durationFormatted = gmdate("H:i:s", time() - $startingAt);
         \WP_CLI::line('Total Duration: ' . $durationFormatted);
+
+        // Save/update migration summary
+        $service->buildAndSaveSummary();
+        \WP_CLI::line('Migration summary saved.');
     }
 
     private function runRecount(MigratorService $service)
@@ -222,6 +227,14 @@ class Commands
             $progress->tick();
         });
         $progress->finish();
+
+        // Mark recount step as completed
+        $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+        if (!is_array($migrationSteps)) {
+            $migrationSteps = [];
+        }
+        $migrationSteps['recount'] = 'yes';
+        update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
     }
 
     public function reset($args, $assoc_args)
@@ -426,6 +439,7 @@ class Commands
     public function migrate_fresh($args, $assoc_args, $checkDev = true)
     {
         delete_option('fluent_cart_plugin_once_activated');
+        delete_option('__fluent_cart_migration_summary');
         if ($checkDev && App::config()->get('using_faker') === false) {
             if (class_exists('WP_CLI')) {
                 echo \WP_CLI::colorize('%yYou Are Not In Dev Mode');
