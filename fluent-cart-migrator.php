@@ -13,8 +13,7 @@ Text Domain: fluent-cart-migrator
 
 define('FLUENTCART_MIGRATOR_VERSION', '1.0.0');
 define('FLUENTCART_MIGRATOR_PLUGIN_PATH', plugin_dir_path(__FILE__));
-define('FLUENTCART_MIGRATOR_URL', plugin_dir_url(__FILE__));
-define('FLUENT_CART_DEV_MODE', true); // Enable development mode for detailed logging
+define('FLUENTCART_MIGRATOR_URL', plugin_dir_url(__FILE__));// Enable development mode for detailed logging
 
 class FluentCartMigrator
 {
