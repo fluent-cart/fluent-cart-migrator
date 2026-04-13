@@ -123,7 +123,7 @@
                 <!-- Resume banner -->
                 <div v-if="migrationStatus?.migration" class="fct-notice fct-notice--info">
                     <p><strong>Previous migration detected.</strong> Some steps may already be completed.</p>
-                    <button v-if="isDevMode" @click="resetMigration" class="button button-link-delete" style="margin-top:4px;">Reset Migration Progress</button>
+                    <button v-if="isDevMode" @click="resetMigration" class="button button-link-delete fct-dev-reset">Reset Migration Progress</button>
                 </div>
 
                 <div v-if="stats" class="fct-stats-grid">
@@ -220,6 +220,11 @@
         <div v-if="currentStep === 'running'" class="fct-step">
             <h2>Migration in Progress</h2>
             <p class="fct-step-desc">Elapsed: {{ duration }}</p>
+
+            <div v-if="isDevMode" class="fct-notice fct-notice--info">
+                <p><strong>Dev mode.</strong> You can reset migration progress if needed.</p>
+                <button @click="resetMigration" class="button button-link-delete fct-dev-reset">Reset Migration Progress</button>
+            </div>
 
             <div class="fct-runner-steps">
                 <!-- Products -->
