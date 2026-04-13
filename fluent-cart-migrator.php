@@ -76,4 +76,38 @@ add_action('plugins_loaded', function () {
     }
 
     (new FluentCartMigrator())->init();
+
+    /**
+     * Plugin Updater
+     */
+    require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/PluginManager/Updater.php';
+    $apiUrl = 'https://api.fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_migrator_update&time=' . time();
+    new \FluentCartMigrator\Classes\PluginManager\Updater($apiUrl, __FILE__, array(
+        'version'   => FLUENTCART_MIGRATOR_VERSION,
+        'license'   => '',
+        'item_name' => 'FluentCart Migrator',
+        'item_id'   => '106',
+        'author'    => 'wpmanageninja'
+    ),
+        array(
+            'license_status' => 'valid',
+            'admin_page_url' => admin_url('admin.php?page=fluent-cart#/'),
+            'purchase_url'   => 'https://fluentcart.com',
+            'plugin_title'   => 'FluentCart Migrator'
+        )
+    );
+
+    add_filter('plugin_row_meta', function ($links, $pluginFile) {
+        if (plugin_basename(__FILE__) !== $pluginFile) {
+            return $links;
+        }
+
+        $checkUpdateUrl = esc_url(admin_url('plugins.php?fluent-cart-migrator-check-update=' . time()));
+
+        $row_meta = array(
+            'check_update' => '<a style="color: #583fad;font-weight: 600;" href="' . $checkUpdateUrl . '" aria-label="' . esc_attr__('Check Update', 'fluent-cart-migrator') . '">' . esc_html__('Check Update', 'fluent-cart-migrator') . '</a>',
+        );
+
+        return array_merge($links, $row_meta);
+    }, 10, 2);
 });
