@@ -787,6 +787,18 @@ class MigratorService
         ];
     }
 
+    public function clearMigrationProgress()
+    {
+        delete_option('__fluent_cart_edd3_migration_steps');
+        delete_option('_fluent_edd_failed_payment_logs');
+        delete_option('__fluent_cart_migration_summary');
+
+        return [
+            'success' => true,
+            'message' => 'Migration progress cleared. You can now re-run the migration — existing data will be skipped.',
+        ];
+    }
+
     public function resetMigration()
     {
         if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {

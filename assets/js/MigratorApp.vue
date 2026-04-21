@@ -32,6 +32,7 @@
             :plugin-url="pluginUrl"
             :is-dev-mode="isDevMode"
             @select-source="onSelectSource"
+            @rerun="onRerunRequest"
             @reset="onResetRequest"
         />
 
@@ -71,6 +72,7 @@
             :message="confirmModal.message"
             :items="confirmModal.items"
             :confirm-text="confirmModal.confirmText"
+            :destructive="confirmModal.destructive"
             @confirm="onConfirmAction"
             @cancel="confirmModal.show = false"
         />
@@ -124,6 +126,7 @@ export default {
                 message: '',
                 items: [],
                 confirmText: 'Confirm',
+                destructive: true,
                 action: null
             }
         };
@@ -269,10 +272,37 @@ export default {
             }
         },
 
+        // Rerun
+        onRerunRequest: function () {
+            this.confirmModal.title = 'Rerun Migration';
+            this.confirmModal.message = 'Migration progress will be cleared and restarted. Already-migrated products, orders, and customers will be skipped — only missing or failed items will be processed.';
+            this.confirmModal.items = [];
+            this.confirmModal.confirmText = 'Yes, Rerun Migration';
+            this.confirmModal.destructive = false;
+            this.confirmModal.action = 'rerun';
+            this.confirmModal.show = true;
+        },
+
+        doRerun: async function () {
+            this.loading = true;
+            try {
+                await apiRequest('POST', 'rerun');
+                this.migrationSummary = null;
+                this.migrationStatus = null;
+                this.selectedSource = this.sources.find(function (s) { return s.key === 'edd'; }) || null;
+                this.goToStep('compatibility');
+            } catch (e) {
+                this.error = 'Failed to clear progress: ' + e.message;
+            } finally {
+                this.loading = false;
+            }
+        },
+
         // Reset
         onResetRequest: function () {
             this.confirmModal.title = 'Reset Migration';
             this.confirmModal.message = 'This will permanently delete all migrated data from FluentCart, including:';
+            this.confirmModal.destructive = true;
             this.confirmModal.items = [
                 'Products and variations',
                 'Orders and transactions',
@@ -289,6 +319,8 @@ export default {
             this.confirmModal.show = false;
             if (this.confirmModal.action === 'reset') {
                 await this.doReset();
+            } else if (this.confirmModal.action === 'rerun') {
+                await this.doRerun();
             }
         },
 

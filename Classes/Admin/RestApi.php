@@ -81,6 +81,12 @@ class RestApi
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
+        register_rest_route($this->namespace, '/rerun', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'rerunMigration'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
         register_rest_route($this->namespace, '/reset', [
             'methods'             => 'POST',
             'callback'            => [$this, 'resetMigration'],
@@ -196,6 +202,13 @@ class RestApi
     {
         $service = new MigratorService();
         $result = $service->verifyLicenses();
+        return rest_ensure_response($result);
+    }
+
+    public function rerunMigration()
+    {
+        $service = new MigratorService();
+        $result = $service->clearMigrationProgress();
         return rest_ensure_response($result);
     }
 
