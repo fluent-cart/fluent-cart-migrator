@@ -663,7 +663,7 @@ class MigratorHelper
             'week'      => 'weekly',
             'month'     => 'monthly',
             'quarter'   => 'quarterly',
-            'semi-year' => 'half-yearly',
+            'semi-year' => 'half_yearly',
             'year'      => 'yearly'
         ];
 
