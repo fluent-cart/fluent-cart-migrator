@@ -81,20 +81,15 @@ add_action('plugins_loaded', function () {
      * Plugin Updater
      */
     require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/PluginManager/Updater.php';
-    $apiUrl = 'https://api.fluentcart.com/wp-admin/admin-ajax.php?action=fluent_cart_migrator_update&time=' . time();
-    new \FluentCartMigrator\Classes\PluginManager\Updater($apiUrl, __FILE__, array(
-        'version'   => FLUENTCART_MIGRATOR_VERSION,
-        'license'   => '',
-        'item_name' => 'FluentCart Migrator',
-        'item_id'   => '106',
-        'author'    => 'wpmanageninja'
-    ),
-        array(
-            'license_status' => 'valid',
-            'admin_page_url' => admin_url('admin.php?page=fluent-cart#/'),
-            'purchase_url'   => 'https://fluentcart.com',
-            'plugin_title'   => 'FluentCart Migrator'
-        )
+    new \FluentCartMigrator\Classes\PluginManager\Updater(
+        'https://api.fluentcart.com',
+        __FILE__,
+        [
+            'version'           => FLUENTCART_MIGRATOR_VERSION,
+            'addon_slug'        => 'fluent-cart-migrator',
+            'parent_product_id' => 21480,
+            'plugin_title'      => 'FluentCart Migrator',
+        ]
     );
 
     add_filter('plugin_row_meta', function ($links, $pluginFile) {
