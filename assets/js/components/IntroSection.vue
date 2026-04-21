@@ -13,7 +13,7 @@
             </div>
             <div class="fct-intro-hero-content">
                 <h1>FluentCart Migrator</h1>
-                <p>Seamlessly migrate your eCommerce data to FluentCart. Transfer products, orders, customers, subscriptions, licenses, and more — all in a few clicks.</p>
+                <p>Seamlessly migrate your eCommerce data to FluentCart. Transfer products, orders, customers, subscriptions, licenses, and more — all in a few clicks. <a href="https://docs.fluentcart.com/guide/migration/edd/" target="_blank" rel="noopener noreferrer">Read the documentation →</a></p>
             </div>
         </div>
 
