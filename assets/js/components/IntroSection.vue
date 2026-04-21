@@ -126,6 +126,9 @@
                 <a :href="adminUrl + 'admin.php?page=fluent-cart#/'" class="fct-btn fct-btn--success">
                     View FluentCart Dashboard
                 </a>
+                <button v-if="isDevMode" class="fct-link-danger" @click="$emit('reset')">
+                    Reset Migration
+                </button>
             </div>
         </div>
 
@@ -187,9 +190,10 @@ export default {
         migrationSummary: { type: Object, default: null },
         loading: { type: Boolean, default: false },
         adminUrl: { type: String, default: '' },
-        pluginUrl: { type: String, default: '' }
+        pluginUrl: { type: String, default: '' },
+        isDevMode: { type: Boolean, default: false }
     },
-    emits: ['select-source'],
+    emits: ['select-source', 'reset'],
     data: function () {
         return {
             showErrorLog: false,
