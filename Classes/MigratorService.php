@@ -771,13 +771,13 @@ class MigratorService
         delete_option('__fluent_cart_migration_summary');
         delete_option('fluent_cart_plugin_once_activated');
 
-        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=0;");
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=0;");
         try {
             DBMigrator::refresh();
         } catch (\Exception $e) {
             // Ignore
         }
-        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=1;");
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
 
         $wpdb->query("DELETE pm FROM {$wpdb->prefix}postmeta pm INNER JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID WHERE p.post_type = 'fluent-products'");
         $wpdb->query("DELETE FROM {$wpdb->prefix}posts WHERE post_type = 'fluent-products'");

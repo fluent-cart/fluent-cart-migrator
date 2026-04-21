@@ -115,8 +115,8 @@
                 <p v-else class="fct-error-log-empty">No error details available.</p>
             </div>
 
-            <!-- License backward-compat notice -->
-            <div v-if="migrationSummary.has_licenses" class="fct-notice fct-notice--warning">
+            <!-- Backward-compat notice -->
+            <div class="fct-notice fct-notice--warning">
                 <svg class="fct-notice-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
                     <path d="M10 2L1.5 17h17L10 2z" stroke="#D97706" stroke-width="1.5" fill="#FFFBEB"/>
                     <path d="M10 8v3m0 2.5v.5" stroke="#D97706" stroke-width="1.5" stroke-linecap="round"/>
@@ -124,7 +124,7 @@
                 <div>
                     <strong>Keep this plugin active</strong> — it provides backward compatibility for:
                     <ul style="margin: 6px 0 0; padding-left: 18px; list-style-type: disc;">
-                        <li><strong>License API</strong> — activate, deactivate, and check-license endpoints still route here</li>
+                        <li v-if="migrationSummary.has_licenses"><strong>License API</strong> — activate, deactivate, and check-license endpoints still route here</li>
                         <li><strong>PayPal IPN</strong> — renewal notifications for existing subscriptions</li>
                         <li><strong>Stripe webhooks</strong> — charge ID resolution for legacy orders</li>
                         <li><strong>Download &amp; renewal URLs</strong> — legacy EDD links won't resolve without it</li>
