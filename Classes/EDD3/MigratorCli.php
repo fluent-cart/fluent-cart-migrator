@@ -801,8 +801,24 @@ class MigratorCli
                 $attachedFileId = get_attached_file($attachmentId, true);
 
                 if ($attachmentId && is_numeric($attachmentId) && $attachedFileId) {
-                    $filePath = $attachedFileId;
-                    $fileUrl = wp_get_attachment_url($attachmentId);
+                    if (file_exists($attachedFileId)) {
+                        $uploadDir = wp_upload_dir();
+                        $destDir   = $uploadDir['basedir'] . '/fluent-cart/';
+                        if (!file_exists($destDir)) {
+                            wp_mkdir_p($destDir);
+                        }
+                        $fileName = basename($attachedFileId);
+                        $destFile = $destDir . $fileName;
+                        if (!file_exists($destFile)) {
+                            copy($attachedFileId, $destFile);
+                        }
+                        $filePath = $fileName;
+                        $fileUrl  = $fileName;
+                    } else {
+                        // File not on local disk (offloaded CDN/S3) — store as-is
+                        $filePath = $attachedFileId;
+                        $fileUrl  = wp_get_attachment_url($attachmentId);
+                    }
                 } else {
                     if (!defined('EDD_AS3_VERSION')) {
                         continue;

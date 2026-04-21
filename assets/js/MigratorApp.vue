@@ -30,7 +30,9 @@
             :loading="loading"
             :admin-url="adminUrl"
             :plugin-url="pluginUrl"
+            :is-dev-mode="isDevMode"
             @select-source="onSelectSource"
+            @reset="onResetRequest"
         />
 
         <CompatibilityCheck

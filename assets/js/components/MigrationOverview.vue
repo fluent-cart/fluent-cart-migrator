@@ -36,6 +36,10 @@
                         <span class="fct-stat-value">{{ stats.customers_count }}</span>
                         <span class="fct-stat-label">Customers</span>
                     </div>
+                    <div v-if="stats.coupons_count" class="fct-stat-card">
+                        <span class="fct-stat-value">{{ stats.coupons_count }}</span>
+                        <span class="fct-stat-label">Coupons</span>
+                    </div>
                     <div v-if="stats.has_subscriptions" class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.subscriptions_count }}</span>
                         <span class="fct-stat-label">Subscriptions</span>

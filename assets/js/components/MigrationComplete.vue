@@ -51,8 +51,8 @@
             </div>
         </div>
 
-        <!-- License backward-compat notice -->
-        <div v-if="hasLicenses" class="fct-card fct-license-card">
+        <!-- Backward-compat notice -->
+        <div class="fct-card fct-license-card">
             <div class="fct-notice fct-notice--warning fct-notice--block">
                 <svg class="fct-notice-icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
                     <path d="M12 2L2 20h20L12 2z" stroke="#D97706" stroke-width="1.5" fill="#FFFBEB"/>
@@ -60,12 +60,12 @@
                 </svg>
                 <div>
                     <strong>Keep this plugin active</strong>
-                    <p>Since EDD licenses were migrated, the FluentCart Migrator plugin must remain active. It handles backward compatibility for:</p>
+                    <p>The FluentCart Migrator plugin must remain active to handle backward compatibility for:</p>
                     <ul>
-                        <li>EDD Software Licensing API endpoints (activate, deactivate, check license)</li>
-                        <li>PayPal IPN notifications for existing subscriptions</li>
-                        <li>Stripe webhook charge ID resolution</li>
-                        <li>Legacy download and renewal URLs</li>
+                        <li v-if="hasLicenses"><strong>License API</strong> — activate, deactivate, and check-license endpoints still route here</li>
+                        <li><strong>PayPal IPN</strong> — renewal notifications for existing subscriptions</li>
+                        <li><strong>Stripe webhooks</strong> — charge ID resolution for legacy orders</li>
+                        <li><strong>Download &amp; renewal URLs</strong> — legacy EDD links won't resolve without it</li>
                     </ul>
                     <p>Deactivating this plugin may break customer integrations that still reference EDD endpoints.</p>
                 </div>

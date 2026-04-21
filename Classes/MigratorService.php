@@ -86,6 +86,10 @@ class MigratorService
             $licensesCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_licenses");
         }
 
+        $couponsCount = (int) $wpdb->get_var(
+            $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}edd_adjustments WHERE type = %s", 'discount')
+        );
+
         return [
             'products_count'      => $productsCount,
             'orders_count'        => $stats['order_count'],
@@ -93,6 +97,7 @@ class MigratorService
             'customers_count'     => $customersCount,
             'subscriptions_count' => $subscriptionsCount,
             'licenses_count'      => $licensesCount,
+            'coupons_count'       => $couponsCount,
             'gateways'            => $stats['gateways'],
             'statuses'            => $stats['statuses'],
             'types'               => $stats['types'],
@@ -740,6 +745,7 @@ class MigratorService
                 'customers'     => $stats['customers_count'] ?? 0,
                 'subscriptions' => $stats['subscriptions_count'] ?? 0,
                 'licenses'      => $stats['licenses_count'] ?? 0,
+                'coupons'       => $stats['coupons_count'] ?? 0,
             ];
             $summary['has_licenses'] = !empty($stats['has_licenses']) && ($stats['licenses_count'] ?? 0) > 0;
         } catch (\Exception $e) {
@@ -765,13 +771,13 @@ class MigratorService
         delete_option('__fluent_cart_migration_summary');
         delete_option('fluent_cart_plugin_once_activated');
 
-        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=0;");
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=0;");
         try {
             DBMigrator::refresh();
         } catch (\Exception $e) {
             // Ignore
         }
-        $wpdb->query("SET GLOBAL FOREIGN_KEY_CHECKS=1;");
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
 
         $wpdb->query("DELETE pm FROM {$wpdb->prefix}postmeta pm INNER JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID WHERE p.post_type = 'fluent-products'");
         $wpdb->query("DELETE FROM {$wpdb->prefix}posts WHERE post_type = 'fluent-products'");

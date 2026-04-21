@@ -46,6 +46,10 @@
                     <span class="fct-summary-stat-value">{{ summaryStats.customers }}</span>
                     <span class="fct-summary-stat-label">Customers</span>
                 </a>
+                <a v-if="summaryStats.coupons" :href="adminUrl + 'admin.php?page=fluent-cart#/coupons'" class="fct-summary-stat-cell fct-summary-stat-link">
+                    <span class="fct-summary-stat-value">{{ summaryStats.coupons }}</span>
+                    <span class="fct-summary-stat-label">Coupons</span>
+                </a>
                 <a v-if="summaryStats.subscriptions" :href="adminUrl + 'admin.php?page=fluent-cart#/subscriptions'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.subscriptions }}</span>
                     <span class="fct-summary-stat-label">Subscriptions</span>
@@ -111,14 +115,20 @@
                 <p v-else class="fct-error-log-empty">No error details available.</p>
             </div>
 
-            <!-- License backward-compat notice -->
-            <div v-if="migrationSummary.has_licenses" class="fct-notice fct-notice--warning">
+            <!-- Backward-compat notice -->
+            <div class="fct-notice fct-notice--warning">
                 <svg class="fct-notice-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
                     <path d="M10 2L1.5 17h17L10 2z" stroke="#D97706" stroke-width="1.5" fill="#FFFBEB"/>
                     <path d="M10 8v3m0 2.5v.5" stroke="#D97706" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
                 <div>
-                    <strong>Keep this plugin active.</strong> It provides backward compatibility for existing EDD license API endpoints, PayPal IPN notifications, and Stripe webhooks. Deactivating it may break integrations that still reference EDD URLs.
+                    <strong>Keep this plugin active</strong> — it provides backward compatibility for:
+                    <ul style="margin: 6px 0 0; padding-left: 18px; list-style-type: disc;">
+                        <li v-if="migrationSummary.has_licenses"><strong>License API</strong> — activate, deactivate, and check-license endpoints still route here</li>
+                        <li><strong>PayPal IPN</strong> — renewal notifications for existing subscriptions</li>
+                        <li><strong>Stripe webhooks</strong> — charge ID resolution for legacy orders</li>
+                        <li><strong>Download &amp; renewal URLs</strong> — legacy EDD links won't resolve without it</li>
+                    </ul>
                 </div>
             </div>
 
@@ -187,9 +197,10 @@ export default {
         migrationSummary: { type: Object, default: null },
         loading: { type: Boolean, default: false },
         adminUrl: { type: String, default: '' },
-        pluginUrl: { type: String, default: '' }
+        pluginUrl: { type: String, default: '' },
+        isDevMode: { type: Boolean, default: false }
     },
-    emits: ['select-source'],
+    emits: ['select-source', 'reset'],
     data: function () {
         return {
             showErrorLog: false,
