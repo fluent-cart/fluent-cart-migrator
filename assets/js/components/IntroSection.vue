@@ -46,6 +46,10 @@
                     <span class="fct-summary-stat-value">{{ summaryStats.customers }}</span>
                     <span class="fct-summary-stat-label">Customers</span>
                 </a>
+                <a v-if="summaryStats.coupons" :href="adminUrl + 'admin.php?page=fluent-cart#/coupons'" class="fct-summary-stat-cell fct-summary-stat-link">
+                    <span class="fct-summary-stat-value">{{ summaryStats.coupons }}</span>
+                    <span class="fct-summary-stat-label">Coupons</span>
+                </a>
                 <a v-if="summaryStats.subscriptions" :href="adminUrl + 'admin.php?page=fluent-cart#/subscriptions'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.subscriptions }}</span>
                     <span class="fct-summary-stat-label">Subscriptions</span>

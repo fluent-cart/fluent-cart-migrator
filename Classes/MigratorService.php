@@ -86,6 +86,10 @@ class MigratorService
             $licensesCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_licenses");
         }
 
+        $couponsCount = (int) $wpdb->get_var(
+            $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}edd_adjustments WHERE type = %s", 'discount')
+        );
+
         return [
             'products_count'      => $productsCount,
             'orders_count'        => $stats['order_count'],
@@ -93,6 +97,7 @@ class MigratorService
             'customers_count'     => $customersCount,
             'subscriptions_count' => $subscriptionsCount,
             'licenses_count'      => $licensesCount,
+            'coupons_count'       => $couponsCount,
             'gateways'            => $stats['gateways'],
             'statuses'            => $stats['statuses'],
             'types'               => $stats['types'],
@@ -740,6 +745,7 @@ class MigratorService
                 'customers'     => $stats['customers_count'] ?? 0,
                 'subscriptions' => $stats['subscriptions_count'] ?? 0,
                 'licenses'      => $stats['licenses_count'] ?? 0,
+                'coupons'       => $stats['coupons_count'] ?? 0,
             ];
             $summary['has_licenses'] = !empty($stats['has_licenses']) && ($stats['licenses_count'] ?? 0) > 0;
         } catch (\Exception $e) {
