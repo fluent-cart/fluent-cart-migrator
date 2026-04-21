@@ -136,9 +136,6 @@
                 <a :href="adminUrl + 'admin.php?page=fluent-cart#/'" class="fct-btn fct-btn--success">
                     View FluentCart Dashboard
                 </a>
-                <button v-if="isDevMode" class="fct-link-danger" @click="$emit('reset')">
-                    Reset Migration
-                </button>
             </div>
         </div>
 
