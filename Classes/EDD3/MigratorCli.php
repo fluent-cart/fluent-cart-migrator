@@ -17,6 +17,8 @@ class MigratorCli
 
     private $defaultCurrency = '';
 
+    private $categoryMap = null;
+
     public function __construct()
     {
         $this->defaultCurrency = edd_get_currency();
@@ -86,6 +88,8 @@ class MigratorCli
 
         update_option('_fcart_migrated_bundled_products', []);
 
+        $this->prepareCategoryMap();
+
         $products = fluentCart('db')->table('posts')
             ->where('post_type', 'download')
             ->get();
@@ -109,6 +113,102 @@ class MigratorCli
 
 
         return $results;
+    }
+
+    private function prepareCategoryMap()
+    {
+        $this->categoryMap = [];
+
+        if (!taxonomy_exists('download_category') || !taxonomy_exists('product-categories')) {
+            return;
+        }
+
+        $eddTerms = get_terms([
+            'taxonomy'   => 'download_category',
+            'hide_empty' => false,
+        ]);
+
+        if (is_wp_error($eddTerms) || empty($eddTerms)) {
+            return;
+        }
+
+        $remaining = [];
+        foreach ($eddTerms as $term) {
+            $remaining[(int)$term->term_id] = $term;
+        }
+
+        // Walk parents-first: keep looping while we can resolve at least one parent.
+        $guard = 0;
+        while ($remaining && $guard++ < 50) {
+            $progressed = false;
+
+            foreach ($remaining as $eddId => $term) {
+                $parentEddId = (int)$term->parent;
+
+                if ($parentEddId && !isset($this->categoryMap[$parentEddId])) {
+                    continue; // wait for parent
+                }
+
+                $parentFctId = $parentEddId ? (int)$this->categoryMap[$parentEddId] : 0;
+
+                $existing = get_term_by('slug', $term->slug, 'product-categories');
+                if ($existing) {
+                    $this->categoryMap[$eddId] = (int)$existing->term_id;
+                    unset($remaining[$eddId]);
+                    $progressed = true;
+                    continue;
+                }
+
+                $created = wp_insert_term($term->name, 'product-categories', [
+                    'slug'        => $term->slug,
+                    'description' => $term->description,
+                    'parent'      => $parentFctId,
+                ]);
+
+                if (is_wp_error($created)) {
+                    $fallback = get_term_by('slug', $term->slug, 'product-categories');
+                    if ($fallback) {
+                        $this->categoryMap[$eddId] = (int)$fallback->term_id;
+                    }
+                } else {
+                    $this->categoryMap[$eddId] = (int)$created['term_id'];
+                }
+
+                unset($remaining[$eddId]);
+                $progressed = true;
+            }
+
+            if (!$progressed) {
+                break; // orphaned terms with missing parent — skip
+            }
+        }
+    }
+
+    private function assignProductCategories($eddProductId, $fctProductId)
+    {
+        if ($this->categoryMap === null) {
+            $this->prepareCategoryMap();
+        }
+
+        if (empty($this->categoryMap) || !taxonomy_exists('product-categories')) {
+            return;
+        }
+
+        $eddTerms = wp_get_object_terms($eddProductId, 'download_category', ['fields' => 'ids']);
+        if (is_wp_error($eddTerms) || empty($eddTerms)) {
+            return;
+        }
+
+        $fctTermIds = [];
+        foreach ($eddTerms as $eddTermId) {
+            if (isset($this->categoryMap[(int)$eddTermId])) {
+                $fctTermIds[] = (int)$this->categoryMap[(int)$eddTermId];
+            }
+        }
+
+        if ($fctTermIds) {
+            wp_set_object_terms($fctProductId, $fctTermIds, 'product-categories', false);
+        }
     }
 
     public function migratePayments($page = 1, $perPage = 1000)
@@ -555,6 +655,8 @@ class MigratorCli
 
         update_post_meta($createdPostId, '_edd_migrated_from', $product->ID);
         update_post_meta($product->ID, '_fcart_migrated_id', $createdPostId);
+
+        $this->assignProductCategories((int)$product->ID, (int)$createdPostId);
 
         // Migrate featured image
         $thumbnailId = get_post_thumbnail_id($product->ID);
