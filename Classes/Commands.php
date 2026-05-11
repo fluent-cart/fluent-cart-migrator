@@ -160,7 +160,7 @@ class Commands
                     }
 
                     // CLI uses no time limit (maxSeconds=0) and large batch size
-                    $result = $service->migratePayments($page, $perPage, 0);
+                    $result = $service->migratePayments($page, $perPage, 0, (bool) Arr::get($assoc_args, 'skip_active_subscriptions', false));
 
                     for ($i = 0; $i < $result['processed']; $i++) {
                         $progress->tick();

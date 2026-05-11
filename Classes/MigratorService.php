@@ -249,7 +249,7 @@ class MigratorService
      * CLI callers pass a high $maxSeconds (or 0 to disable) and a large $perPage
      * since they don't have HTTP timeout concerns.
      */
-    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25)
+    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25, $skipActiveSubscriptions = false)
     {
         $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
         if (is_array($migrationSteps) && ($migrationSteps['payments'] ?? '') === 'yes') {
@@ -274,7 +274,7 @@ class MigratorService
         while ($hasMore) {
             MigratorHelper::resetCaches();
             $eddCli  = new MigratorCli();
-            $results = $eddCli->migratePayments($page, $perPage);
+            $results = $eddCli->migratePayments($page, $perPage, $skipActiveSubscriptions);
 
             $batchCount = $results ? $results->count() : 0;
             $hasMore    = $results !== null && !$results->isEmpty();

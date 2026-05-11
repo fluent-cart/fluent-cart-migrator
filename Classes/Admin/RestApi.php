@@ -168,8 +168,10 @@ class RestApi
             }
         }
 
+        $skipActiveSubscriptions = (bool) $request->get_param('skip_active_subscriptions');
+
         $service = new MigratorService();
-        $result  = $service->migratePayments($page, 100, 25);
+        $result  = $service->migratePayments($page, 100, 25, $skipActiveSubscriptions);
         return rest_ensure_response($result);
     }
 

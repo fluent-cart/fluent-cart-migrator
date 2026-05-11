@@ -303,7 +303,9 @@ export default {
             while (hasMore && !this.paused) {
                 try {
                     // Server handles pagination and time-boxing (~25s per call)
-                    var result = await apiRequest('POST', 'migrate/payments');
+                    var result = await apiRequest('POST', 'migrate/payments', {
+                        skip_active_subscriptions: !!this.stepsToRun.skipActiveSubscriptions
+                    });
                     hasMore = result.has_more;
                     this.progress.payments.processed = this.progress.payments.processed + result.processed;
                     this.progress.payments.hasMore = hasMore;

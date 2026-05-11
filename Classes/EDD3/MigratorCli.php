@@ -211,7 +211,7 @@ class MigratorCli
         }
     }
 
-    public function migratePayments($page = 1, $perPage = 1000)
+    public function migratePayments($page = 1, $perPage = 1000, $skipActiveSubscriptions = false)
     {
         $payments = fluentCart('db')->table('edd_orders')
             ->whereIn('status', ['complete', 'pending', 'edd_subscription', 'processing', 'revoked', 'partially_refunded', 'refunded', 'publish'])
@@ -230,6 +230,26 @@ class MigratorCli
             }
 
             $formattedMeta = Arr::get($this->paymentMetas, $payment->id, []);
+
+            if ($skipActiveSubscriptions && defined('EDD_RECURRING_PLUGIN_DIR')) {
+                $eddSubId = null;
+                if ($payment->status === 'edd_subscription') {
+                    $eddSubId = Arr::get($formattedMeta, 'subscription_id', '');
+                } else {
+                    $eddSubId = fluentCart('db')->table('edd_subscriptions')
+                        ->where('parent_payment_id', $payment->id)
+                        ->value('id');
+                }
+                if ($eddSubId) {
+                    $isActive = (bool) fluentCart('db')->table('edd_subscriptions')
+                        ->where('id', $eddSubId)
+                        ->where('status', 'active')
+                        ->value('id');
+                    if ($isActive) {
+                        continue;
+                    }
+                }
+            }
 
             $paymentMigrator = new PaymentMigrate($payment, $formattedMeta);
             $settedUp = $paymentMigrator->setupData();

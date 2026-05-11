@@ -100,6 +100,10 @@
                             <span v-if="isStepDone('payments')" class="fct-badge fct-badge--success">Completed</span>
                         </span>
                     </label>
+                    <label v-if="stats && stats.has_subscriptions" class="fct-check fct-check--sub">
+                        <input type="checkbox" v-model="localSteps.skipActiveSubscriptions">
+                        <span class="fct-check-label">Skip active EDD subscriptions (leave them in EDD)</span>
+                    </label>
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.recount">
                         <span class="fct-check-label">
@@ -175,7 +179,8 @@ export default {
                 tax_rates: true,
                 coupons: true,
                 payments: true,
-                recount: true
+                recount: true,
+                skipActiveSubscriptions: false
             }
         };
     },
