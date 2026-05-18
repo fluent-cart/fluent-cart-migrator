@@ -123,7 +123,7 @@ class MigratorHelper
             }
 
             $productDetails = self::getTransformedProductDetails($license->download_id, $license->price_id);
-            if (is_wp_error($productDetails) || !empty($productDetails['is_bundle_product'])) {
+            if (is_wp_error($productDetails) || !empty($productDetails['is_bundle_product']) || !empty($productDetails['is_deleted_product'])) {
                 continue;
             }
 
@@ -355,7 +355,7 @@ class MigratorHelper
         return $caches[$cacheKey];
     }
 
-    public static function getTransformedProductDetails($eddProductId, $eddVariationId = null)
+    public static function getTransformedProductDetails($eddProductId, $eddVariationId = null, $eddCartItem = null)
     {
         $cacheKey = $eddProductId . '_' . $eddVariationId;
 
@@ -369,7 +369,25 @@ class MigratorHelper
         $product = Product::find($migratedFcId);
 
         if (!$product) {
-            return new \WP_Error('edd_migrator_error', 'Product not found. ' . $eddProductId);
+            // Product deleted or not migrated - extract title from EDD order item
+            $title = 'Deleted Product #' . $eddProductId;
+
+            // Try to get title from EDD order item object (has product_name field in EDD 3.x)
+            if ($eddCartItem && isset($eddCartItem->product_name)) {
+                $title = $eddCartItem->product_name;
+            }
+
+            $data = [
+                'id'                 => 0,
+                'title'              => $title,
+                'full_title'         => $title,
+                'variation_title'    => '',
+                'variation_id'       => null,
+                'is_deleted_product' => true
+            ];
+
+            $caches[$cacheKey] = $data;
+            return $data;
         }
 
         $data = [
@@ -478,7 +496,7 @@ class MigratorHelper
 
     public static function formatOrderItem($payment, $eddCartItem, $transactionType)
     {
-        $productDetails = self::getTransformedProductDetails($eddCartItem->product_id, $eddCartItem->price_id);
+        $productDetails = self::getTransformedProductDetails($eddCartItem->product_id, $eddCartItem->price_id, $eddCartItem);
 
         if (is_wp_error($productDetails)) {
             return $productDetails;
