@@ -3,7 +3,7 @@
 /*
 Plugin Name: FluentCart Migrator
 Description: Migrate your data to FluentCart from other platforms.
-Version: 1.0.0
+Version: 1.0.1_beta2
 Author: FluentCart Team
 Author URI: https://fluentcart.com
 Plugin URI: https://github.com/fluent-cart/fluent-cart-migrator
@@ -11,7 +11,7 @@ License: GPLv2 or later
 Text Domain: fluent-cart-migrator
 */
 
-define('FLUENTCART_MIGRATOR_VERSION', '1.0.0');
+define('FLUENTCART_MIGRATOR_VERSION', '1.0.1_beta2');
 define('FLUENTCART_MIGRATOR_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('FLUENTCART_MIGRATOR_URL', plugin_dir_url(__FILE__));// Enable development mode for detailed logging
 
