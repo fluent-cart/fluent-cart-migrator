@@ -36,6 +36,12 @@ class Commands
             \WP_CLI::line('Total Orders: ' . $stats['orders_count']);
             \WP_CLI::line('Total Transactions: ' . $stats['transactions_count']);
             \WP_CLI::line('Customers: ' . $stats['customers_count']);
+            if (!empty($stats['customers_breakdown'])) {
+                \WP_CLI::line('  EDD Total: ' . $stats['customers_breakdown']['edd_total']);
+                \WP_CLI::line('  Without Orders: ' . $stats['customers_breakdown']['edd_without_orders']);
+                \WP_CLI::line('  FluentCart Total: ' . $stats['customers_breakdown']['fct_total']);
+                \WP_CLI::line('  Missing: ' . $stats['customers_breakdown']['missing']);
+            }
             \WP_CLI::line('Subscriptions: ' . $stats['subscriptions_count']);
             \WP_CLI::line('Licenses: ' . $stats['licenses_count']);
             \WP_CLI::line('Gateways: ' . implode(', ', $stats['gateways']));
@@ -80,11 +86,12 @@ class Commands
 
         if (Arr::get($assoc_args, 'all')) {
             $assoc_args = [
-                'products'  => true,
-                'tax_rates' => true,
-                'coupons'   => true,
-                'payments'  => true,
-                'recount'   => true
+                'products'          => true,
+                'tax_rates'         => true,
+                'coupons'           => true,
+                'payments'          => true,
+                'missing-customers' => true,
+                'recount'           => true
             ];
         }
 
@@ -176,6 +183,13 @@ class Commands
                 $progress->finish();
                 \WP_CLI::line('All Payments Migration has been completed');
             }
+        }
+
+        if (Arr::get($assoc_args, 'missing-customers')) {
+            \WP_CLI::line('Starting Missing Customers Migration');
+            $result = $service->migrateMissingCustomers();
+            \WP_CLI::line('Migrated ' . $result['migrated'] . ' missing customers');
+            \WP_CLI::line('---------------------------------------');
         }
 
         if (Arr::get($assoc_args, 'recount')) {
