@@ -63,6 +63,12 @@ class RestApi
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
+        register_rest_route($this->namespace, '/migrate/missing-customers', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'migrateMissingCustomers'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
         register_rest_route($this->namespace, '/migrate/recount', [
             'methods'             => 'POST',
             'callback'            => [$this, 'recountStats'],
@@ -170,6 +176,13 @@ class RestApi
 
         $service = new MigratorService();
         $result  = $service->migratePayments($page, 100, 25);
+        return rest_ensure_response($result);
+    }
+
+    public function migrateMissingCustomers()
+    {
+        $service = new MigratorService();
+        $result = $service->migrateMissingCustomers();
         return rest_ensure_response($result);
     }
 

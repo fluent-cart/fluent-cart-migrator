@@ -35,6 +35,9 @@
                     <div class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.customers_count }}</span>
                         <span class="fct-stat-label">Customers</span>
+                        <span v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-stat-meta">
+                            {{ stats.customers_breakdown.missing }} without orders
+                        </span>
                     </div>
                     <div v-if="stats.coupons_count" class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.coupons_count }}</span>
@@ -98,6 +101,13 @@
                             <span v-if="stats.has_subscriptions">, Subscriptions</span>
                             <span v-if="stats.has_licenses">, Licenses</span>
                             <span v-if="isStepDone('payments')" class="fct-badge fct-badge--success">Completed</span>
+                        </span>
+                    </label>
+                    <label v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-check">
+                        <input type="checkbox" v-model="localSteps.missing_customers">
+                        <span class="fct-check-label">
+                            Missing Customers ({{ stats.customers_breakdown.missing }} without orders)
+                            <span v-if="isStepDone('missing_customers')" class="fct-badge fct-badge--success">Completed</span>
                         </span>
                     </label>
                     <label class="fct-check">
@@ -175,6 +185,7 @@ export default {
                 tax_rates: true,
                 coupons: true,
                 payments: true,
+                missing_customers: true,
                 recount: true
             }
         };

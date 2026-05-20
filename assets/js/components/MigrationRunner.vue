@@ -80,6 +80,25 @@
                 </div>
             </div>
 
+            <!-- Missing Customers -->
+            <div v-if="stepsToRun.missing_customers" class="fct-runner-row" :class="statusClass(progress.missing_customers.status)">
+                <span class="fct-runner-icon">
+                    <svg v-if="progress.missing_customers.status === 'completed'" width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" fill="#ECFDF5"/><path d="M6 10l3 3 5-5" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span v-else-if="progress.missing_customers.status === 'running'" class="fct-spinner"></span>
+                    <svg v-else-if="progress.missing_customers.status === 'error'" width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" fill="#FEF2F2"/><path d="M7 7l6 6m0-6l-6 6" stroke="#DC2626" stroke-width="2" stroke-linecap="round"/></svg>
+                    <span v-else class="fct-runner-pending"></span>
+                </span>
+                <div class="fct-runner-detail">
+                    <strong>Missing Customers</strong>
+                    <span v-if="progress.missing_customers.status === 'completed'" class="fct-runner-meta">
+                        {{ progress.missing_customers.migrated }} migrated
+                    </span>
+                    <span v-else-if="stats && stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-runner-meta">
+                        {{ stats.customers_breakdown.missing }} to migrate
+                    </span>
+                </div>
+            </div>
+
             <!-- Recount -->
             <div v-if="stepsToRun.recount" class="fct-runner-row" :class="statusClass(progress.recount.status)">
                 <span class="fct-runner-icon">
@@ -135,6 +154,7 @@ export default {
             tax_rates: { status: 'pending' },
             coupons: { status: 'pending', total: 0, migrated: 0 },
             payments: { status: 'pending', processed: 0, hasMore: true, errorsCount: 0 },
+            missing_customers: { status: 'pending', migrated: 0 },
             recount: {
                 status: 'pending',
                 substeps: {
@@ -247,7 +267,7 @@ export default {
             });
         },
         runPipeline: async function () {
-            var steps = ['products', 'tax_rates', 'coupons', 'payments', 'recount'];
+            var steps = ['products', 'tax_rates', 'coupons', 'payments', 'missing_customers', 'recount'];
 
             for (var i = 0; i < steps.length; i++) {
                 var step = steps[i];
@@ -266,6 +286,8 @@ export default {
                         await this.runCoupons();
                     } else if (step === 'payments') {
                         await this.runPayments();
+                    } else if (step === 'missing_customers') {
+                        await this.runMissingCustomers();
                     } else if (step === 'recount') {
                         await this.runRecount();
                     }
@@ -318,6 +340,10 @@ export default {
                     }
                 }
             }
+        },
+        runMissingCustomers: async function () {
+            var result = await apiRequest('POST', 'migrate/missing-customers');
+            this.progress.missing_customers.migrated = result.migrated || 0;
         },
         runRecount: async function () {
             var substeps = ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'];

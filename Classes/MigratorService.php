@@ -69,7 +69,26 @@ class MigratorService
         $eddCli = new MigratorCli();
         $stats  = $eddCli->stats();
 
-        $customersCount    = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_customers");
+        $eddCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_customers");
+
+        // Count EDD customers with no successful orders (these won't be migrated during payment migration)
+        $customersWithoutOrders = (int) $wpdb->get_var(
+            "SELECT COUNT(DISTINCT c.id)
+            FROM {$wpdb->prefix}edd_customers c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM {$wpdb->prefix}edd_orders o
+                WHERE o.customer_id = c.id
+                AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
+                LIMIT 1
+            )"
+        );
+
+        // Count EDD customers already in FluentCart
+        $fctCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fct_customers");
+
+        // Missing = EDD customers without orders who aren't in FluentCart yet
+        $missingCustomers = max(0, $customersWithoutOrders - $fctCustomersCount);
+
         $productsCount     = (int) $wpdb->get_var(
             $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}posts WHERE post_type = %s", 'download')
         );
@@ -94,7 +113,13 @@ class MigratorService
             'products_count'      => $productsCount,
             'orders_count'        => $stats['order_count'],
             'transactions_count'  => $stats['transaction_count'],
-            'customers_count'     => $customersCount,
+            'customers_count'     => $eddCustomersCount,
+            'customers_breakdown' => [
+                'edd_total'           => $eddCustomersCount,
+                'edd_without_orders'  => $customersWithoutOrders,
+                'fct_total'           => $fctCustomersCount,
+                'missing'             => $missingCustomers,
+            ],
             'subscriptions_count' => $subscriptionsCount,
             'licenses_count'      => $licensesCount,
             'coupons_count'       => $couponsCount,
@@ -388,6 +413,58 @@ class MigratorService
     /**
      * @param callable|null $onProgress Called per customer for progress reporting
      */
+    public function migrateMissingCustomers($onProgress = null)
+    {
+        global $wpdb;
+
+        $eddTable = $wpdb->prefix . 'edd_customers';
+        $fctTable = $wpdb->prefix . 'fct_customers';
+
+        // Get EDD customers with no successful orders, not yet in FluentCart
+        $eddCustomers = $wpdb->get_results(
+            "SELECT c.* FROM {$eddTable} c
+            WHERE c.email NOT IN (SELECT email FROM {$fctTable})
+            AND NOT EXISTS (
+                SELECT 1 FROM {$wpdb->prefix}edd_orders o
+                WHERE o.customer_id = c.id
+                AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
+                LIMIT 1
+            )"
+        );
+
+        $migrated = 0;
+
+        foreach ($eddCustomers as $eddCustomer) {
+            $userId = !empty($eddCustomer->user_id) ? (int) $eddCustomer->user_id : 0;
+            $data = [
+                'email'     => $eddCustomer->email,
+                'full_name' => $eddCustomer->name ?: $eddCustomer->email,
+                'user_id'   => $userId,
+            ];
+
+            // Get additional data from WP user if linked
+            if ($userId) {
+                $user = get_user_by('ID', $userId);
+                if ($user) {
+                    $data['first_name'] = $user->first_name;
+                    $data['last_name'] = $user->last_name;
+                }
+            }
+
+            Customer::create($data);
+            $migrated++;
+
+            if ($onProgress) {
+                $onProgress($eddCustomer);
+            }
+        }
+
+        return [
+            'success'  => true,
+            'migrated' => $migrated,
+        ];
+    }
+
     public function recountCustomers($onProgress = null)
     {
         $completed  = false;
