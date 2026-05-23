@@ -185,7 +185,7 @@ export default {
                 tax_rates: true,
                 coupons: true,
                 payments: true,
-                missing_customers: true,
+                missing_customers: false,
                 recount: true
             }
         };

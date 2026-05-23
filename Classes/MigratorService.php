@@ -438,7 +438,7 @@ class MigratorService
             $userId = !empty($eddCustomer->user_id) ? (int) $eddCustomer->user_id : 0;
             $data = [
                 'email'     => $eddCustomer->email,
-                'full_name' => $eddCustomer->name ?: $eddCustomer->email,
+                'full_name' => MigratorHelper::getCustomerNameFromEdd($eddCustomer),
                 'user_id'   => $userId,
             ];
 
@@ -450,6 +450,9 @@ class MigratorService
                     $data['last_name'] = $user->last_name;
                 }
             }
+
+            // Split full_name into first_name/last_name if not already set
+            $data = MigratorHelper::maybeExplodeFullName($data);
 
             Customer::create($data);
             $migrated++;

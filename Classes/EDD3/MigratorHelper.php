@@ -1080,6 +1080,15 @@ class MigratorHelper
         return $cache[$cacheKey];
     }
 
+    public static function getCustomerNameFromEdd($eddCustomer, $fallbackEmail = null)
+    {
+        $name = trim($eddCustomer->name ?? '');
+        if (empty($name)) {
+            $name = $fallbackEmail ?? $eddCustomer->email ?? '';
+        }
+        return $name;
+    }
+
     public static function maybeExplodeFullName($data)
     {
         if (!empty($data['first_name']) || !empty($data['last_name'])) {

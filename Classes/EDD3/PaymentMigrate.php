@@ -1420,7 +1420,7 @@ class PaymentMigrate
             if ($eddCustomer) {
                 $customerData = [
                     'user_id'   => null,
-                    'full_name' => $eddCustomer->name,
+                    'full_name' => trim($eddCustomer->name ?? ''),
                     'email'     => $eddCustomer->email
                 ];
             }
