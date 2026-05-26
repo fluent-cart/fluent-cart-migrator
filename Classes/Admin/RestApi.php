@@ -2,6 +2,7 @@
 
 namespace FluentCartMigrator\Classes\Admin;
 
+use FluentCartMigrator\Classes\EDD3\PaddleBackfill;
 use FluentCartMigrator\Classes\MigratorService;
 
 class RestApi
@@ -96,6 +97,12 @@ class RestApi
         register_rest_route($this->namespace, '/migration-summary', [
             'methods'             => 'GET',
             'callback'            => [$this, 'getMigrationSummary'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/backfill/paddle-ids', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'backfillPaddleIds'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
     }
@@ -225,5 +232,19 @@ class RestApi
         $summary = $service->getMigrationSummary();
 
         return rest_ensure_response(['summary' => $summary]);
+    }
+
+    public function backfillPaddleIds(\WP_REST_Request $request)
+    {
+        $dryRun = (bool) $request->get_param('dry_run');
+
+        $backfill = new PaddleBackfill();
+        $result = $backfill->run($dryRun);
+
+        if (!empty($result['error'])) {
+            return new \WP_Error('backfill_error', $result['error'], ['status' => 400]);
+        }
+
+        return rest_ensure_response($result);
     }
 }

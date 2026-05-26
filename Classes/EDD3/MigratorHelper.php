@@ -1113,11 +1113,11 @@ class MigratorHelper
     {
         $maps = [
             'paypal_standard' => 'paypal',
-            'paypal_commerce' => 'paypal'
+            'paypal_commerce' => 'paypal',
+            'smartpay_paddle' => 'paddle',
         ];
 
         return isset($maps[$gateway]) ? $maps[$gateway] : $gateway;
-
     }
 
     public static function setCachedTaxAdjustments($paymentIds)

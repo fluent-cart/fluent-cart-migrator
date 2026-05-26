@@ -686,6 +686,35 @@ class PaymentMigrate
             $vendorCustomerId = Arr::get($this->formattedMeta, '_edd_paypal_subscriber_id');
         }
 
+        $vendorSubscriptionId = $eddSubscription->profile_id;
+
+        if ($this->paymentMethod === 'paddle') {
+            // profile_id is a placeholder set by SmartPay-EDD at checkout time.
+            // The real Paddle Billing sub ID (sub_xxx) is written to subscription meta
+            // after Paddle confirms the subscription via webhook.
+            if (str_starts_with((string) $vendorSubscriptionId, 'sub_')) {
+                // Already a real Paddle sub ID — another plugin stored it correctly.
+            } elseif (function_exists('edd_recurring_get_subscription_meta')) {
+                $realSubId = edd_recurring_get_subscription_meta(
+                    $eddSubscription->id, '_wpsmartpay_edd_subscription_id', true
+                );
+                if (empty($realSubId)) {
+                    $realSubId = edd_recurring_get_subscription_meta(
+                        $eddSubscription->id, '_wpsmartpay_edd_sandbox_subscription_id', true
+                    );
+                }
+                $realSubId = apply_filters(
+                    'fluent_cart_migrator/edd_paddle_billing_subscription_id',
+                    $realSubId,
+                    $eddSubscription,
+                    $this->payment
+                );
+                if (!empty($realSubId)) {
+                    $vendorSubscriptionId = $realSubId;
+                }
+            }
+        }
+
         // Calculate subscription tax totals
         $orderTax = MigratorHelper::toCents($this->payment->tax, $this->eddCurrency);
         $orderSubtotal = MigratorHelper::toCents($this->payment->subtotal, $this->eddCurrency);
@@ -748,7 +777,7 @@ class PaymentMigrate
             'trial_days'             => 0,
             'vendor_customer_id'     => $vendorCustomerId,
             'vendor_plan_id'         => '',
-            'vendor_subscription_id' => $eddSubscription->profile_id,
+            'vendor_subscription_id' => $vendorSubscriptionId,
             'status'                 => $this->getSubscriptionStatus($eddSubscription),
             'original_plan'          => '',
             'vendor_response'        => '',

@@ -8,6 +8,7 @@ use FluentCart\App\Models\Customer;
 use FluentCart\App\Models\Subscription;
 use FluentCart\Database\DBMigrator;
 use FluentCart\Framework\Support\Arr;
+use FluentCartMigrator\Classes\EDD3\PaddleBackfill;
 use FluentCartMigrator\Classes\MigratorService;
 
 class Commands
@@ -563,6 +564,54 @@ class Commands
 
         $storeSettings->save($toUpdate);
         \WP_CLI::line('Migrated store settings: ' . implode(', ', array_keys($toUpdate)));
+    }
+
+    /**
+     * Backfill vendor_subscription_id for Paddle subscriptions migrated before
+     * this fix. Reads the real Paddle sub_xxx ID from EDD recurring subscription meta
+     * and patches fct_subscriptions rows that still hold the synthetic placeholder.
+     *
+     * ## OPTIONS
+     *
+     * [--dry-run]
+     * : Report what would change without writing to the database.
+     *
+     * ## EXAMPLES
+     *
+     *     wp fluent_cart_migrator backfill_paddle_ids
+     *     wp fluent_cart_migrator backfill_paddle_ids --dry-run
+     */
+    public function backfill_paddle_ids($args, $assoc_args = [])
+    {
+        $dryRun = !empty($assoc_args['dry-run']);
+
+        if ($dryRun) {
+            \WP_CLI::line('[dry-run] No changes will be written.');
+        }
+
+        $backfill = new PaddleBackfill();
+        $result = $backfill->run($dryRun);
+
+        if (!empty($result['error'])) {
+            \WP_CLI::error($result['error']);
+            return;
+        }
+
+        \WP_CLI::line('Scanned:    ' . $result['scanned']);
+        \WP_CLI::line('Updated:    ' . $result['updated']);
+        \WP_CLI::line('Unresolved: ' . $result['unresolved']);
+
+        foreach ($result['rows'] as $row) {
+            if ($row['status'] === 'unresolved') {
+                \WP_CLI::warning(
+                    'sub #' . $row['fct_sub_id'] . ': ' . $row['reason'] . ' (current: ' . $row['current_id'] . ')'
+                );
+            } else {
+                \WP_CLI::success(
+                    'sub #' . $row['fct_sub_id'] . ': ' . $row['current_id'] . ' → ' . $row['new_id']
+                );
+            }
+        }
     }
 
     protected function get_user_input($question)
