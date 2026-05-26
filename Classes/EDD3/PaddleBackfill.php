@@ -30,16 +30,39 @@ class PaddleBackfill
 
         $subscriptions = fluentCart('db')
             ->table('fct_subscriptions')
-            ->where('current_payment_method', 'paddle')
+            ->whereIn('current_payment_method', ['paddle', 'smartpay_paddle'])
             ->get();
 
         foreach ($subscriptions as $sub) {
-            if (str_starts_with((string) $sub->vendor_subscription_id, 'sub_')) {
-                // Already has a real Paddle sub ID — skip.
+            $hasRealSubId = str_starts_with((string) $sub->vendor_subscription_id, 'sub_');
+            $hasCorrectMethod = $sub->current_payment_method === 'paddle';
+
+            if ($hasRealSubId && $hasCorrectMethod) {
+                // Already correct — skip.
                 continue;
             }
 
             $result['scanned']++;
+
+            // If sub ID is already real but payment_method wrong, patch method only.
+            if ($hasRealSubId && !$hasCorrectMethod) {
+                if (!$dryRun) {
+                    fluentCart('db')
+                        ->table('fct_subscriptions')
+                        ->where('id', $sub->id)
+                        ->update(['current_payment_method' => 'paddle']);
+                }
+                $result['updated']++;
+                $result['rows'][] = [
+                    'fct_sub_id'     => $sub->id,
+                    'status'         => $dryRun ? 'would_update' : 'updated',
+                    'reason'         => null,
+                    'current_id'     => $sub->vendor_subscription_id,
+                    'new_id'         => $sub->vendor_subscription_id,
+                    'payment_method' => 'smartpay_paddle → paddle',
+                ];
+                continue;
+            }
 
             $config = json_decode($sub->config ?? '{}', true);
             $eddSubId = $config['edd_id'] ?? null;
@@ -80,20 +103,28 @@ class PaddleBackfill
                 continue;
             }
 
+            $updates = ['vendor_subscription_id' => $realSubId];
+
+            // Normalize legacy gateway slug so reSyncFromRemote() can dispatch to Paddle gateway.
+            if ($sub->current_payment_method !== 'paddle') {
+                $updates['current_payment_method'] = 'paddle';
+            }
+
             if (!$dryRun) {
                 fluentCart('db')
                     ->table('fct_subscriptions')
                     ->where('id', $sub->id)
-                    ->update(['vendor_subscription_id' => $realSubId]);
+                    ->update($updates);
             }
 
             $result['updated']++;
             $result['rows'][] = [
-                'fct_sub_id'  => $sub->id,
-                'status'      => $dryRun ? 'would_update' : 'updated',
-                'reason'      => null,
-                'current_id'  => $sub->vendor_subscription_id,
-                'new_id'      => $realSubId,
+                'fct_sub_id'       => $sub->id,
+                'status'           => $dryRun ? 'would_update' : 'updated',
+                'reason'           => null,
+                'current_id'       => $sub->vendor_subscription_id,
+                'new_id'           => $realSubId,
+                'payment_method'   => $updates['current_payment_method'] ?? 'paddle (already correct)',
             ];
         }
 
