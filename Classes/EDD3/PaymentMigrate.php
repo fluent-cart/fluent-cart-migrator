@@ -711,6 +711,13 @@ class PaymentMigrate
                 );
                 if (!empty($realSubId)) {
                     $vendorSubscriptionId = $realSubId;
+                } else {
+                    $logs = get_option('_fluent_edd_failed_payment_logs', []);
+                    $logs[$this->payment->id] = [
+                        'message' => 'Paddle subscription ID not resolved for EDD sub #' . $eddSubscription->id . '. Placeholder retained: ' . $vendorSubscriptionId . '. This usually means the Paddle webhook never fired for this subscription in your EDD install.',
+                        'stage'   => 'paddle_sub_id',
+                    ];
+                    update_option('_fluent_edd_failed_payment_logs', $logs, 'no');
                 }
             }
         }
