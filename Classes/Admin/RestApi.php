@@ -98,6 +98,7 @@ class RestApi
             'callback'            => [$this, 'getMigrationSummary'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
+
     }
 
     public function checkPermission()
@@ -226,4 +227,5 @@ class RestApi
 
         return rest_ensure_response(['summary' => $summary]);
     }
+
 }
