@@ -583,6 +583,8 @@ class Commands
      */
     public function backfill_paddle_ids($args, $assoc_args = [])
     {
+        require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/PaddleBackfill.php';
+
         $dryRun = !empty($assoc_args['dry-run']);
 
         if ($dryRun) {
