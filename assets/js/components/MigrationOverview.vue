@@ -104,6 +104,13 @@
                         <input type="checkbox" v-model="localSteps.skipActiveSubscriptions">
                         <span class="fct-check-label">Skip active EDD subscriptions (leave them in EDD)</span>
                     </label>
+                    <label v-if="stats && stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-check">
+                        <input type="checkbox" v-model="localSteps.missing_customers">
+                        <span class="fct-check-label">
+                            Missing Customers ({{ stats.customers_breakdown.missing }} without orders)
+                            <span v-if="isStepDone('missing_customers')" class="fct-badge fct-badge--success">Completed</span>
+                        </span>
+                    </label>
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.recount">
                         <span class="fct-check-label">
@@ -180,7 +187,8 @@ export default {
                 coupons: true,
                 payments: true,
                 recount: true,
-                skipActiveSubscriptions: false
+                skipActiveSubscriptions: false,
+                missing_customers: false
             }
         };
     },

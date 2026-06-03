@@ -69,7 +69,26 @@ class MigratorService
         $eddCli = new MigratorCli();
         $stats  = $eddCli->stats();
 
-        $customersCount    = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_customers");
+        $eddCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_customers");
+
+        // Count EDD customers with no successful orders (these won't be migrated during payment migration)
+        $customersWithoutOrders = (int) $wpdb->get_var(
+            "SELECT COUNT(DISTINCT c.id)
+            FROM {$wpdb->prefix}edd_customers c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM {$wpdb->prefix}edd_orders o
+                WHERE o.customer_id = c.id
+                AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
+                LIMIT 1
+            )"
+        );
+
+        // Count EDD customers already in FluentCart
+        $fctCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fct_customers");
+
+        // Missing = EDD customers without orders who aren't in FluentCart yet
+        $missingCustomers = max(0, $customersWithoutOrders - $fctCustomersCount);
+
         $productsCount     = (int) $wpdb->get_var(
             $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}posts WHERE post_type = %s", 'download')
         );
@@ -94,7 +113,13 @@ class MigratorService
             'products_count'      => $productsCount,
             'orders_count'        => $stats['order_count'],
             'transactions_count'  => $stats['transaction_count'],
-            'customers_count'     => $customersCount,
+            'customers_count'     => $eddCustomersCount,
+            'customers_breakdown' => [
+                'edd_total'           => $eddCustomersCount,
+                'edd_without_orders'  => $customersWithoutOrders,
+                'fct_total'           => $fctCustomersCount,
+                'missing'             => $missingCustomers,
+            ],
             'subscriptions_count' => $subscriptionsCount,
             'licenses_count'      => $licensesCount,
             'coupons_count'       => $couponsCount,
