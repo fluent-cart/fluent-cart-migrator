@@ -90,6 +90,12 @@
                 </span>
                 <div class="fct-runner-detail">
                     <strong>Missing Customers</strong>
+                    <span v-if="progress.missing_customers.status === 'completed'" class="fct-runner-meta">
+                        {{ progress.missing_customers.migrated }} migrated
+                    </span>
+                    <span v-else-if="stats && stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-runner-meta">
+                        {{ stats.customers_breakdown.missing }} to migrate
+                    </span>
                 </div>
             </div>
 
@@ -148,7 +154,7 @@ export default {
             tax_rates: { status: 'pending' },
             coupons: { status: 'pending', total: 0, migrated: 0 },
             payments: { status: 'pending', processed: 0, hasMore: true, errorsCount: 0 },
-            missing_customers: { status: 'pending' },
+            missing_customers: { status: 'pending', migrated: 0 },
             recount: {
                 status: 'pending',
                 substeps: {
@@ -338,7 +344,8 @@ export default {
             }
         },
         runMissingCustomers: async function () {
-            await apiRequest('POST', 'migrate/missing-customers');
+            var result = await apiRequest('POST', 'migrate/missing-customers');
+            this.progress.missing_customers.migrated = result.migrated || 0;
         },
         runRecount: async function () {
             var substeps = ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'];

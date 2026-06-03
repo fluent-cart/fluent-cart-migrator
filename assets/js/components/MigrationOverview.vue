@@ -35,6 +35,9 @@
                     <div class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.customers_count }}</span>
                         <span class="fct-stat-label">Customers</span>
+                        <span v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-stat-meta">
+                            {{ stats.customers_breakdown.missing }} without orders
+                        </span>
                     </div>
                     <div v-if="stats.coupons_count" class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.coupons_count }}</span>

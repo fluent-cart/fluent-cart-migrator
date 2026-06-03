@@ -413,6 +413,64 @@ class MigratorService
     /**
      * @param callable|null $onProgress Called per customer for progress reporting
      */
+    public function migrateMissingCustomers($onProgress = null)
+    {
+        global $wpdb;
+
+        $eddTable = $wpdb->prefix . 'edd_customers';
+        $fctTable = $wpdb->prefix . 'fct_customers';
+
+        // Get EDD customers with no successful orders, not yet in FluentCart
+        $eddCustomers = $wpdb->get_results(
+            "SELECT c.* FROM {$eddTable} c
+            WHERE c.email NOT IN (SELECT email FROM {$fctTable})
+            AND NOT EXISTS (
+                SELECT 1 FROM {$wpdb->prefix}edd_orders o
+                WHERE o.customer_id = c.id
+                AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
+                LIMIT 1
+            )"
+        );
+
+        $migrated = 0;
+
+        foreach ($eddCustomers as $eddCustomer) {
+            $userId = !empty($eddCustomer->user_id) ? (int) $eddCustomer->user_id : 0;
+            $data = [
+                'email'     => $eddCustomer->email,
+                'full_name' => MigratorHelper::getCustomerNameFromEdd($eddCustomer),
+                'user_id'   => $userId,
+            ];
+
+            // Get additional data from WP user if linked
+            if ($userId) {
+                $user = get_user_by('ID', $userId);
+                if ($user) {
+                    $data['first_name'] = $user->first_name;
+                    $data['last_name'] = $user->last_name;
+                }
+            }
+
+            // Split full_name into first_name/last_name if not already set
+            $data = MigratorHelper::maybeExplodeFullName($data);
+
+            Customer::create($data);
+            $migrated++;
+
+            if ($onProgress) {
+                $onProgress($eddCustomer);
+            }
+        }
+
+        return [
+            'success'  => true,
+            'migrated' => $migrated,
+        ];
+    }
+
+    /**
+     * @param callable|null $onProgress Called per customer for progress reporting
+     */
     public function recountCustomers($onProgress = null)
     {
         $completed  = false;
