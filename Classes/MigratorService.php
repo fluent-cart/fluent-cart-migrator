@@ -858,7 +858,19 @@ class MigratorService
         try {
             DBMigrator::refresh();
         } catch (\Exception $e) {
+            // refresh() can fail mid-way if Pro tables are missing; migrate() calls below recover
+        }
+        try {
+            DBMigrator::migrate();
+        } catch (\Exception $e) {
             // Ignore
+        }
+        if (class_exists('\FluentCartPro\App\Modules\Licensing\Database\DBMigrator')) {
+            try {
+                (new \FluentCartPro\App\Modules\Licensing\Database\DBMigrator())->migrate();
+            } catch (\Exception $e) {
+                // Ignore
+            }
         }
         $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
 
