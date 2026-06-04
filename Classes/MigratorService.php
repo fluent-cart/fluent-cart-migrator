@@ -86,8 +86,18 @@ class MigratorService
         // Count EDD customers already in FluentCart
         $fctCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fct_customers");
 
-        // Missing = EDD customers without orders who aren't in FluentCart yet
-        $missingCustomers = max(0, $customersWithoutOrders - $fctCustomersCount);
+        // Missing = EDD customers without orders whose email isn't in FluentCart yet
+        $missingCustomers = (int) $wpdb->get_var(
+            "SELECT COUNT(DISTINCT c.id)
+            FROM {$wpdb->prefix}edd_customers c
+            WHERE c.email NOT IN (SELECT email FROM {$wpdb->prefix}fct_customers)
+            AND NOT EXISTS (
+                SELECT 1 FROM {$wpdb->prefix}edd_orders o
+                WHERE o.customer_id = c.id
+                AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
+                LIMIT 1
+            )"
+        );
 
         $productsCount     = (int) $wpdb->get_var(
             $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}posts WHERE post_type = %s", 'download')
@@ -274,9 +284,19 @@ class MigratorService
      * CLI callers pass a high $maxSeconds (or 0 to disable) and a large $perPage
      * since they don't have HTTP timeout concerns.
      */
-    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25, $skipActiveSubscriptions = false)
+    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25, $rerun = false, $skipActiveSubscriptions = false)
     {
         $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+
+        if ($rerun && $page === 1) {
+            unset($migrationSteps['payments'], $migrationSteps['last_order_page'], $migrationSteps['missing_customers']);
+            if (!is_array($migrationSteps)) {
+                $migrationSteps = [];
+            }
+            update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
+            delete_option('_fluent_edd_failed_payment_logs');
+        }
+
         if (is_array($migrationSteps) && ($migrationSteps['payments'] ?? '') === 'yes') {
             return [
                 'success'         => true,
@@ -299,7 +319,7 @@ class MigratorService
         while ($hasMore) {
             MigratorHelper::resetCaches();
             $eddCli  = new MigratorCli();
-            $results = $eddCli->migratePayments($page, $perPage, $skipActiveSubscriptions);
+            $results = $eddCli->migratePayments($page, $perPage, $rerun, $skipActiveSubscriptions);
 
             $batchCount = $results ? $results->count() : 0;
             $hasMore    = $results !== null && !$results->isEmpty();
