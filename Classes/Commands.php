@@ -142,15 +142,16 @@ class Commands
         }
 
         if (Arr::get($assoc_args, 'payments')) {
-            if (Arr::get($migrationSteps, 'payments') === 'yes') {
-                \WP_CLI::line('Orders Migration already done. Skipping...');
+            $isRerun = (bool) Arr::get($assoc_args, 'rerun');
+            if (!$isRerun && Arr::get($migrationSteps, 'payments') === 'yes') {
+                \WP_CLI::line('Orders Migration already done. Use --rerun to migrate new/skipped orders.');
             } else {
-                $page = Arr::get($migrationSteps, 'last_order_page', 1);
+                $page = $isRerun ? 1 : Arr::get($migrationSteps, 'last_order_page', 1);
                 if (!$page || $page < 1) {
                     $page = 1;
                 }
 
-                \WP_CLI::line('Starting orders Migration. Page: ' . $page);
+                \WP_CLI::line($isRerun ? 'Re-running orders migration (skipping already-migrated orders)...' : 'Starting orders Migration. Page: ' . $page);
 
                 $totalOrdersCount = fluentCart('db')->table('edd_orders')
                     ->whereIn('status', ['complete', 'pending', 'edd_subscription', 'processing', 'revoked', 'partially_refunded', 'refunded', 'publish'])
@@ -158,7 +159,7 @@ class Commands
                     ->count();
 
                 $perPage = 1000;
-                $totalOrdersCount = $totalOrdersCount - ($perPage * ($page - 1));
+                $totalOrdersCount = $isRerun ? $totalOrdersCount : $totalOrdersCount - ($perPage * ($page - 1));
 
                 $progress = \WP_CLI\Utils\make_progress_bar('Migrating Payments: (' . number_format($totalOrdersCount) . ')', $totalOrdersCount);
 
@@ -168,7 +169,7 @@ class Commands
                     }
 
                     // CLI uses no time limit (maxSeconds=0) and large batch size
-                    $result = $service->migratePayments($page, $perPage, 0);
+                    $result = $service->migratePayments($page, $perPage, 0, $isRerun);
 
                     for ($i = 0; $i < $result['processed']; $i++) {
                         $progress->tick();

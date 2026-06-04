@@ -321,11 +321,14 @@ export default {
             var hasMore = true;
             var retries = 0;
             var maxRetries = 2;
+            var isFirstCall = true;
 
             while (hasMore && !this.paused) {
                 try {
                     // Server handles pagination and time-boxing (~25s per call)
-                    var result = await apiRequest('POST', 'migrate/payments');
+                    var body = isFirstCall && this.stepsToRun.rerun ? { rerun: true } : {};
+                    var result = await apiRequest('POST', 'migrate/payments', body);
+                    isFirstCall = false;
                     hasMore = result.has_more;
                     this.progress.payments.processed = this.progress.payments.processed + result.processed;
                     this.progress.payments.hasMore = hasMore;

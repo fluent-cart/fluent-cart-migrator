@@ -203,9 +203,12 @@ export default {
             return m[step] === 'yes';
         },
         onStart: function () {
-            this.$emit('start', {
-                stepsToRun: JSON.parse(JSON.stringify(this.localSteps))
-            });
+            var steps = JSON.parse(JSON.stringify(this.localSteps));
+            // If payments step is selected but already completed, it's a re-run — skip existing orders
+            if (steps.payments && this.isStepDone('payments')) {
+                steps.rerun = true;
+            }
+            this.$emit('start', { stepsToRun: steps });
         }
     }
 };
