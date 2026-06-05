@@ -86,7 +86,7 @@ class MigratorService
         // Count EDD customers already in FluentCart
         $fctCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fct_customers");
 
-        // Missing = EDD customers without orders whose email isn't in FluentCart yet
+        // Missing = EDD customers with no orders at all whose email isn't in FluentCart yet
         $missingCustomers = (int) $wpdb->get_var(
             "SELECT COUNT(DISTINCT c.id)
             FROM {$wpdb->prefix}edd_customers c
@@ -94,7 +94,6 @@ class MigratorService
             AND NOT EXISTS (
                 SELECT 1 FROM {$wpdb->prefix}edd_orders o
                 WHERE o.customer_id = c.id
-                AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
                 LIMIT 1
             )"
         );
@@ -440,14 +439,13 @@ class MigratorService
         $eddTable = $wpdb->prefix . 'edd_customers';
         $fctTable = $wpdb->prefix . 'fct_customers';
 
-        // Get EDD customers with no successful orders, not yet in FluentCart
+        // Get EDD customers with no orders at all, not yet in FluentCart
         $eddCustomers = $wpdb->get_results(
             "SELECT c.* FROM {$eddTable} c
             WHERE c.email NOT IN (SELECT email FROM {$fctTable})
             AND NOT EXISTS (
                 SELECT 1 FROM {$wpdb->prefix}edd_orders o
                 WHERE o.customer_id = c.id
-                AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
                 LIMIT 1
             )"
         );
