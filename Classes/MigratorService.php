@@ -90,7 +90,7 @@ class MigratorService
         $missingCustomers = (int) $wpdb->get_var(
             "SELECT COUNT(DISTINCT c.id)
             FROM {$wpdb->prefix}edd_customers c
-            WHERE c.email NOT IN (SELECT email FROM {$wpdb->prefix}fct_customers)
+            WHERE c.email COLLATE utf8mb4_unicode_520_ci NOT IN (SELECT email COLLATE utf8mb4_unicode_520_ci FROM {$wpdb->prefix}fct_customers)
             AND NOT EXISTS (
                 SELECT 1 FROM {$wpdb->prefix}edd_orders o
                 WHERE o.customer_id = c.id
@@ -443,7 +443,7 @@ class MigratorService
         // Get EDD customers with no successful orders, not yet in FluentCart
         $eddCustomers = $wpdb->get_results(
             "SELECT c.* FROM {$eddTable} c
-            WHERE c.email NOT IN (SELECT email FROM {$fctTable})
+            WHERE c.email COLLATE utf8mb4_unicode_520_ci NOT IN (SELECT email COLLATE utf8mb4_unicode_520_ci FROM {$fctTable})
             AND NOT EXISTS (
                 SELECT 1 FROM {$wpdb->prefix}edd_orders o
                 WHERE o.customer_id = c.id
