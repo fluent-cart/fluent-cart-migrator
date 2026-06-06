@@ -103,7 +103,11 @@
                             <span v-if="isStepDone('payments')" class="fct-badge fct-badge--success">Completed</span>
                         </span>
                     </label>
-                    <label v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-check">
+                    <label v-if="stats && stats.has_subscriptions" class="fct-check fct-check--sub">
+                        <input type="checkbox" v-model="localSteps.skipActiveSubscriptions">
+                        <span class="fct-check-label">Skip active EDD subscriptions (leave them in EDD)</span>
+                    </label>
+                    <label v-if="stats && stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-check">
                         <input type="checkbox" v-model="localSteps.missing_customers">
                         <span class="fct-check-label">
                             Missing Customers ({{ stats.customers_breakdown.missing }} without orders)
@@ -185,8 +189,9 @@ export default {
                 tax_rates: true,
                 coupons: true,
                 payments: true,
-                missing_customers: false,
-                recount: true
+                recount: true,
+                skipActiveSubscriptions: false,
+                missing_customers: false
             }
         };
     },
@@ -203,9 +208,12 @@ export default {
             return m[step] === 'yes';
         },
         onStart: function () {
-            this.$emit('start', {
-                stepsToRun: JSON.parse(JSON.stringify(this.localSteps))
-            });
+            var steps = JSON.parse(JSON.stringify(this.localSteps));
+            // If payments step is selected but already completed, it's a re-run — skip existing orders
+            if (steps.payments && this.isStepDone('payments')) {
+                steps.rerun = true;
+            }
+            this.$emit('start', { stepsToRun: steps });
         }
     }
 };

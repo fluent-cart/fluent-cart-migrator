@@ -285,9 +285,19 @@ class MigratorService
      * CLI callers pass a high $maxSeconds (or 0 to disable) and a large $perPage
      * since they don't have HTTP timeout concerns.
      */
-    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25)
+    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25, $rerun = false, $skipActiveSubscriptions = false)
     {
         $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
+
+        if ($rerun && $page === 1) {
+            unset($migrationSteps['payments'], $migrationSteps['last_order_page'], $migrationSteps['missing_customers']);
+            if (!is_array($migrationSteps)) {
+                $migrationSteps = [];
+            }
+            update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
+            delete_option('_fluent_edd_failed_payment_logs');
+        }
+
         if (is_array($migrationSteps) && ($migrationSteps['payments'] ?? '') === 'yes') {
             return [
                 'success'         => true,
@@ -310,7 +320,7 @@ class MigratorService
         while ($hasMore) {
             MigratorHelper::resetCaches();
             $eddCli  = new MigratorCli();
-            $results = $eddCli->migratePayments($page, $perPage);
+            $results = $eddCli->migratePayments($page, $perPage, $rerun, $skipActiveSubscriptions);
 
             $batchCount = $results ? $results->count() : 0;
             $hasMore    = $results !== null && !$results->isEmpty();
@@ -479,6 +489,9 @@ class MigratorService
         ];
     }
 
+    /**
+     * @param callable|null $onProgress Called per customer for progress reporting
+     */
     public function recountCustomers($onProgress = null)
     {
         $completed  = false;
@@ -866,7 +879,19 @@ class MigratorService
         try {
             DBMigrator::refresh();
         } catch (\Exception $e) {
+            // refresh() can fail mid-way if Pro tables are missing; migrate() calls below recover
+        }
+        try {
+            DBMigrator::migrate();
+        } catch (\Exception $e) {
             // Ignore
+        }
+        if (class_exists('\FluentCartPro\App\Modules\Licensing\Database\DBMigrator')) {
+            try {
+                (new \FluentCartPro\App\Modules\Licensing\Database\DBMigrator())->migrate();
+            } catch (\Exception $e) {
+                // Ignore
+            }
         }
         $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
 

@@ -98,7 +98,6 @@ class RestApi
             'callback'            => [$this, 'getMigrationSummary'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
-
     }
 
     public function checkPermission()
@@ -165,9 +164,11 @@ class RestApi
 
     public function migratePayments(\WP_REST_Request $request)
     {
+        $rerun = (bool) $request->get_param('rerun');
+
         $migrationSteps = get_option('__fluent_cart_edd3_migration_steps', []);
         $page = 1;
-        if (is_array($migrationSteps) && !empty($migrationSteps['last_order_page'])) {
+        if (!$rerun && is_array($migrationSteps) && !empty($migrationSteps['last_order_page'])) {
             $page = (int) $migrationSteps['last_order_page'];
             // If resuming, start from the next page
             if ($page > 1 && ($migrationSteps['payments'] ?? '') !== 'yes') {
@@ -175,8 +176,10 @@ class RestApi
             }
         }
 
+        $skipActiveSubscriptions = (bool) $request->get_param('skip_active_subscriptions');
+
         $service = new MigratorService();
-        $result  = $service->migratePayments($page, 100, 25);
+        $result  = $service->migratePayments($page, 100, 25, $rerun, $skipActiveSubscriptions);
         return rest_ensure_response($result);
     }
 
@@ -227,5 +230,4 @@ class RestApi
 
         return rest_ensure_response(['summary' => $summary]);
     }
-
 }

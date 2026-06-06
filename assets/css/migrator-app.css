@@ -728,6 +728,11 @@
     gap: 8px;
 }
 
+.fct-check--sub {
+    margin-left: 24px;
+    color: var(--fct-text-secondary);
+}
+
 /* ─── Runner ─────────────────────────────────────────────────────────────── */
 
 .fct-duration {

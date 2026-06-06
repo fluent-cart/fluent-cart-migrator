@@ -211,7 +211,7 @@ class MigratorCli
         }
     }
 
-    public function migratePayments($page = 1, $perPage = 1000)
+    public function migratePayments($page = 1, $perPage = 1000, $skipExisting = false, $skipActiveSubscriptions = false)
     {
         $payments = fluentCart('db')->table('edd_orders')
             ->whereIn('status', ['complete', 'pending', 'edd_subscription', 'processing', 'revoked', 'partially_refunded', 'refunded', 'publish'])
@@ -230,6 +230,26 @@ class MigratorCli
             }
 
             $formattedMeta = Arr::get($this->paymentMetas, $payment->id, []);
+
+            if ($skipActiveSubscriptions && defined('EDD_RECURRING_PLUGIN_DIR')) {
+                $eddSubId = null;
+                if ($payment->status === 'edd_subscription') {
+                    $eddSubId = Arr::get($formattedMeta, 'subscription_id', '');
+                } else {
+                    $eddSubId = fluentCart('db')->table('edd_subscriptions')
+                        ->where('parent_payment_id', $payment->id)
+                        ->value('id');
+                }
+                if ($eddSubId) {
+                    $isActive = (bool) fluentCart('db')->table('edd_subscriptions')
+                        ->where('id', $eddSubId)
+                        ->where('status', 'active')
+                        ->value('id');
+                    if ($isActive) {
+                        continue;
+                    }
+                }
+            }
 
             $paymentMigrator = new PaymentMigrate($payment, $formattedMeta);
             $settedUp = $paymentMigrator->setupData();
@@ -256,9 +276,13 @@ class MigratorCli
             }
 
             // let's the the migration
-            $migrated = $paymentMigrator->migrate(true, true);
+            $migrated = $paymentMigrator->migrate(true, !$skipExisting);
 
             if (is_wp_error($migrated)) {
+                // On re-run, already-migrated orders are expected — don't log as failures
+                if ($skipExisting && $migrated->get_error_code() === 'order_exist') {
+                    continue;
+                }
 
                 $this->print('FAILED:  ' . $payment->id . ' :: ' . $migrated->get_error_message());
 
