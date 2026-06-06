@@ -69,13 +69,14 @@ class MigratorService
         $eddCli = new MigratorCli();
         $stats  = $eddCli->stats();
 
-        $eddCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_customers");
+        $eddCustomersCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}edd_customers WHERE status != 'inactive'");
 
         // Count EDD customers with no successful orders (these won't be migrated during payment migration)
         $customersWithoutOrders = (int) $wpdb->get_var(
             "SELECT COUNT(DISTINCT c.id)
             FROM {$wpdb->prefix}edd_customers c
-            WHERE NOT EXISTS (
+            WHERE c.status != 'inactive'
+            AND NOT EXISTS (
                 SELECT 1 FROM {$wpdb->prefix}edd_orders o
                 WHERE o.customer_id = c.id
                 AND o.status IN ('complete', 'partially_refunded', 'processing', 'edd_subscription', 'publish')
@@ -90,7 +91,8 @@ class MigratorService
         $missingCustomers = (int) $wpdb->get_var(
             "SELECT COUNT(DISTINCT c.id)
             FROM {$wpdb->prefix}edd_customers c
-            WHERE c.email COLLATE utf8mb4_unicode_520_ci NOT IN (SELECT email COLLATE utf8mb4_unicode_520_ci FROM {$wpdb->prefix}fct_customers)
+            WHERE c.status != 'inactive'
+            AND c.email COLLATE utf8mb4_unicode_520_ci NOT IN (SELECT email COLLATE utf8mb4_unicode_520_ci FROM {$wpdb->prefix}fct_customers)
             AND NOT EXISTS (
                 SELECT 1 FROM {$wpdb->prefix}edd_orders o
                 WHERE o.customer_id = c.id
@@ -432,7 +434,8 @@ class MigratorService
         // Get EDD customers with no orders at all, not yet in FluentCart
         $eddCustomers = $wpdb->get_results(
             "SELECT c.* FROM {$eddTable} c
-            WHERE c.email COLLATE utf8mb4_unicode_520_ci NOT IN (SELECT email COLLATE utf8mb4_unicode_520_ci FROM {$fctTable})
+            WHERE c.status != 'inactive'
+            AND c.email COLLATE utf8mb4_unicode_520_ci NOT IN (SELECT email COLLATE utf8mb4_unicode_520_ci FROM {$fctTable})
             AND NOT EXISTS (
                 SELECT 1 FROM {$wpdb->prefix}edd_orders o
                 WHERE o.customer_id = c.id
