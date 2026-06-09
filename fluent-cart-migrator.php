@@ -15,6 +15,28 @@ define('FLUENTCART_MIGRATOR_VERSION', '1.0.1_beta2');
 define('FLUENTCART_MIGRATOR_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('FLUENTCART_MIGRATOR_URL', plugin_dir_url(__FILE__));// Enable development mode for detailed logging
 
+/**
+ * Lightweight autoloader for the FluentCartMigrator\Classes namespace.
+ *
+ * Maps FluentCartMigrator\Classes\Foo\Bar => Classes/Foo/Bar.php. Existing
+ * bootstrap require_once calls are kept for back-compat; this covers the newer
+ * source-generic classes (Contracts, SourceManager, WooCommerce\*) so they load
+ * without touching this file each time one is added.
+ */
+spl_autoload_register(function ($class) {
+    $prefix = 'FluentCartMigrator\\Classes\\';
+    if (strpos($class, $prefix) !== 0) {
+        return;
+    }
+
+    $relative = substr($class, strlen($prefix));
+    $path     = FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/' . str_replace('\\', '/', $relative) . '.php';
+
+    if (file_exists($path)) {
+        require_once $path;
+    }
+});
+
 class FluentCartMigrator
 {
     public function init()
