@@ -89,6 +89,52 @@ class WooSourceMigrator extends AbstractSourceMigrator
         ];
     }
 
+    public function migrateProducts()
+    {
+        if (!class_exists('WooCommerce')) {
+            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+        }
+
+        if ($this->isStepDone('products')) {
+            return [
+                'success'         => true,
+                'step'            => 'products',
+                'total'           => 0,
+                'migrated'        => 0,
+                'failed'          => 0,
+                'errors'          => [],
+                'skipped'         => true,
+                'migration_state' => $this->getState(),
+            ];
+        }
+
+        $results = (new ProductMigrator())->migrate(true);
+
+        $migrated = 0;
+        $failed   = 0;
+        $errors   = [];
+        foreach ($results as $wcId => $result) {
+            if (is_wp_error($result)) {
+                $failed++;
+                $errors[] = ['wc_id' => $wcId, 'message' => $result->get_error_message()];
+            } else {
+                $migrated++;
+            }
+        }
+
+        $state = $this->markStep('products');
+
+        return [
+            'success'         => true,
+            'step'            => 'products',
+            'total'           => count($results),
+            'migrated'        => $migrated,
+            'failed'          => $failed,
+            'errors'          => $errors,
+            'migration_state' => $state,
+        ];
+    }
+
     /* -----------------------------------------------------------------
      | Counting helpers (CRUD API — HPOS-safe)
      * ----------------------------------------------------------------- */
