@@ -3,6 +3,7 @@
 namespace FluentCartMigrator\Classes;
 
 use FluentCartMigrator\Classes\Contracts\SourceMigratorInterface;
+use FluentCartMigrator\Classes\WooCommerce\WooSourceMigrator;
 
 /**
  * Registry that maps a source key to its migrator implementation.
@@ -17,15 +18,15 @@ class SourceManager
      * Implemented sources: key => migrator class implementing SourceMigratorInterface.
      */
     protected $map = [
-        'edd' => MigratorService::class,
+        'edd'         => MigratorService::class,
+        'woocommerce' => WooSourceMigrator::class,
     ];
 
     /**
      * Announced-but-not-yet-implemented sources, surfaced in the UI as "coming soon".
      */
     protected $comingSoon = [
-        'woocommerce' => 'WooCommerce',
-        'surecart'    => 'SureCart',
+        'surecart' => 'SureCart',
     ];
 
     public function has($source)
