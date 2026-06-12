@@ -39,9 +39,13 @@ class PaymentMigrate
 
     private $mainTransaction = null;
 
-    private $refundTransactions = [];
+    private $completedTransactions = [];
 
-    private $infoItems = [];
+    private $additionalTransactions = [];
+
+    private $transactionsPaidTotal = 0;
+
+    private $refundTransactions = [];
 
     private $couponCodes = [];
 
@@ -111,12 +115,29 @@ class PaymentMigrate
 
     public function setupData()
     {
-        $this->mainTransaction = fluentCart('db')->table('edd_order_transactions')
+        $this->activities = MigratorHelper::getActivities($this->payment);
+
+        $orderTransactions = fluentCart('db')->table('edd_order_transactions')
             ->where('object_id', $this->payment->id)
             ->where('object_type', 'order')
-            ->first();
+            ->orderBy('id', 'ASC')
+            ->get();
 
-        $this->activities = MigratorHelper::getActivities($this->payment);
+        $completedTransactions = [];
+        foreach ($orderTransactions as $orderTransaction) {
+            if ($orderTransaction->status === 'complete') {
+                $completedTransactions[] = $orderTransaction;
+                $this->transactionsPaidTotal += MigratorHelper::toCents($orderTransaction->total, $this->eddCurrency);
+            }
+        }
+
+        // prefer the first completed transaction as the main one
+        $this->completedTransactions = $completedTransactions;
+        $this->mainTransaction = $completedTransactions ? $completedTransactions[0] : $orderTransactions->first();
+
+        if (count($completedTransactions) > 1) {
+            $this->addActivityLog('Multiple payment transactions migrated', 'This order has ' . count($completedTransactions) . ' completed payment transactions in EDD. Each one was migrated as a separate transaction.');
+        }
 
         $formattedMeta = $this->formattedMeta;
 
@@ -218,21 +239,58 @@ class PaymentMigrate
                         $transactionData['subscription_id'] = $parentSubscription->id;
                     }
                 }
+                if (empty($transactionData['subscription_id']) && $this->eddSubscriptionId) {
+                    // resolve via the EDD subscription's parent payment
+                    $eddSubscription = fluentCart('db')->table('edd_subscriptions')
+                        ->where('id', $this->eddSubscriptionId)
+                        ->first();
+
+                    if ($eddSubscription && $eddSubscription->parent_payment_id) {
+                        $parentSubscription = fluentCart('db')->table('fct_subscriptions')
+                            ->where('parent_order_id', $eddSubscription->parent_payment_id)
+                            ->first();
+                        if ($parentSubscription) {
+                            $transactionData['subscription_id'] = $parentSubscription->id;
+                        }
+                    }
+                }
+
                 if (empty($transactionData['subscription_id'])) {
-                    // we should not proceed if we don't have subscription ID
                     $dummySubscription = $this->maybeCreateDummySubscription();
 
-                    if (!$dummySubscription) {
-                        return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->id . ' => ' . $this->customer->id, $this->payment);
+                    if ($dummySubscription) {
+                        $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
+
+                        if (defined('WP_CLI')) {
+                            \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
+                        }
+
+                        $transactionData['subscription_id'] = $dummySubscription->id;
+                    } else {
+                        // the original EDD subscription is gone (deleted/expired) and no parent
+                        // subscription exists — migrate the order as a standalone payment instead
+                        // of skipping it
+                        $this->transactionType = 'payment';
+                        $this->orderData['type'] = 'payment';
+                        $transactionData['order_type'] = 'payment';
+
+                        foreach ($this->orderItems as $itemIndex => $orderItem) {
+                            $this->orderItems[$itemIndex]['payment_type'] = 'payment';
+                        }
+
+                        foreach ($this->refundTransactions as $refundIndex => $refundTransaction) {
+                            $this->refundTransactions[$refundIndex]['order_type'] = 'payment';
+                        }
+
+                        $this->addActivityLog(
+                            'Renewal migrated as a standalone order',
+                            'No FluentCart subscription could be resolved for this renewal payment — the original EDD subscription may have been deleted or its parent order was not migrated. EDD Subscription ID: ' . ($this->eddSubscriptionId ?: 'unknown')
+                        );
+
+                        if (defined('WP_CLI')) {
+                            \WP_CLI::line('Renewal migrated as standalone order (no subscription resolved): ' . $this->payment->id);
+                        }
                     }
-
-                    $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
-
-                    if (defined('WP_CLI')) {
-                        \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
-                    }
-
-                    $transactionData['subscription_id'] = $dummySubscription->id;
                 }
             }
         }
@@ -370,6 +428,14 @@ class PaymentMigrate
         $transactionData['order_id'] = $createdOrderId;
         $createdTransactionId = fluentCart('db')->table('fct_order_transactions')
             ->insertGetId($transactionData);
+
+        foreach ($this->additionalTransactions as $additionalTransaction) {
+            $additionalTransaction['order_id'] = $createdOrderId;
+            $additionalTransaction['order_type'] = $transactionData['order_type'];
+            $additionalTransaction['subscription_id'] = Arr::get($transactionData, 'subscription_id');
+            fluentCart('db')->table('fct_order_transactions')
+                ->insert($additionalTransaction);
+        }
 
         // 5. Let's handle refund Data
         $createdRefundId = null;
@@ -603,12 +669,14 @@ class PaymentMigrate
             ]);
         }
 
-        // order.total_paid = transaction.total
+        // order.total_paid = SUM(charge transactions.total)
+        $chargeTransactionsTotal = $this->transactionData['total'] + (int)array_sum(array_column($this->additionalTransactions, 'total'));
 
-        if ($this->orderData['total_paid'] !== $this->transactionData['total']) {
+        if ($this->orderData['total_paid'] !== $chargeTransactionsTotal) {
             return new \WP_Error('validation_error', 'Order total paid does not match transaction total.', [
-                'orderData'       => $this->orderData,
-                'transactionData' => $this->transactionData,
+                'orderData'              => $this->orderData,
+                'transactionData'        => $this->transactionData,
+                'additionalTransactions' => $this->additionalTransactions,
             ]);
         }
 
@@ -628,10 +696,11 @@ class PaymentMigrate
             ]);
         }
 
-        if ($this->orderData['total_paid'] != $this->transactionData['total']) {
+        if ($this->orderData['total_paid'] != $chargeTransactionsTotal) {
             return new \WP_Error('validation_error', 'Order total paid does not match transaction total.', [
-                'orderData'       => $this->orderData,
-                'transactionData' => $this->transactionData,
+                'orderData'              => $this->orderData,
+                'transactionData'        => $this->transactionData,
+                'additionalTransactions' => $this->additionalTransactions,
             ]);
         }
 
@@ -925,7 +994,7 @@ class PaymentMigrate
             $this->couponCodes = $formattedCoupons;
         }
 
-        // $this->maybeAdjustOrderItems();
+        $this->maybeAdjustOrderItems();
         // $this->adjustFallbackDiscounts();
 
         return $this->orderItems;
@@ -985,8 +1054,55 @@ class PaymentMigrate
 
     private function setupTransactionData()
     {
-        if ($this->mainTransaction) {
+        $paidStatuses = Status::getOrderPaymentSuccessStatuses();
+        $paidStatuses[] = 'refunded';
+        $paidStatuses[] = 'partially_refunded';
 
+        if ($this->completedTransactions) {
+            // one migrated transaction per completed EDD transaction, each keeping
+            // its own amount, vendor charge ID and date — so per-transaction
+            // gateway refunds keep working after migration
+            foreach ($this->completedTransactions as $index => $transaction) {
+                $vendorIntentId = $transaction->transaction_id;
+                if ($index === 0 && $this->paymentMethod === 'stripe') {
+                    $metaIntentId = Arr::get($this->formattedMeta, '_edds_stripe_payment_intent_id');
+                    if ($metaIntentId) {
+                        $vendorIntentId = $metaIntentId;
+                    }
+                }
+
+                $transactionRow = [
+                    'order_id'            => $this->payment->id,
+                    'order_type'          => $this->transactionType,
+                    'transaction_type'    => 'charge',
+                    'subscription_id'     => NULL, // we will set it when we will insert.
+                    'card_last_4'         => '',
+                    'card_brand'          => '',
+                    'vendor_charge_id'    => $vendorIntentId,
+                    'payment_method'      => MigratorHelper::getGatewaySlug($transaction->gateway),
+                    'payment_mode'        => $this->paymentMode,
+                    'payment_method_type' => $this->paymentMethod === 'stripe' ? 'card' : '',
+                    'status'              => 'succeeded',
+                    'currency'            => $this->currency,
+                    'total'               => MigratorHelper::toCents($transaction->total, $this->eddCurrency),
+                    'rate'                => 1,
+                    'uuid'                => md5('payment_' . $transaction->uuid . '_' . microtime(true)),
+                    'meta'                => \json_encode([]),
+                    'created_at'          => $transaction->date_created,
+                    'updated_at'          => current_time('mysql'),
+                ];
+
+                if ($index === 0) {
+                    $this->transactionData = $transactionRow;
+                } else {
+                    $this->additionalTransactions[] = $transactionRow;
+                }
+            }
+            return;
+        }
+
+        if ($this->mainTransaction && !in_array($this->paymentStatus, $paidStatuses)) {
+            // pending/failed order with a non-completed transaction record
             $transaction = $this->mainTransaction;
 
             if ($this->paymentMethod === 'stripe') {
@@ -1006,7 +1122,7 @@ class PaymentMigrate
                 'payment_method'      => MigratorHelper::getGatewaySlug($transaction->gateway),
                 'payment_mode'        => $this->paymentMode,
                 'payment_method_type' => $this->paymentMethod === 'stripe' ? 'card' : '',
-                'status'              => ($transaction->status === 'complete') ? 'succeeded' : Status::PAYMENT_PENDING,
+                'status'              => Status::PAYMENT_PENDING,
                 'currency'            => $this->currency,
                 'total'               => MigratorHelper::toCents($transaction->total, $this->eddCurrency),
                 'rate'                => 1,
@@ -1081,7 +1197,17 @@ class PaymentMigrate
         $taxTotal = $this->orderTotals['tax_total'];
         $this->orderTotals['total_amount'] = $this->orderTotals['subtotal'] - $this->orderTotals['coupon_discount_total'] - $this->orderTotals['manual_discount_total'] + $taxTotal;
 
-        if ($this->mainTransaction) {
+        $paidStatuses = Status::getOrderPaymentSuccessStatuses();
+        $paidStatuses[] = Status::PAYMENT_REFUNDED;
+        $paidStatuses[] = Status::PAYMENT_PARTIALLY_REFUNDED;
+
+        if ($this->transactionsPaidTotal) {
+            $this->orderTotals['total_paid'] = $this->transactionsPaidTotal;
+        } else if (in_array($this->paymentStatus, $paidStatuses)) {
+            // money was collected but no completed transaction rows exist (legacy
+            // EDD 2.x data or manually created orders) — trust the EDD order total
+            $this->orderTotals['total_paid'] = MigratorHelper::toCents($this->payment->total, $this->eddCurrency);
+        } else if ($this->mainTransaction) {
             $this->orderTotals['total_paid'] = MigratorHelper::toCents($this->mainTransaction->total, $this->eddCurrency);
         } else {
             $this->orderTotals['total_paid'] = 0;
@@ -1127,17 +1253,10 @@ class PaymentMigrate
 
             $this->calculateTotals();
 
-            $this->infoItems[] = [
-                'key'   => 'surplus_adjustment',
-                'value' => 'Adjusted surplus amount of ' . $requiredSurplus . ' to order items.',
-            ];
-        }
-
-
-        if ($this->orderTotals['total_amount'] == 0) {
-            $this->orderTotals['total_paid'] = 0;
-        } else if ($this->orderTotals['total_amount'] < $this->orderTotals['total_paid']) {
-            $this->orderTotals['total_paid'] = $this->orderTotals['total_amount'];
+            $this->addActivityLog(
+                'Order totals adjusted during migration',
+                'The recorded payment total was ' . $requiredSurplus . ' (in cents) higher than the sum of the order items (usually caused by EDD fees or rounding). The surplus was distributed across the order items so the order totals match the actual paid amount.'
+            );
         }
     }
 
@@ -1560,44 +1679,64 @@ class PaymentMigrate
             return $existingSubscription;
         }
 
-        $parentOrderPost = fluentCart('db')
-            ->table('posts')
-            ->where('ID', $this->parentOrderId)
+        $parentOrder = fluentCart('db')
+            ->table('edd_orders')
+            ->where('id', $this->parentOrderId)
             ->first();
 
-        if (!$parentOrderPost || $parentOrderPost->post_status != 'publish' || $parentOrderPost->post_type != 'edd_payment' || $parentOrderPost->post_parent) {
+        if (!$parentOrder || $parentOrder->parent || $parentOrder->type != 'sale') {
             return null;
         }
 
-        $mainOrderPaymentMeta = get_post_meta($this->parentOrderId, '_edd_payment_meta', true);
+        // the parent order must already be migrated so the subscription has an order to attach to
+        $fctParentOrder = fluentCart('db')
+            ->table('fct_orders')
+            ->where('id', $parentOrder->id)
+            ->first();
 
-        $cartDetails = Arr::get($mainOrderPaymentMeta, 'cart_details', []);
+        if (!$fctParentOrder) {
+            return null;
+        }
+
+        $parentOrderItems = fluentCart('db')
+            ->table('edd_order_items')
+            ->where('order_id', $parentOrder->id)
+            ->get();
 
         $subscriptionItem = null;
 
-        foreach ($cartDetails as $cartItem) {
+        foreach ($parentOrderItems as $parentOrderItem) {
             if ($subscriptionItem) {
                 continue;
             }
 
-            $fctProductDetails = MigratorHelper::getTransformedProductDetails(Arr::get($cartItem, 'item_number.id'), Arr::get($cartItem, 'item_number.options.price_id'));
+            $fctProductDetails = MigratorHelper::getTransformedProductDetails($parentOrderItem->product_id, $parentOrderItem->price_id);
             if (!$fctProductDetails || is_wp_error($fctProductDetails)) {
                 continue;
             }
 
-            $period = Arr::pull($cartItem, 'item_number.options.recurring.period', '');
-
-            $itemPrice = MigratorHelper::toCents(Arr::get($cartItem, 'item_price', 0), $this->eddCurrency);
+            $itemPrice = MigratorHelper::toCents($parentOrderItem->total, $this->eddCurrency);
 
             if (!$itemPrice) {
                 continue;
             }
 
+            $period = '';
+            $recurringMeta = fluentCart('db')->table('edd_order_itemmeta')
+                ->where('edd_order_item_id', $parentOrderItem->id)
+                ->where('meta_key', '_option_recurring')
+                ->first();
+
+            if ($recurringMeta) {
+                $recurring = maybe_unserialize($recurringMeta->meta_value);
+                $period = Arr::get($recurring, 'period', '');
+            }
+
             if ($period) {
                 $subscriptionItem = [
-                    'uuid'                   => md5('dummy_subscription_' . $parentOrderPost->ID . '_' . wp_generate_uuid4() . '_' . microtime(true)),
+                    'uuid'                   => md5('dummy_subscription_' . $parentOrder->id . '_' . wp_generate_uuid4() . '_' . microtime(true)),
                     'customer_id'            => $this->customer->id,
-                    'parent_order_id'        => $parentOrderPost->ID,
+                    'parent_order_id'        => $parentOrder->id,
                     'product_id'             => $fctProductDetails['id'],
                     'item_name'              => Arr::get($fctProductDetails, 'full_title'),
                     'quantity'               => 1,
@@ -1624,7 +1763,7 @@ class PaymentMigrate
                     'original_plan'          => '',
                     'vendor_response'        => '',
                     'current_payment_method' => $this->paymentMethod,
-                    'created_at'             => $parentOrderPost->post_date_gmt,
+                    'created_at'             => $parentOrder->date_created,
                     'updated_at'             => current_time('mysql'),
                     'config'                 => \json_encode([
                         'note' => 'Dummy subscription created for renewwing license.',
@@ -1648,14 +1787,14 @@ class PaymentMigrate
 
         // now let's make the parent order's transaction type as subscription
         fluentCart('db')->table('fct_orders')
-            ->where('id', $parentOrderPost->ID)
+            ->where('id', $parentOrder->id)
             ->update([
                 'type' => 'subscription'
             ]);
 
         // transactions
         fluentCart('db')->table('fct_order_transactions')
-            ->where('order_id', $parentOrderPost->ID)
+            ->where('order_id', $parentOrder->id)
             ->where('order_type', 'payment')
             ->update([
                 'order_type'      => 'subscription',
