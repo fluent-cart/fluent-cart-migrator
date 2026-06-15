@@ -218,21 +218,43 @@ class PaymentMigrate
                         $transactionData['subscription_id'] = $parentSubscription->id;
                     }
                 }
+
+                // Fallback: when parent_order_id is 0/null, resolve via EDD subscription record
+                if (empty($transactionData['subscription_id']) && $this->eddSubscriptionId) {
+                    $eddSub = fluentCart('db')->table('edd_subscriptions')
+                        ->where('id', $this->eddSubscriptionId)
+                        ->first();
+                    if ($eddSub && $eddSub->parent_payment_id) {
+                        $parentSubscription = fluentCart('db')->table('fct_subscriptions')
+                            ->where('parent_order_id', $eddSub->parent_payment_id)
+                            ->first();
+                        if ($parentSubscription) {
+                            $transactionData['subscription_id'] = $parentSubscription->id;
+                        }
+                    }
+                }
+
                 if (empty($transactionData['subscription_id'])) {
-                    // we should not proceed if we don't have subscription ID
                     $dummySubscription = $this->maybeCreateDummySubscription();
 
                     if (!$dummySubscription) {
-                        return new \WP_Error('no_subscription_id', 'No subscription ID found for renewal transaction. ' . $this->payment->id . ' => ' . $this->customer->id, $this->payment);
+                        // No subscription linkable — migrate as standalone payment rather than dropping
+                        $this->transactionType = 'payment';
+                        $transactionData['order_type'] = 'payment';
+                        $this->addActivityLog('Renewal migrated as payment', 'No subscription ID found. Migrated as standalone payment. EDD Payment ID: ' . $this->payment->id, $this->payment->id);
+
+                        if (defined('WP_CLI')) {
+                            \WP_CLI::line('Renewal migrated as standalone payment: ' . $this->payment->id);
+                        }
+                    } else {
+                        $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
+
+                        if (defined('WP_CLI')) {
+                            \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
+                        }
+
+                        $transactionData['subscription_id'] = $dummySubscription->id;
                     }
-
-                    $this->addActivityLog('Dummy Subscription Created for renewal payment', 'A dummy subscription was created for the renewal transaction. Dummy Subscription ID: ' . $dummySubscription->id, $dummySubscription->parent_order_id);
-
-                    if (defined('WP_CLI')) {
-                        \WP_CLI::line('Dummy Subscription Created for renewal payment: ' . $this->payment->id . ' Subscription ID: ' . $dummySubscription->id);
-                    }
-
-                    $transactionData['subscription_id'] = $dummySubscription->id;
                 }
             }
         }
@@ -614,7 +636,9 @@ class PaymentMigrate
 
         if ($this->paymentStatus != 'pending') {
             // order.paid_total = order.subtotal - order.coupon_discount_total - order.manual_discount_total
-            if ($this->orderData['total_paid'] !== ($this->orderData['subtotal'] - $this->orderData['coupon_discount_total'] - $this->orderData['manual_discount_total'] + $this->orderData['tax_total'])) {
+            $calculatedTotal = $this->orderData['subtotal'] - $this->orderData['coupon_discount_total'] - $this->orderData['manual_discount_total'] + $this->orderData['tax_total'];
+            $diff = $this->orderData['total_paid'] - $calculatedTotal;
+            if (abs($diff) > 1) {
                 return new \WP_Error('validation_error', 'Order total paid does not match order totals.', [
                     'orderData' => $this->orderData,
                 ]);
@@ -925,8 +949,8 @@ class PaymentMigrate
             $this->couponCodes = $formattedCoupons;
         }
 
-        // $this->maybeAdjustOrderItems();
-        // $this->adjustFallbackDiscounts();
+        $this->maybeAdjustOrderItems();
+        $this->adjustFallbackDiscounts();
 
         return $this->orderItems;
     }
