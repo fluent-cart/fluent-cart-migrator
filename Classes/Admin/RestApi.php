@@ -206,8 +206,11 @@ class RestApi
             return $migrator;
         }
 
+        // Smaller pages keep peak memory bounded on large stores; the migrator
+        // also memory-boxes the batch and the front-end loops until has_more is
+        // false, so this only affects how often we hand back to the browser.
         $page   = $migrator->getPaymentResumePage();
-        $result = $migrator->migratePayments($page, 100, 25);
+        $result = $migrator->migratePayments($page, 50, 25);
 
         return rest_ensure_response($result);
     }

@@ -44,6 +44,7 @@
 
         <MigrationOverview
             v-if="currentStep === 'overview'"
+            :source="selectedSource"
             :stats="stats"
             :migration-status="migrationStatus"
             :is-dev-mode="isDevMode"
@@ -78,7 +79,7 @@
 </template>
 
 <script>
-import { apiRequest } from './api.js';
+import { apiRequest, setApiSource } from './api.js';
 import IntroSection from './components/IntroSection.vue';
 import CompatibilityCheck from './components/CompatibilityCheck.vue';
 import MigrationOverview from './components/MigrationOverview.vue';
@@ -155,6 +156,7 @@ export default {
             var saved = this.loadSessionState();
             if (saved && saved.source && saved.step === 'running' && saved.runProgress) {
                 this.selectedSource = saved.source;
+                setApiSource(saved.source.key);
                 this.savedRunProgress = saved.runProgress;
                 this.stepsToRun = saved.stepsToRun || {};
                 this.goToStep('running');
@@ -209,6 +211,7 @@ export default {
 
         onSelectSource: function (source) {
             this.selectedSource = source;
+            setApiSource(source.key);
             this.goToStep('compatibility');
         },
 

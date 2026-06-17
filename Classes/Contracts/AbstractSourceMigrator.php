@@ -112,6 +112,7 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
         return [
             'migration'        => get_option($this->stateOptionKey(), false),
             'failed_log_count' => count($failedLogs),
+            'recount_substeps' => $this->getRecountSubsteps(),
         ];
     }
 

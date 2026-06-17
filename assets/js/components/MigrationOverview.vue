@@ -4,7 +4,7 @@
         <div class="fct-card">
             <div class="fct-card-header">
                 <h2>Pre-Migration Overview</h2>
-                <p>Here is a summary of the data that will be migrated from EDD.</p>
+                <p>Here is a summary of the data that will be migrated from {{ sourceName }}.</p>
             </div>
 
             <!-- Skeleton while loading -->
@@ -128,8 +128,8 @@
             </div>
         </div>
 
-        <!-- CLI hint -->
-        <div v-if="stats && !loading" class="fct-card fct-cli-hint">
+        <!-- CLI hint (EDD only — WP-CLI command exists for EDD) -->
+        <div v-if="stats && !loading && sourceKey === 'edd'" class="fct-card fct-cli-hint">
             <div class="fct-card-header">
                 <h2>WP-CLI (Recommended for Large Stores)</h2>
                 <p>For stores with thousands of orders, running via WP-CLI is faster and avoids browser timeouts.</p>
@@ -172,6 +172,7 @@
 export default {
     name: 'MigrationOverview',
     props: {
+        source: { type: Object, default: null },
         stats: { type: Object, default: null },
         migrationStatus: { type: Object, default: null },
         isDevMode: { type: Boolean, default: false },
@@ -191,6 +192,12 @@ export default {
         };
     },
     computed: {
+        sourceName: function () {
+            return (this.source && this.source.name) || 'your store';
+        },
+        sourceKey: function () {
+            return (this.source && this.source.key) || '';
+        },
         hasExistingMigration: function () {
             var m = this.migrationStatus && this.migrationStatus.migration;
             return !!m;

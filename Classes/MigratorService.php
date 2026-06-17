@@ -40,13 +40,35 @@ class MigratorService implements SourceMigratorInterface
 
         $eddActive   = class_exists('Easy_Digital_Downloads') || defined('EDD_VERSION');
         $hasV3Tables = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}edd_orders'") !== null;
+        $version     = defined('EDD_VERSION') ? EDD_VERSION : null;
+
+        if ($hasV3Tables && $version) {
+            $compatibility = [
+                'state'   => 'pass',
+                'title'   => sprintf('EDD 3.x detected (v%s)', $version),
+                'message' => 'Your Easy Digital Downloads installation is compatible with the migration tool.',
+            ];
+        } elseif ($hasV3Tables) {
+            $compatibility = [
+                'state'   => 'data_only',
+                'title'   => 'EDD data found',
+                'message' => 'EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.',
+            ];
+        } else {
+            $compatibility = [
+                'state'   => 'blocked',
+                'title'   => sprintf('EDD %s detected', $version ?: '(unknown version)'),
+                'message' => 'Migration requires EDD 3.0 or later. Please upgrade EDD first, then return here.',
+            ];
+        }
 
         return [
             'key'           => 'edd',
             'name'          => 'Easy Digital Downloads',
             'detected'      => $eddActive || $hasV3Tables,
-            'version'       => defined('EDD_VERSION') ? EDD_VERSION : null,
+            'version'       => $version,
             'has_v3_tables' => $hasV3Tables,
+            'compatibility' => $compatibility,
         ];
     }
 
@@ -198,6 +220,7 @@ class MigratorService implements SourceMigratorInterface
         return [
             'migration'        => $migration,
             'failed_log_count' => is_array($failedLogs) ? count($failedLogs) : 0,
+            'recount_substeps' => $this->getRecountSubsteps(),
         ];
     }
 

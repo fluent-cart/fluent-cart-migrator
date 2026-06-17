@@ -42,7 +42,13 @@ class ProductMigrator
 
         $results = [];
         foreach ($productIds as $productId) {
-            $results[$productId] = $this->migrateProduct((int) $productId, $willUpdate);
+            try {
+                $results[$productId] = $this->migrateProduct((int) $productId, $willUpdate);
+            } catch (\Throwable $e) {
+                // A single bad product (e.g. a DB constraint hit) must not abort
+                // the whole step — record it and keep migrating the rest.
+                $results[$productId] = new \WP_Error('woo_migrator_error', $e->getMessage());
+            }
         }
 
         return $results;

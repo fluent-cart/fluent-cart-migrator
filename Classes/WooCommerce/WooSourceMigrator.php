@@ -2,6 +2,8 @@
 
 namespace FluentCartMigrator\Classes\WooCommerce;
 
+use FluentCart\App\CPT\FluentProducts;
+use FluentCart\Database\DBMigrator;
 use FluentCartMigrator\Classes\Contracts\AbstractSourceMigrator;
 
 /**
@@ -20,15 +22,43 @@ class WooSourceMigrator extends AbstractSourceMigrator
         return 'woocommerce';
     }
 
+    /**
+     * Minimum WooCommerce version supported by the migrator. WC 3.0 introduced
+     * the CRUD API (wc_get_products/wc_get_orders) this source relies on.
+     */
+    const MIN_VERSION = '3.0';
+
     public function detect()
     {
-        $active = class_exists('WooCommerce');
+        $active  = class_exists('WooCommerce');
+        $version = ($active && defined('WC_VERSION')) ? WC_VERSION : null;
+
+        if (!$active) {
+            $compatibility = [
+                'state'   => 'blocked',
+                'title'   => 'WooCommerce not detected',
+                'message' => 'WooCommerce is not active. Please install and activate WooCommerce, then return here.',
+            ];
+        } elseif ($version && version_compare($version, self::MIN_VERSION, '<')) {
+            $compatibility = [
+                'state'   => 'blocked',
+                'title'   => sprintf('WooCommerce %s detected', $version),
+                'message' => sprintf('Migration requires WooCommerce %s or later. Please upgrade WooCommerce first, then return here.', self::MIN_VERSION),
+            ];
+        } else {
+            $compatibility = [
+                'state'   => 'pass',
+                'title'   => $version ? sprintf('WooCommerce detected (v%s)', $version) : 'WooCommerce detected',
+                'message' => 'Your WooCommerce installation is compatible with the migration tool.',
+            ];
+        }
 
         return [
-            'key'      => 'woocommerce',
-            'name'     => 'WooCommerce',
-            'detected' => $active,
-            'version'  => ($active && defined('WC_VERSION')) ? WC_VERSION : null,
+            'key'           => 'woocommerce',
+            'name'          => 'WooCommerce',
+            'detected'      => $active,
+            'version'       => $version,
+            'compatibility' => $compatibility,
         ];
     }
 
@@ -133,6 +163,185 @@ class WooSourceMigrator extends AbstractSourceMigrator
             'errors'          => $errors,
             'migration_state' => $state,
         ];
+    }
+
+    /**
+     * Migrate WooCommerce orders into FluentCart, paginated and resumable.
+     *
+     * Mirrors the EDD source: each page resets the per-batch caches, migrates
+     * a slice of orders, and persists `last_order_page` so the UI/CLI can
+     * resume. REST callers pass a small $maxSeconds to dodge HTTP timeouts;
+     * CLI callers pass 0 to run to completion.
+     */
+    public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25)
+    {
+        if (!class_exists('WooCommerce')) {
+            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+        }
+
+        $state = $this->getState();
+        if (($state['payments'] ?? '') === 'yes') {
+            return [
+                'success'         => true,
+                'step'            => 'payments',
+                'page'            => $page,
+                'processed'       => 0,
+                'has_more'        => false,
+                'errors_in_batch' => 0,
+                'skipped'         => true,
+                'migration_state' => $state,
+            ];
+        }
+
+        $migrator       = new OrderMigrator();
+        $startedAt      = time();
+        $totalProcessed = 0;
+        $hasMore        = true;
+
+        while ($hasMore) {
+            MigratorHelper::resetCaches();
+
+            $batch = $migrator->migratePage($page, $perPage);
+            $totalProcessed += $batch['processed'];
+            $hasMore = $batch['has_more'];
+
+            $state = $this->getState();
+            $state['last_order_page'] = $page;
+            $this->saveState($state);
+
+            // Release the runtime caches that pile up while WordPress/WooCommerce
+            // load orders, so a long run doesn't exhaust PHP's memory limit.
+            MigratorHelper::freeMemory();
+
+            if (!$hasMore) {
+                break;
+            }
+
+            $page++;
+
+            if ($maxSeconds > 0 && (time() - $startedAt) >= $maxSeconds) {
+                break;
+            }
+
+            // Memory-box the batch: WooCommerce order objects retain memory that
+            // survives cache flushing, so hand off to the next request before we
+            // exhaust the limit (has_more stays true, the loop resumes next call).
+            if (MigratorHelper::memoryNearLimit()) {
+                break;
+            }
+        }
+
+        $state = $this->getState();
+        if (!$hasMore) {
+            $state['payments'] = 'yes';
+            $this->saveState($state);
+            $this->buildAndSaveSummary();
+        }
+
+        $failedLogs = $this->getFailedLogs();
+
+        return [
+            'success'         => true,
+            'step'            => 'payments',
+            'page'            => $page,
+            'processed'       => $totalProcessed,
+            'has_more'        => $hasMore,
+            'errors_in_batch' => count($failedLogs),
+            'migration_state' => $state,
+        ];
+    }
+
+    /**
+     * Reset the WooCommerce migration: wipe all migrated FluentCart data and
+     * clear the WooCommerce migration state. Dev-mode only, mirroring the EDD
+     * source so the same "Reset Migration" button works for WooCommerce.
+     */
+    public function reset()
+    {
+        if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
+            return new \WP_Error(
+                'dev_mode_required',
+                'Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.',
+                ['status' => 403]
+            );
+        }
+
+        return $this->wipeMigratedData();
+    }
+
+    /**
+     * Drop & recreate the FluentCart tables, then remove migrated products and
+     * the WooCommerce id-mapping postmeta. Same approach as the EDD source.
+     */
+    private function wipeMigratedData()
+    {
+        global $wpdb;
+
+        delete_option($this->stateOptionKey());
+        delete_option($this->failedLogOptionKey());
+        delete_option($this->summaryOptionKey());
+
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=0;");
+        try {
+            DBMigrator::refresh();
+        } catch (\Exception $e) {
+            // Ignore — tables may be partially present.
+        }
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
+
+        $cpt = FluentProducts::CPT_NAME;
+        $wpdb->query("DELETE pm FROM {$wpdb->prefix}postmeta pm INNER JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID WHERE p.post_type = '{$cpt}'");
+        $wpdb->query("DELETE FROM {$wpdb->prefix}posts WHERE post_type = '{$cpt}'");
+
+        $postMetas = [
+            MigratorHelper::WC_TO_FCT_META,     // on WC products
+            MigratorHelper::FCT_FROM_WC_META,   // on FC products
+            MigratorHelper::VARIATION_MAP_META, // on FC products
+        ];
+        foreach ($postMetas as $metaKey) {
+            $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}postmeta WHERE meta_key = %s", $metaKey));
+        }
+
+        return [
+            'success' => true,
+            'message' => 'All migrated data and WooCommerce migration state have been reset.',
+        ];
+    }
+
+    /**
+     * Post-migration recount substeps supported by the WooCommerce source.
+     * EDD's reactivation / subscription-UUID fixes don't apply here; we only
+     * recompute the aggregates that the order import leaves at their defaults.
+     */
+    public function getRecountSubsteps()
+    {
+        return ['customers', 'subscriptions'];
+    }
+
+    /**
+     * Run a recount substep. recountCustomers()/recountSubscriptions() operate
+     * purely on the migrated FluentCart tables (customer LTV / purchase counts,
+     * subscription bill counts), so they're source-agnostic and reused from the
+     * shared migrator service rather than duplicated here.
+     */
+    public function recountStats($substep)
+    {
+        $recounter = new \FluentCartMigrator\Classes\MigratorService();
+
+        switch ($substep) {
+            case 'customers':
+                return $recounter->recountCustomers();
+
+            case 'subscriptions':
+                $result = $recounter->recountSubscriptions();
+                // Final substep — mark the step done and refresh the summary.
+                $this->markStep('recount');
+                $this->buildAndSaveSummary();
+                return $result;
+
+            default:
+                return $this->notImplemented('recount:' . $substep);
+        }
     }
 
     /* -----------------------------------------------------------------
