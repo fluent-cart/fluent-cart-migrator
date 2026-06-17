@@ -1224,13 +1224,11 @@ class PaymentMigrate
 
     private function maybeAdjustOrderItems()
     {
-        if ($this->orderTotals['total_paid'] > $this->orderTotals['total_amount']) {
-            // something is wrong here!
-            // we have net paid amount greater than total order amount
-            // So EDD might have some issues with this payment
-            // Let's adjust that with total order amount
-            // we can distribute the surplus amount to order items
+        if (!$this->orderItems) {
+            return;
+        }
 
+        if ($this->orderTotals['total_paid'] > $this->orderTotals['total_amount']) {
             $requiredSurplus = $this->orderTotals['total_paid'] - $this->orderTotals['total_amount'];
 
             $itemsCount = count($this->orderItems);
@@ -1238,18 +1236,20 @@ class PaymentMigrate
             $recordedSurplus = 0;
 
             foreach ($this->orderItems as $index => $orderItem) {
-                $surplusPerQuantity = (int)($perItemSurplus / $orderItem['quantity']);
+                $qty = max(1, $orderItem['quantity']);
+                $surplusPerQuantity = (int)($perItemSurplus / $qty);
+                $itemSurplus = $surplusPerQuantity * $qty;
                 $this->orderItems[$index]['unit_price'] += $surplusPerQuantity;
-                $this->orderItems[$index]['line_total'] += $perItemSurplus;
-                $this->orderItems[$index]['subtotal'] += $perItemSurplus;
-                $recordedSurplus += $perItemSurplus;
+                $this->orderItems[$index]['line_total'] += $itemSurplus;
+                $this->orderItems[$index]['subtotal'] += $itemSurplus;
+                $recordedSurplus += $itemSurplus;
             }
 
             if ($recordedSurplus < $requiredSurplus) {
-                // we still have some surplus left, let's adjust that with the first item
-                $this->orderItems[0]['unit_price'] += ($requiredSurplus - $recordedSurplus);
-                $this->orderItems[0]['line_total'] += ($requiredSurplus - $recordedSurplus);
-                $this->orderItems[0]['subtotal'] += ($requiredSurplus - $recordedSurplus);
+                $remainder = $requiredSurplus - $recordedSurplus;
+                $this->orderItems[0]['unit_price'] += $remainder;
+                $this->orderItems[0]['line_total'] += $remainder;
+                $this->orderItems[0]['subtotal'] += $remainder;
             }
 
             $this->calculateTotals();
