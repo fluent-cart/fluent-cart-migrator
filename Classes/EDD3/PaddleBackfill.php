@@ -21,6 +21,13 @@ class PaddleBackfill
             'rows'       => [],
         ];
 
+        global $wpdb;
+        $metaTable = $wpdb->prefix . 'edd_subscriptionmeta';
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$metaTable}'") !== $metaTable) {
+            $result['error'] = 'edd_subscriptionmeta table does not exist. EDD Recurring may have been uninstalled.';
+            return $result;
+        }
+
         $subscriptions = fluentCart('db')
             ->table('fct_subscriptions')
             ->whereIn('current_payment_method', ['paddle', 'smartpay_paddle'])
