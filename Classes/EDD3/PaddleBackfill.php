@@ -9,8 +9,6 @@ class PaddleBackfill
      * this fix was applied. Those rows carry SmartPay-EDD's synthetic profile_id
      * placeholder instead of the real Paddle sub_xxx ID.
      *
-     * Requires EDD Recurring to be active (provides edd_recurring_get_subscription_meta).
-     *
      * @param  bool  $dryRun  When true, report changes without writing.
      * @return array{scanned:int, updated:int, unresolved:int, rows:array}
      */
@@ -22,11 +20,6 @@ class PaddleBackfill
             'unresolved' => 0,
             'rows'       => [],
         ];
-
-        if (!function_exists('edd_recurring_get_subscription_meta')) {
-            $result['error'] = 'EDD Recurring plugin is not active. Cannot read subscription meta.';
-            return $result;
-        }
 
         $subscriptions = fluentCart('db')
             ->table('fct_subscriptions')
@@ -79,9 +72,9 @@ class PaddleBackfill
                 continue;
             }
 
-            $realSubId = edd_recurring_get_subscription_meta($eddSubId, '_wpsmartpay_edd_subscription_id', true);
+            $realSubId = $this->getSubscriptionMeta($eddSubId, '_wpsmartpay_edd_subscription_id');
             if (empty($realSubId)) {
-                $realSubId = edd_recurring_get_subscription_meta($eddSubId, '_wpsmartpay_edd_sandbox_subscription_id', true);
+                $realSubId = $this->getSubscriptionMeta($eddSubId, '_wpsmartpay_edd_sandbox_subscription_id');
             }
 
             $realSubId = apply_filters(
@@ -129,5 +122,16 @@ class PaddleBackfill
         }
 
         return $result;
+    }
+
+    private function getSubscriptionMeta($subscriptionId, $metaKey)
+    {
+        $row = fluentCart('db')
+            ->table('edd_subscriptionmeta')
+            ->where('edd_subscription_id', $subscriptionId)
+            ->where('meta_key', $metaKey)
+            ->first();
+
+        return $row ? $row->meta_value : null;
     }
 }
