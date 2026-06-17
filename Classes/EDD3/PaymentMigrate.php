@@ -762,18 +762,18 @@ class PaymentMigrate
             // The real sub ID (sub_xxx for Billing, numeric for Classic) is written to meta after Paddle webhook fires.
             if (str_starts_with((string) $vendorSubscriptionId, 'sub_')) {
                 // Already a real Paddle Billing sub ID.
-            } elseif (function_exists('edd_recurring_get_subscription_meta')) {
-                $realSubId = edd_recurring_get_subscription_meta(
-                    $eddSubscription->id, '_wpsmartpay_edd_subscription_id', true
+            } else {
+                $realSubId = MigratorHelper::getEddSubscriptionMeta(
+                    $eddSubscription->id, '_wpsmartpay_edd_subscription_id'
                 );
                 if (empty($realSubId)) {
-                    $realSubId = edd_recurring_get_subscription_meta(
-                        $eddSubscription->id, '_wpsmartpay_edd_sandbox_subscription_id', true
+                    $realSubId = MigratorHelper::getEddSubscriptionMeta(
+                        $eddSubscription->id, '_wpsmartpay_edd_sandbox_subscription_id'
                     );
                 }
                 if (empty($realSubId)) {
-                    $realSubId = edd_recurring_get_subscription_meta(
-                        $eddSubscription->id, 'smartpay_paddle_subscription_id', true
+                    $realSubId = MigratorHelper::getEddSubscriptionMeta(
+                        $eddSubscription->id, 'smartpay_paddle_subscription_id'
                     );
                 }
                 $realSubId = apply_filters(

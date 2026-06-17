@@ -21,13 +21,6 @@ class PaddleBackfill
             'rows'       => [],
         ];
 
-        global $wpdb;
-        $metaTable = $wpdb->prefix . 'edd_subscriptionmeta';
-        if ($wpdb->get_var("SHOW TABLES LIKE '{$metaTable}'") !== $metaTable) {
-            $result['error'] = 'edd_subscriptionmeta table does not exist. EDD Recurring may have been uninstalled.';
-            return $result;
-        }
-
         $subscriptions = fluentCart('db')
             ->table('fct_subscriptions')
             ->whereIn('current_payment_method', ['paddle', 'smartpay_paddle'])
@@ -79,9 +72,12 @@ class PaddleBackfill
                 continue;
             }
 
-            $realSubId = $this->getSubscriptionMeta($eddSubId, '_wpsmartpay_edd_subscription_id');
+            $realSubId = MigratorHelper::getEddSubscriptionMeta($eddSubId, '_wpsmartpay_edd_subscription_id');
             if (empty($realSubId)) {
-                $realSubId = $this->getSubscriptionMeta($eddSubId, '_wpsmartpay_edd_sandbox_subscription_id');
+                $realSubId = MigratorHelper::getEddSubscriptionMeta($eddSubId, '_wpsmartpay_edd_sandbox_subscription_id');
+            }
+            if (empty($realSubId)) {
+                $realSubId = MigratorHelper::getEddSubscriptionMeta($eddSubId, 'smartpay_paddle_subscription_id');
             }
 
             $realSubId = apply_filters(
@@ -96,7 +92,7 @@ class PaddleBackfill
                 $result['rows'][] = [
                     'fct_sub_id'  => $sub->id,
                     'status'      => 'unresolved',
-                    'reason'      => 'No Paddle subscription ID found in EDD recurring meta',
+                    'reason'      => 'No Paddle subscription ID found in EDD subscription meta',
                     'current_id'  => $sub->vendor_subscription_id,
                     'new_id'      => null,
                 ];
@@ -129,16 +125,5 @@ class PaddleBackfill
         }
 
         return $result;
-    }
-
-    private function getSubscriptionMeta($subscriptionId, $metaKey)
-    {
-        $row = fluentCart('db')
-            ->table('edd_subscriptionmeta')
-            ->where('edd_subscription_id', $subscriptionId)
-            ->where('meta_key', $metaKey)
-            ->first();
-
-        return $row ? $row->meta_value : null;
     }
 }

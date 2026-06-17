@@ -744,6 +744,24 @@ class MigratorHelper
         return (int)round($cents, 0);
     }
 
+    public static function getEddSubscriptionMeta($subscriptionId, $metaKey)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'edd_subscriptionmeta';
+
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$table}'") !== $table) {
+            return null;
+        }
+
+        $row = fluentCart('db')
+            ->table('edd_subscriptionmeta')
+            ->where('edd_subscription_id', $subscriptionId)
+            ->where('meta_key', $metaKey)
+            ->first();
+
+        return $row ? $row->meta_value : null;
+    }
+
     public static function getActivities($payment)
     {
 
