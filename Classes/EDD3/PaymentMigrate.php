@@ -1101,8 +1101,9 @@ class PaymentMigrate
             return;
         }
 
-        if ($this->mainTransaction && !in_array($this->paymentStatus, $paidStatuses)) {
-            // pending/failed order with a non-completed transaction record
+        if ($this->mainTransaction) {
+            // paid order whose transaction rows never reached 'complete' status
+            // (e.g. gateway recorded 'processing') — preserve charge ID from the row
             $transaction = $this->mainTransaction;
 
             if ($this->paymentMethod === 'stripe') {
@@ -1122,7 +1123,7 @@ class PaymentMigrate
                 'payment_method'      => MigratorHelper::getGatewaySlug($transaction->gateway),
                 'payment_mode'        => $this->paymentMode,
                 'payment_method_type' => $this->paymentMethod === 'stripe' ? 'card' : '',
-                'status'              => Status::PAYMENT_PENDING,
+                'status'              => in_array($this->paymentStatus, $paidStatuses) ? 'succeeded' : Status::PAYMENT_PENDING,
                 'currency'            => $this->currency,
                 'total'               => MigratorHelper::toCents($transaction->total, $this->eddCurrency),
                 'rate'                => 1,
