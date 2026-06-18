@@ -219,6 +219,36 @@ class WooSourceMigrator extends AbstractSourceMigrator
     }
 
     /**
+     * Migrate WooCommerce tax configuration + rates into FluentCart and build
+     * the WC→fct rate-id map the order step consumes.
+     */
+    public function migrateTaxRates()
+    {
+        if (!class_exists('WooCommerce')) {
+            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+        }
+
+        if ($this->isStepDone('tax_rates')) {
+            return [
+                'success'         => true,
+                'step'            => 'tax_rates',
+                'skipped'         => true,
+                'migration_state' => $this->getState(),
+            ];
+        }
+
+        $result = (new TaxRateMigrator())->migrate();
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        $result['step']            = 'tax_rates';
+        $result['migration_state'] = $this->markStep('tax_rates');
+
+        return $result;
+    }
+
+    /**
      * Guard that WooCommerce is active, then run the shared resumable loop in
      * AbstractSourceMigrator.
      */

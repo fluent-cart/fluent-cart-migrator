@@ -364,7 +364,9 @@ class OrderMigrator
      */
     private function buildTaxRates($order, $currency, $createdAt)
     {
-        $rates = [];
+        $rates   = [];
+        $rateMap = TaxRateMigrator::rateMap();
+
         foreach ($order->get_items('tax') as $tax) {
             /** @var \WC_Order_Item_Tax $tax */
             $orderTax    = MigratorHelper::toCents($tax->get_tax_total(), $currency);
@@ -373,8 +375,18 @@ class OrderMigrator
             if (!$taxAmount) {
                 continue;
             }
+
+            // fct_order_tax_rate.tax_rate_id is NOT NULL — only write the
+            // per-rate breakdown row when the WC rate maps to a FluentCart rate
+            // (run the tax-rates step first). The order header tax_total still
+            // carries the amount regardless.
+            $fctRateId = $rateMap[(int) $tax->get_rate_id()] ?? null;
+            if (!$fctRateId) {
+                continue;
+            }
+
             $rates[] = TaxRateData::make([
-                'taxRateId'   => null,
+                'taxRateId'   => $fctRateId,
                 'shippingTax' => $shippingTax,
                 'orderTax'    => $orderTax,
                 'totalTax'    => $taxAmount,
