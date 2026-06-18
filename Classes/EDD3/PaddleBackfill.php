@@ -79,6 +79,11 @@ class PaddleBackfill
             if (empty($realSubId)) {
                 $realSubId = MigratorHelper::getEddSubscriptionMeta($eddSubId, 'smartpay_paddle_subscription_id');
             }
+            // Paddle Classic stores the real sub ID in wp_postmeta (post_id = edd_subscription_id),
+            // not in edd_subscriptionmeta like Paddle Billing does.
+            if (empty($realSubId)) {
+                $realSubId = get_post_meta($eddSubId, 'smartpay_paddle_subscription_id', true) ?: null;
+            }
 
             $realSubId = apply_filters(
                 'fluent_cart_migrator/edd_paddle_billing_subscription_id',

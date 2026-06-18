@@ -776,6 +776,10 @@ class PaymentMigrate
                         $eddSubscription->id, 'smartpay_paddle_subscription_id'
                     );
                 }
+                // Paddle Classic stores the real sub ID in wp_postmeta (post_id = edd_subscription_id).
+                if (empty($realSubId)) {
+                    $realSubId = get_post_meta($eddSubscription->id, 'smartpay_paddle_subscription_id', true) ?: null;
+                }
                 $realSubId = apply_filters(
                     'fluent_cart_migrator/edd_paddle_billing_subscription_id',
                     $realSubId,
