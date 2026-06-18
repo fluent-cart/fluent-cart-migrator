@@ -3,6 +3,7 @@
 namespace FluentCartMigrator\Classes\WooCommerce;
 
 use FluentCart\App\Helpers\Status;
+use FluentCartMigrator\Classes\Dto\ActivityData;
 use FluentCartMigrator\Classes\Dto\AddressData;
 use FluentCartMigrator\Classes\Dto\AppliedCouponData;
 use FluentCartMigrator\Classes\Dto\CustomerData;
@@ -161,6 +162,7 @@ class OrderMigrator
         $data->addresses = $this->buildAddresses($order, $createdAt);
         $data->coupons   = $this->buildCoupons($order, $currency, $createdAt);
         $data->taxRates  = $this->buildTaxRates($order, $currency, $createdAt);
+        $data->activities = $this->buildActivities($order, $wcOrderId);
 
         $data->transactions = [$this->buildCharge($order, $orderType, $totalPaid, $currency, $createdAt)];
         $data->refunds      = $this->buildRefunds($order, $orderType, $currency);
@@ -405,6 +407,43 @@ class OrderMigrator
             ]);
         }
         return $rates;
+    }
+
+    /**
+     * Map WooCommerce order notes (system + customer) to fct_activity rows.
+     *
+     * @return ActivityData[]
+     */
+    private function buildActivities($order, $orderId)
+    {
+        if (!function_exists('wc_get_order_notes')) {
+            return [];
+        }
+
+        $activities = [];
+        foreach (wc_get_order_notes(['order_id' => $orderId]) as $note) {
+            $content = trim((string) $note->content);
+            if ($content === '') {
+                continue;
+            }
+
+            $date = ($note->date_created instanceof \WC_DateTime)
+                ? $note->date_created->date('Y-m-d H:i:s')
+                : (string) $note->date_created;
+
+            $activities[] = ActivityData::make([
+                'moduleType' => 'FluentCart\App\Models\Order',
+                'moduleId'   => $orderId,
+                'moduleName' => 'Order',
+                'title'      => $note->customer_note ? 'Note to customer' : 'Order note',
+                'content'    => $content,
+                'createdBy'  => $note->added_by ?: 'Migrator',
+                'createdAt'  => $date,
+                'updatedAt'  => $date,
+            ]);
+        }
+
+        return $activities;
     }
 
     /**
