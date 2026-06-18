@@ -48,7 +48,93 @@ class ProductMigrator
             }
         }
 
+        // After every product exists, wire up bundle relationships (children
+        // must be migrated first to resolve their FluentCart variation ids).
+        $this->syncBundles($writer);
+
         return $results;
+    }
+
+    /**
+     * Map WooCommerce grouped products (core) and Product Bundles (extension)
+     * to FluentCart's bundle model: the parent product's default variation gets
+     * the child variation ids, and the product is flagged as a bundle.
+     */
+    private function syncBundles(ProductWriter $writer)
+    {
+        $types = ['grouped'];
+        if (class_exists('WC_Product_Bundle')) {
+            $types[] = 'bundle';
+        }
+
+        $parents = wc_get_products([
+            'type'   => $types,
+            'limit'  => -1,
+            'return' => 'objects',
+            'status' => ['publish', 'private', 'draft'],
+        ]);
+
+        foreach ($parents as $parent) {
+            $fctPostId = (int) get_post_meta($parent->get_id(), MigratorHelper::WC_TO_FCT_META, true);
+            if (!$fctPostId) {
+                continue;
+            }
+
+            $childVariationIds = [];
+            foreach ($this->bundleChildIds($parent) as $childWcId) {
+                $varId = $this->firstFctVariationId((int) $childWcId);
+                if ($varId) {
+                    $childVariationIds[] = $varId;
+                }
+            }
+
+            if ($childVariationIds) {
+                $writer->markBundle($fctPostId, $childVariationIds);
+            }
+        }
+    }
+
+    /**
+     * Child WooCommerce product ids for a grouped or bundle parent.
+     *
+     * @return int[]
+     */
+    private function bundleChildIds($parent)
+    {
+        if ($parent->is_type('grouped')) {
+            return array_map('intval', $parent->get_children());
+        }
+
+        // Product Bundles extension.
+        if (method_exists($parent, 'get_bundled_items')) {
+            $ids = [];
+            foreach ($parent->get_bundled_items() as $item) {
+                if (method_exists($item, 'get_product_id')) {
+                    $ids[] = (int) $item->get_product_id();
+                }
+            }
+            return $ids;
+        }
+
+        return [];
+    }
+
+    /**
+     * The first (default) migrated FluentCart variation id for a WC product.
+     */
+    private function firstFctVariationId($wcProductId)
+    {
+        $fctPost = (int) get_post_meta($wcProductId, MigratorHelper::WC_TO_FCT_META, true);
+        if (!$fctPost) {
+            return 0;
+        }
+
+        $map = get_post_meta($fctPost, MigratorHelper::VARIATION_MAP_META, true);
+        if (!is_array($map) || !$map) {
+            return 0;
+        }
+
+        return (int) reset($map);
     }
 
     /**

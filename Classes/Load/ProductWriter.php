@@ -185,4 +185,48 @@ class ProductWriter
         $db->table('fct_product_details')->where('post_id', $postId)->delete();
         $db->table('fct_product_downloads')->where('post_id', $postId)->delete();
     }
+
+    /**
+     * Mark a migrated product as a FluentCart bundle: store the child variation
+     * ids on the product's default variation and flag the product detail. Used
+     * by the source after all products are migrated (children must exist first).
+     * Idempotent. No-op without a post / children.
+     */
+    public function markBundle($fctPostId, array $childVariationIds)
+    {
+        $fctPostId         = (int) $fctPostId;
+        $childVariationIds = array_values(array_unique(array_filter(array_map('intval', $childVariationIds))));
+        if (!$fctPostId || !$childVariationIds) {
+            return;
+        }
+
+        $db = fluentCart('db');
+
+        $variation = $db->table('fct_product_variations')
+            ->where('post_id', $fctPostId)
+            ->orderBy('serial_index', 'asc')
+            ->first();
+
+        if ($variation) {
+            $info = json_decode($variation->other_info, true);
+            if (!is_array($info)) {
+                $info = [];
+            }
+            $info['bundle_child_ids']  = $childVariationIds;
+            $info['is_bundle_product'] = 'yes';
+            $db->table('fct_product_variations')->where('id', $variation->id)
+                ->update(['other_info' => json_encode($info)]);
+        }
+
+        $detail = $db->table('fct_product_details')->where('post_id', $fctPostId)->first();
+        if ($detail) {
+            $dinfo = json_decode($detail->other_info, true);
+            if (!is_array($dinfo)) {
+                $dinfo = [];
+            }
+            $dinfo['is_bundle_product'] = 'yes';
+            $db->table('fct_product_details')->where('post_id', $fctPostId)
+                ->update(['other_info' => json_encode($dinfo)]);
+        }
+    }
 }
