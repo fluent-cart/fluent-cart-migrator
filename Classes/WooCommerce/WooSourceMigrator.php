@@ -169,6 +169,56 @@ class WooSourceMigrator extends AbstractSourceMigrator
     }
 
     /**
+     * Migrate the WooCommerce coupon catalog into fct_coupons. Once present,
+     * the order step's couponIdByCode() back-links applied_coupons.coupon_id on
+     * the next payments run.
+     */
+    public function migrateCoupons()
+    {
+        if (!class_exists('WooCommerce')) {
+            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+        }
+
+        if ($this->isStepDone('coupons')) {
+            return [
+                'success'         => true,
+                'step'            => 'coupons',
+                'total'           => 0,
+                'migrated'        => 0,
+                'failed'          => 0,
+                'errors'          => [],
+                'skipped'         => true,
+                'migration_state' => $this->getState(),
+            ];
+        }
+
+        $results  = (new CouponMigrator())->migrate();
+        $migrated = 0;
+        $failed   = 0;
+        $errors   = [];
+        foreach ($results as $code => $result) {
+            if (is_wp_error($result)) {
+                $failed++;
+                $errors[] = ['code' => $code, 'message' => $result->get_error_message()];
+            } else {
+                $migrated++;
+            }
+        }
+
+        $state = $this->markStep('coupons');
+
+        return [
+            'success'         => true,
+            'step'            => 'coupons',
+            'total'           => count($results),
+            'migrated'        => $migrated,
+            'failed'          => $failed,
+            'errors'          => $errors,
+            'migration_state' => $state,
+        ];
+    }
+
+    /**
      * Guard that WooCommerce is active, then run the shared resumable loop in
      * AbstractSourceMigrator.
      */
@@ -256,7 +306,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
      */
     public function getRecountSubsteps()
     {
-        return ['customers', 'subscriptions'];
+        return ['coupons', 'customers', 'subscriptions'];
     }
 
     /**
@@ -270,6 +320,9 @@ class WooSourceMigrator extends AbstractSourceMigrator
         $recounter = new \FluentCartMigrator\Classes\MigratorService();
 
         switch ($substep) {
+            case 'coupons':
+                return $recounter->recountCoupons();
+
             case 'customers':
                 return $recounter->recountCustomers();
 
