@@ -138,13 +138,18 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
     public function getPaymentResumePage()
     {
         $state = $this->getState();
-        $page  = (int) ($state['last_order_page'] ?? 1);
 
-        if ($page > 1 && ($state['payments'] ?? '') !== 'yes') {
-            $page++;
+        // payments done → start value is irrelevant (migratePayments skips).
+        if (($state['payments'] ?? '') === 'yes') {
+            return 1;
         }
 
-        return $page < 1 ? 1 : $page;
+        // last_order_page is the last *completed* page (0 when nothing done yet),
+        // so always resume at the next page. This must advance even after only
+        // page 1 completed, or a time-boxed batch would restart page 1 forever.
+        $lastCompleted = (int) ($state['last_order_page'] ?? 0);
+
+        return $lastCompleted + 1;
     }
 
     /**
