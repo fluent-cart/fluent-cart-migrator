@@ -335,7 +335,43 @@ class WooSourceMigrator extends AbstractSourceMigrator
             return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
         }
 
-        return parent::migratePayments($page, $perPage, $maxSeconds);
+        $result = parent::migratePayments($page, $perPage, $maxSeconds);
+
+        // On completion, mask IPs shared across many orders (likely a gateway/
+        // proxy IP, not a customer's) for privacy — mirrors the EDD source.
+        if (!is_wp_error($result) && empty($result['has_more']) && $this->isStepDone('payments')) {
+            $this->maskSharedIps();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Null out IP addresses that appear on more than $countLimit migrated
+     * WooCommerce orders. Scoped to WooCommerce-migrated orders only, so EDD
+     * (production) order data is never touched.
+     */
+    private function maskSharedIps($countLimit = 30)
+    {
+        $db = fluentCart('db');
+
+        $countLimit = (int) $countLimit;
+        $shared = $db->table('fct_orders')
+            ->where('config', 'like', '%woocommerce%')
+            ->where('ip_address', '!=', '')
+            ->whereNotNull('ip_address')
+            ->selectRaw('ip_address, COUNT(*) as c')
+            ->groupBy('ip_address')
+            ->havingRaw('COUNT(*) > ' . $countLimit)
+            ->get();
+
+        foreach ($shared as $row) {
+            // ip_address is TEXT NOT NULL DEFAULT '' — clear to '' (not null).
+            $db->table('fct_orders')
+                ->where('config', 'like', '%woocommerce%')
+                ->where('ip_address', $row->ip_address)
+                ->update(['ip_address' => '']);
+        }
     }
 
     /**
