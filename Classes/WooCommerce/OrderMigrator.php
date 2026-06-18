@@ -89,7 +89,7 @@ class OrderMigrator
             return $customer;
         }
 
-        $items = $this->buildItems($order, $currency, $createdAt);
+        $items = $this->buildItems($order, $currency, $createdAt, $this->refundedPerItem($order, $currency));
         if (!$items) {
             return new \WP_Error('woo_empty_order', 'Order #' . $wcOrderId . ' has no migratable line items.');
         }
@@ -120,6 +120,23 @@ class OrderMigrator
         ], true);
         $totalPaid   = $isPaid ? $orderTotal : 0;
         $totalRefund = min(MigratorHelper::toCents($order->get_total_refunded(), $currency), $totalPaid);
+
+        // If the refund wasn't allocated per line item by WooCommerce, spread
+        // the order-level refund across items proportionally to their line total.
+        if ($totalRefund > 0 && array_sum(array_map(function ($i) { return $i->refundTotal; }, $items)) === 0) {
+            $base = array_sum(array_map(function ($i) { return $i->lineTotal; }, $items));
+            if ($base > 0) {
+                foreach ($items as $item) {
+                    if ($item->lineTotal <= 0) {
+                        continue;
+                    }
+                    $item->refundTotal = min(
+                        (int) round(($item->lineTotal / $base) * $totalRefund),
+                        $item->lineTotal
+                    );
+                }
+            }
+        }
 
         $orderType   = $this->resolveOrderType($order);
         $completedAt = $order->get_date_completed() ? MigratorHelper::date($order->get_date_completed()) : null;
@@ -212,7 +229,7 @@ class OrderMigrator
     /**
      * @return OrderItemData[]
      */
-    private function buildItems($order, $currency, $createdAt)
+    private function buildItems($order, $currency, $createdAt, array $refundMap = [])
     {
         $items     = [];
         $cartIndex = 0;
@@ -246,6 +263,7 @@ class OrderMigrator
                 'taxAmount'      => $taxAmount,
                 'discountTotal'  => $discountTotal,
                 'lineTotal'      => $subtotal - $discountTotal,
+                'refundTotal'    => (int) ($refundMap[(int) $lineItem->get_id()] ?? 0),
                 'otherInfo'      => ['payment_type' => $isSubscription ? 'subscription' : 'onetime'],
                 'cartIndex'      => $cartIndex,
                 'createdAt'      => $createdAt,
@@ -254,6 +272,32 @@ class OrderMigrator
         }
 
         return $items;
+    }
+
+    /**
+     * Sum the per-line refunded amount (incl. tax) keyed by the original WC
+     * order item id, from each refund's line items (_refunded_item_id).
+     *
+     * @return array<int,int> wcOrderItemId => refundedCents
+     */
+    private function refundedPerItem($order, $currency)
+    {
+        $map = [];
+        foreach ($order->get_refunds() as $refund) {
+            foreach ($refund->get_items() as $refItem) {
+                $origId = (int) $refItem->get_meta('_refunded_item_id');
+                if (!$origId) {
+                    continue;
+                }
+                $amount = abs(MigratorHelper::toCents($refItem->get_total(), $currency))
+                    + abs(MigratorHelper::toCents($refItem->get_total_tax(), $currency));
+                if (!$amount) {
+                    continue;
+                }
+                $map[$origId] = ($map[$origId] ?? 0) + $amount;
+            }
+        }
+        return $map;
     }
 
     private function buildCharge($order, $orderType, $totalPaid, $currency, $createdAt)
