@@ -184,11 +184,26 @@ class OrderMigrator
         $data->transactions = [$this->buildCharge($order, $orderType, $totalPaid, $currency, $createdAt)];
         $data->refunds      = $this->buildRefunds($order, $orderType, $currency);
 
-        // Subscriptions: parent orders create them; renewal orders link to one.
+        // Subscriptions: parent orders create them; renewal orders link to one
+        // (or, if the parent subscription is missing, get a dummy so the renewal
+        // transaction still attaches to a subscription — mirrors the EDD source).
         if ($orderType === Status::ORDER_TYPE_SUBSCRIPTION) {
             $data->subscriptions = $this->buildSubscriptions($order, $wcOrderId, $currency, $createdAt);
         } elseif ($orderType === Status::ORDER_TYPE_RENEWAL) {
-            $data->linkedSubscriptionId = $this->findRenewalSubscriptionId($wcOrderId);
+            $linked = $this->findRenewalSubscriptionId($wcOrderId);
+            if ($linked) {
+                $data->linkedSubscriptionId = $linked;
+            } else {
+                $dummy = $this->buildDummySubscription($order, $currency, $createdAt);
+                if ($dummy) {
+                    $data->subscriptions = [$dummy];
+                }
+            }
+        }
+
+        // Best-effort switch/upgrade marker (WC Subscriptions only).
+        if (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) {
+            $data->config['contains_switch'] = true;
         }
 
         $result = $writer->write($data);
@@ -537,15 +552,89 @@ class OrderMigrator
                 'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
                 'createdAt'            => $createdAt,
                 'updatedAt'            => current_time('mysql'),
+                'activities'           => $this->buildSubscriptionNotes($wcSub->get_id(), $createdAt),
                 'config'               => [
                     'wc_subscription_id' => $wcSub->get_id(),
                     'billing_interval'   => (int) $wcSub->get_billing_interval(),
                     'currency'           => $currency,
+                    'switched'           => (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) ? 'yes' : 'no',
                 ],
             ]);
         }
 
         return $out;
+    }
+
+    /**
+     * WooCommerce subscription notes (a subscription is order-like) → ActivityData.
+     * Module type/id are set by the writer when the subscription is inserted.
+     *
+     * @return ActivityData[]
+     */
+    private function buildSubscriptionNotes($wcSubscriptionId, $fallbackDate)
+    {
+        if (!function_exists('wc_get_order_notes')) {
+            return [];
+        }
+
+        $out = [];
+        foreach (wc_get_order_notes(['order_id' => $wcSubscriptionId]) as $note) {
+            $content = trim((string) $note->content);
+            if ($content === '') {
+                continue;
+            }
+            $date = ($note->date_created instanceof \WC_DateTime)
+                ? $note->date_created->date('Y-m-d H:i:s')
+                : (string) $note->date_created;
+
+            $out[] = ActivityData::make([
+                'title'     => $note->customer_note ? 'Note to customer' : 'Subscription note',
+                'content'   => $content,
+                'createdBy' => $note->added_by ?: 'Migrator',
+                'createdAt' => $date ?: $fallbackDate,
+                'updatedAt' => $date ?: $fallbackDate,
+            ]);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Build a placeholder (canceled) subscription for a renewal order whose
+     * parent subscription wasn't migrated, so the renewal transaction still
+     * links to a subscription. Mirrors the EDD source's dummy subscription.
+     */
+    private function buildDummySubscription($order, $currency, $createdAt)
+    {
+        $item = null;
+        foreach ($order->get_items() as $lineItem) {
+            $item = $lineItem;
+            break;
+        }
+        if (!$item) {
+            return null;
+        }
+
+        $map       = $this->mapProduct((int) $item->get_product_id(), (int) $item->get_variation_id());
+        $recurring = MigratorHelper::toCents($order->get_total(), $currency);
+
+        return SubscriptionData::make([
+            'productId'            => $map['post_id'],
+            'itemName'             => $item->get_name(),
+            'variationId'          => $map['variation_id'] ?: 0,
+            'billingInterval'      => 'monthly',
+            'recurringAmount'      => $recurring,
+            'recurringTotal'       => $recurring,
+            'status'               => Status::SUBSCRIPTION_CANCELED,
+            'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
+            'createdAt'            => $createdAt,
+            'updatedAt'            => current_time('mysql'),
+            'config'               => [
+                'dummy'    => true,
+                'currency' => $currency,
+                'reason'   => 'renewal_without_parent_subscription',
+            ],
+        ]);
     }
 
     private function findRenewalSubscriptionId($orderId)

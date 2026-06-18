@@ -38,6 +38,9 @@ class SubscriptionData
     public $createdAt = '';
     public $updatedAt = '';
 
+    /** @var ActivityData[] optional subscription notes (written with module = Subscription) */
+    public $activities = [];
+
     public static function make(array $data)
     {
         $s = new self();

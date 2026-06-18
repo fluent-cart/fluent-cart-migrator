@@ -112,6 +112,18 @@ class OrderWriter
             $row['customer_id']     = (int) $order->customerId;
 
             $id = $db->table('fct_subscriptions')->insertGetId($row);
+
+            // Subscription notes → fct_activity (module = Subscription).
+            if (!empty($sub->activities)) {
+                foreach ($sub->activities as $activity) {
+                    $arow                = $activity->toArray();
+                    $arow['module_id']   = $id;
+                    $arow['module_type'] = 'FluentCart\App\Models\Subscription';
+                    $arow['module_name'] = 'Subscription';
+                    $db->table('fct_activity')->insert($arow);
+                }
+            }
+
             if (!$firstId) {
                 $firstId = $id;
             }
