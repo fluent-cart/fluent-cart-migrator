@@ -213,18 +213,27 @@ During `refresh()` you may see logged DB warnings like
 `drop_index()` speculatively drops `index_0..index_24` with errors hidden and
 Query Monitor logs them. The reset still succeeds.
 
-## 14. Not yet implemented (deferred — need test data)
+## 14. Grouped/bundle products & advanced subscriptions
 
-- **Grouped / bundle products** — WC core `grouped` type and the Product Bundles
-  extension. Needs a FluentCart bundle-modeling decision and a store that has them.
-- **Advanced WooCommerce Subscriptions** — switching/upgrade-downgrade chains,
-  dummy-subscription-for-renewal, and subscription notes. Basic parent/renewal
-  subscription migration *is* supported (§7.9); these extras need WC Subscriptions
-  active to build and verify.
+- **Grouped / bundle products** — after all products migrate,
+  `ProductMigrator::syncBundles()` maps WC `grouped` products (core) and Product
+  Bundles (extension, guarded by `class_exists('WC_Product_Bundle')`) to
+  FluentCart's bundle model via `ProductWriter::markBundle()`: child variation
+  ids on the parent's default variation `other_info.bundle_child_ids` +
+  `is_bundle_product = 'yes'` on the variation and product detail. The grouped
+  path is verified; the Product Bundles path mirrors it but is unverified (the
+  extension isn't available to test against).
+- **Advanced WooCommerce Subscriptions** (all guarded by WC Subscriptions, so a
+  no-op when it's absent): subscription **notes** → `fct_activity` (module =
+  Subscription); a **dummy (canceled) subscription** for a renewal order whose
+  parent subscription wasn't migrated, so the renewal transaction still links;
+  and a best-effort **switch/upgrade marker** (`config.contains_switch` /
+  `config.switched`). Basic parent/renewal subscription migration is in §7.9.
+  These extras are **unverified** — WooCommerce Subscriptions wasn't available to
+  test; they no-op (and don't affect the normal order flow) without it.
 
-Everything else EDD does that applies to a core WooCommerce store is implemented.
-(EDD-only concepts — software licenses, EDD legacy API/IPN endpoints, Paddle
-backfill — do not apply to WooCommerce core.)
+EDD-only concepts — software licenses, EDD legacy API/IPN endpoints, Paddle
+backfill — do not apply to WooCommerce core and are intentionally out of scope.
 
 ## 15. File map
 
