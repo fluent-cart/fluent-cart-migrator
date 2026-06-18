@@ -128,8 +128,8 @@
             </div>
         </div>
 
-        <!-- CLI hint (EDD only — WP-CLI command exists for EDD) -->
-        <div v-if="stats && !loading && sourceKey === 'edd'" class="fct-card fct-cli-hint">
+        <!-- CLI hint (sources with a WP-CLI command: EDD, WooCommerce) -->
+        <div v-if="stats && !loading && cliCommand" class="fct-card fct-cli-hint">
             <div class="fct-card-header">
                 <h2>WP-CLI (Recommended for Large Stores)</h2>
                 <p>For stores with thousands of orders, running via WP-CLI is faster and avoids browser timeouts.</p>
@@ -137,31 +137,31 @@
             <div class="fct-cli-commands">
                 <div class="fct-cli-row">
                     <span class="fct-cli-label">Full migration</span>
-                    <code class="fct-cli-code">wp fluent_cart_migrator migrate_from_edd --all</code>
+                    <code class="fct-cli-code">{{ cliCommand }} --all</code>
                 </div>
                 <div class="fct-cli-row">
                     <span class="fct-cli-label">Step by step</span>
-                    <code class="fct-cli-code">wp fluent_cart_migrator migrate_from_edd --products</code>
+                    <code class="fct-cli-code">{{ cliCommand }} --products</code>
                 </div>
                 <div class="fct-cli-row">
                     <span class="fct-cli-label"></span>
-                    <code class="fct-cli-code">wp fluent_cart_migrator migrate_from_edd --tax_rates</code>
+                    <code class="fct-cli-code">{{ cliCommand }} --tax_rates</code>
                 </div>
                 <div class="fct-cli-row">
                     <span class="fct-cli-label"></span>
-                    <code class="fct-cli-code">wp fluent_cart_migrator migrate_from_edd --coupons</code>
+                    <code class="fct-cli-code">{{ cliCommand }} --coupons</code>
                 </div>
                 <div class="fct-cli-row">
                     <span class="fct-cli-label"></span>
-                    <code class="fct-cli-code">wp fluent_cart_migrator migrate_from_edd --payments</code>
+                    <code class="fct-cli-code">{{ cliCommand }} --payments</code>
                 </div>
                 <div class="fct-cli-row">
                     <span class="fct-cli-label"></span>
-                    <code class="fct-cli-code">wp fluent_cart_migrator migrate_from_edd --recount</code>
+                    <code class="fct-cli-code">{{ cliCommand }} --recount</code>
                 </div>
                 <div class="fct-cli-row">
                     <span class="fct-cli-label">Check stats</span>
-                    <code class="fct-cli-code">wp fluent_cart_migrator migrate_from_edd --stats</code>
+                    <code class="fct-cli-code">{{ cliCommand }} --stats</code>
                 </div>
             </div>
         </div>
@@ -197,6 +197,12 @@ export default {
         },
         sourceKey: function () {
             return (this.source && this.source.key) || '';
+        },
+        cliCommand: function () {
+            // Sources that ship a WP-CLI command.
+            var map = { edd: 'migrate_from_edd', woocommerce: 'migrate_from_woo' };
+            var cmd = map[this.sourceKey];
+            return cmd ? 'wp fluent_cart_migrator ' + cmd : '';
         },
         hasExistingMigration: function () {
             var m = this.migrationStatus && this.migrationStatus.migration;

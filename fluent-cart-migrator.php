@@ -91,6 +91,12 @@ add_action('plugins_loaded', function () {
     if (defined('WP_CLI') && WP_CLI) {
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Commands.php';
         \WP_CLI::add_command('fluent_cart_migrator', '\FluentCartMigrator\Classes\Commands');
+
+        // WooCommerce source CLI — added as a sibling subcommand so the
+        // production EDD command class is not touched.
+        \WP_CLI::add_command('fluent_cart_migrator migrate_from_woo', function ($args, $assoc_args) {
+            (new \FluentCartMigrator\Classes\WooCommerce\Commands())->run($args, $assoc_args);
+        });
     }
 
     if (!defined('FLUENTCART_VERSION')) {
