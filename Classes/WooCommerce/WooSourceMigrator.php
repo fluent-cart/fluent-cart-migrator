@@ -5,6 +5,9 @@ namespace FluentCartMigrator\Classes\WooCommerce;
 use FluentCart\App\CPT\FluentProducts;
 use FluentCart\Database\DBMigrator;
 use FluentCartMigrator\Classes\Contracts\AbstractSourceMigrator;
+use FluentCartMigrator\Classes\Dto\CustomerData;
+use FluentCartMigrator\Classes\Load\CustomerWriter;
+use FluentCartMigrator\Classes\Support\BatchRuntime;
 
 /**
  * WooCommerce migration source.
@@ -246,6 +249,80 @@ class WooSourceMigrator extends AbstractSourceMigrator
         $result['migration_state'] = $this->markStep('tax_rates');
 
         return $result;
+    }
+
+    /**
+     * Migrate registered WooCommerce customers who have no orders (and so were
+     * never created by the order step) into fct_customers. Deduped by email via
+     * CustomerWriter, so customers already created from orders are skipped.
+     */
+    public function migrateMissingCustomers()
+    {
+        if (!class_exists('WooCommerce')) {
+            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+        }
+
+        $migrated = 0;
+        $page     = 1;
+        $perPage  = 200;
+
+        while (true) {
+            $users = get_users([
+                'role'    => 'customer',
+                'number'  => $perPage,
+                'paged'   => $page,
+                'orderby' => 'ID',
+                'order'   => 'ASC',
+                'fields'  => ['ID', 'user_email'],
+            ]);
+
+            if (!$users) {
+                break;
+            }
+
+            foreach ($users as $user) {
+                $email = $user->user_email;
+                if (!$email) {
+                    continue;
+                }
+
+                // Only count genuinely missing customers; order-derived ones exist.
+                $exists = fluentCart('db')->table('fct_customers')->where('email', $email)->first();
+                if ($exists) {
+                    continue;
+                }
+
+                $wc = new \WC_Customer($user->ID);
+                $result = CustomerWriter::findOrCreate(CustomerData::make([
+                    'userId'    => (int) $user->ID,
+                    'email'     => $email,
+                    'firstName' => $wc->get_first_name() ?: $wc->get_billing_first_name(),
+                    'lastName'  => $wc->get_last_name() ?: $wc->get_billing_last_name(),
+                    'country'   => $wc->get_billing_country(),
+                    'city'      => $wc->get_billing_city(),
+                    'state'     => $wc->get_billing_state(),
+                    'postcode'  => $wc->get_billing_postcode(),
+                    'createdAt' => current_time('mysql'),
+                    'updatedAt' => current_time('mysql'),
+                ]));
+
+                if (!is_wp_error($result)) {
+                    $migrated++;
+                }
+            }
+
+            $page++;
+            BatchRuntime::freeMemory();
+        }
+
+        $state = $this->markStep('missing_customers');
+
+        return [
+            'success'         => true,
+            'step'            => 'missing_customers',
+            'migrated'        => $migrated,
+            'migration_state' => $state,
+        ];
     }
 
     /**
