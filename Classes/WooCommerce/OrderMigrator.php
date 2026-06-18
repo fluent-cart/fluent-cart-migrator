@@ -152,9 +152,9 @@ class OrderMigrator
         $data->type                = $orderType;
         $data->mode                = Status::ORDER_MODE_LIVE;
         $data->customerId          = (int) $customer->id;
-        $data->paymentMethod       = $order->get_payment_method() ?: 'offline';
+        $data->paymentMethod       = MigratorHelper::gatewaySlug($order->get_payment_method());
         $data->paymentStatus       = $paymentStatus;
-        $data->paymentMethodTitle  = $order->get_payment_method_title() ?: ucfirst($order->get_payment_method() ?: 'Offline');
+        $data->paymentMethodTitle  = $order->get_payment_method_title() ?: ucfirst($order->get_payment_method() ?: 'Offline Payment');
         $data->currency            = $currency;
         $data->subtotal            = $subtotal;
         $data->manualDiscountTotal = $manualDiscount;
@@ -306,7 +306,7 @@ class OrderMigrator
             'orderType'         => $orderType,
             'transactionType'   => Status::TRANSACTION_TYPE_CHARGE,
             'vendorChargeId'    => (string) $order->get_transaction_id(),
-            'paymentMethod'     => $order->get_payment_method() ?: 'offline',
+            'paymentMethod'     => MigratorHelper::gatewaySlug($order->get_payment_method()),
             'paymentMode'       => Status::ORDER_MODE_LIVE,
             'status'            => $totalPaid > 0 ? Status::TRANSACTION_SUCCEEDED : Status::TRANSACTION_PENDING,
             'currency'          => $currency,
@@ -331,7 +331,7 @@ class OrderMigrator
             $refunds[] = TransactionData::make([
                 'orderType'       => $orderType,
                 'transactionType' => Status::TRANSACTION_TYPE_REFUND,
-                'paymentMethod'   => $order->get_payment_method() ?: 'offline',
+                'paymentMethod'   => MigratorHelper::gatewaySlug($order->get_payment_method()),
                 'paymentMode'     => Status::ORDER_MODE_LIVE,
                 'status'          => Status::TRANSACTION_REFUNDED,
                 'currency'        => $currency,
@@ -534,7 +534,7 @@ class OrderMigrator
                 'nextBillingDate'      => $this->nullableDate($wcSub->get_date('next_payment')),
                 'vendorSubscriptionId' => (string) $wcSub->get_id(),
                 'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status()),
-                'currentPaymentMethod' => $order->get_payment_method() ?: 'offline',
+                'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
                 'createdAt'            => $createdAt,
                 'updatedAt'            => current_time('mysql'),
                 'config'               => [

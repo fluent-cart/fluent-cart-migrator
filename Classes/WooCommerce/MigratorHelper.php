@@ -178,6 +178,35 @@ class MigratorHelper
         return $maps[$period] ?? 'monthly';
     }
 
+    /**
+     * Map a WooCommerce payment gateway id to the FluentCart payment-method slug.
+     * Unknown gateways pass through unchanged; empty falls back to offline.
+     */
+    public static function gatewaySlug($wcGateway)
+    {
+        $wcGateway = (string) $wcGateway;
+        if ($wcGateway === '') {
+            return 'offline_payment';
+        }
+
+        if (strpos($wcGateway, 'stripe') === 0) {
+            return 'stripe';
+        }
+        if (strpos($wcGateway, 'ppcp') === 0 || strpos($wcGateway, 'paypal') === 0) {
+            return 'paypal';
+        }
+
+        $maps = [
+            'cod'       => 'offline_payment',
+            'cheque'    => 'offline_payment',
+            'bacs'      => 'offline_payment',
+            'paystack'  => 'paystack',
+            'airwallex' => 'airwallex',
+        ];
+
+        return $maps[$wcGateway] ?? $wcGateway;
+    }
+
     /* -----------------------------------------------------------------
      | Coupons
      * ----------------------------------------------------------------- */
