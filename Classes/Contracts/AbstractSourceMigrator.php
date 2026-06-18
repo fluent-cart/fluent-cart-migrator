@@ -2,16 +2,20 @@
 
 namespace FluentCartMigrator\Classes\Contracts;
 
+use FluentCartMigrator\Classes\Load\CustomerWriter;
+use FluentCartMigrator\Classes\Support\BatchRuntime;
+
 /**
  * Base class for new migration sources (WooCommerce, SureCart, ...).
  *
  * Provides per-source progress state (namespaced option keys), failed-log
- * helpers, and safe "not implemented yet" defaults for every migration step so
- * a concrete source can be built up incrementally — overriding only the steps
- * it currently supports while still satisfying SourceMigratorInterface.
+ * helpers, the shared resumable/time-boxed/memory-boxed payment loop, and safe
+ * "not implemented yet" defaults for every migration step so a concrete source
+ * can be built up incrementally — overriding only the steps it currently
+ * supports while still satisfying SourceMigratorInterface.
  *
  * Note: the EDD source (MigratorService) does NOT extend this; it predates the
- * contract and keeps its own option keys.
+ * contract and keeps its own option keys and loop.
  */
 abstract class AbstractSourceMigrator implements SourceMigratorInterface
 {
@@ -143,9 +147,96 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
         return $page < 1 ? 1 : $page;
     }
 
+    /**
+     * Migrate orders into FluentCart, paginated and resumable. Shared by every
+     * source that extends this base: it owns the loop, state, time-box and
+     * memory-box; the source only implements migrateOrdersPage() to read+write
+     * one page. REST callers pass a small $maxSeconds to dodge HTTP timeouts;
+     * CLI callers pass 0 (and an unlimited memory_limit) to run to completion.
+     */
     public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25)
     {
-        return $this->notImplemented('payments');
+        if ($this->isStepDone('payments')) {
+            return [
+                'success'         => true,
+                'step'            => 'payments',
+                'page'            => $page,
+                'processed'       => 0,
+                'has_more'        => false,
+                'errors_in_batch' => count($this->getFailedLogs()),
+                'skipped'         => true,
+                'migration_state' => $this->getState(),
+            ];
+        }
+
+        $startedAt      = time();
+        $totalProcessed = 0;
+        $hasMore        = true;
+
+        while ($hasMore) {
+            $this->resetBatchCaches();
+
+            $batch = $this->migrateOrdersPage($page, $perPage);
+            $totalProcessed += (int) ($batch['processed'] ?? 0);
+            $hasMore = !empty($batch['has_more']);
+
+            $state = $this->getState();
+            $state['last_order_page'] = $page;
+            $this->saveState($state);
+
+            // Release runtime caches that pile up while loading source orders.
+            BatchRuntime::freeMemory();
+
+            if (!$hasMore) {
+                break;
+            }
+
+            $page++;
+
+            if ($maxSeconds > 0 && (time() - $startedAt) >= $maxSeconds) {
+                break;
+            }
+
+            // Hand off to the next request before exhausting memory.
+            if (BatchRuntime::memoryNearLimit()) {
+                break;
+            }
+        }
+
+        $state = $this->getState();
+        if (!$hasMore) {
+            $state['payments'] = 'yes';
+            $this->saveState($state);
+            $this->buildAndSaveSummary();
+        }
+
+        return [
+            'success'         => true,
+            'step'            => 'payments',
+            'page'            => $page,
+            'processed'       => $totalProcessed,
+            'has_more'        => $hasMore,
+            'errors_in_batch' => count($this->getFailedLogs()),
+            'migration_state' => $state,
+        ];
+    }
+
+    /**
+     * Read and write one page of orders. Sources override this. Returns
+     * ['processed' => int, 'has_more' => bool].
+     */
+    public function migrateOrdersPage($page, $perPage)
+    {
+        return ['processed' => 0, 'has_more' => false];
+    }
+
+    /**
+     * Reset per-batch caches between pages. Defaults to the shared customer
+     * cache; sources may override to also clear their own.
+     */
+    protected function resetBatchCaches()
+    {
+        CustomerWriter::resetCache();
     }
 
     public function migrateMissingCustomers()

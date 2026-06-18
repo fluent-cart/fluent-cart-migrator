@@ -166,12 +166,8 @@ class WooSourceMigrator extends AbstractSourceMigrator
     }
 
     /**
-     * Migrate WooCommerce orders into FluentCart, paginated and resumable.
-     *
-     * Mirrors the EDD source: each page resets the per-batch caches, migrates
-     * a slice of orders, and persists `last_order_page` so the UI/CLI can
-     * resume. REST callers pass a small $maxSeconds to dodge HTTP timeouts;
-     * CLI callers pass 0 to run to completion.
+     * Guard that WooCommerce is active, then run the shared resumable loop in
+     * AbstractSourceMigrator.
      */
     public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25)
     {
@@ -179,76 +175,18 @@ class WooSourceMigrator extends AbstractSourceMigrator
             return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
         }
 
-        $state = $this->getState();
-        if (($state['payments'] ?? '') === 'yes') {
-            return [
-                'success'         => true,
-                'step'            => 'payments',
-                'page'            => $page,
-                'processed'       => 0,
-                'has_more'        => false,
-                'errors_in_batch' => 0,
-                'skipped'         => true,
-                'migration_state' => $state,
-            ];
-        }
+        return parent::migratePayments($page, $perPage, $maxSeconds);
+    }
 
-        $migrator       = new OrderMigrator();
-        $startedAt      = time();
-        $totalProcessed = 0;
-        $hasMore        = true;
-
-        while ($hasMore) {
-            MigratorHelper::resetCaches();
-
-            $batch = $migrator->migratePage($page, $perPage);
-            $totalProcessed += $batch['processed'];
-            $hasMore = $batch['has_more'];
-
-            $state = $this->getState();
-            $state['last_order_page'] = $page;
-            $this->saveState($state);
-
-            // Release the runtime caches that pile up while WordPress/WooCommerce
-            // load orders, so a long run doesn't exhaust PHP's memory limit.
-            MigratorHelper::freeMemory();
-
-            if (!$hasMore) {
-                break;
-            }
-
-            $page++;
-
-            if ($maxSeconds > 0 && (time() - $startedAt) >= $maxSeconds) {
-                break;
-            }
-
-            // Memory-box the batch: WooCommerce order objects retain memory that
-            // survives cache flushing, so hand off to the next request before we
-            // exhaust the limit (has_more stays true, the loop resumes next call).
-            if (MigratorHelper::memoryNearLimit()) {
-                break;
-            }
-        }
-
-        $state = $this->getState();
-        if (!$hasMore) {
-            $state['payments'] = 'yes';
-            $this->saveState($state);
-            $this->buildAndSaveSummary();
-        }
-
-        $failedLogs = $this->getFailedLogs();
-
-        return [
-            'success'         => true,
-            'step'            => 'payments',
-            'page'            => $page,
-            'processed'       => $totalProcessed,
-            'has_more'        => $hasMore,
-            'errors_in_batch' => count($failedLogs),
-            'migration_state' => $state,
-        ];
+    /**
+     * Read + transform + write one page of WooCommerce orders (the per-page
+     * hook the base loop calls).
+     *
+     * @return array{processed:int,has_more:bool}
+     */
+    public function migrateOrdersPage($page, $perPage)
+    {
+        return (new OrderMigrator())->migratePage($page, $perPage);
     }
 
     /**
