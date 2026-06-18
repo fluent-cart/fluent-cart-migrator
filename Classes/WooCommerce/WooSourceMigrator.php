@@ -125,6 +125,9 @@ class WooSourceMigrator extends AbstractSourceMigrator
             return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
         }
 
+        // Non-destructive store-settings migration runs with the first step.
+        (new StoreSettingsMigrator())->migrate();
+
         if ($this->isStepDone('products')) {
             return [
                 'success'         => true,
