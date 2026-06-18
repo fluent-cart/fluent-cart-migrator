@@ -7,6 +7,7 @@ use FluentCartMigrator\Classes\Dto\ProductDownloadData;
 use FluentCartMigrator\Classes\Dto\ProductVariationData;
 use FluentCartMigrator\Classes\Load\CategoryWriter;
 use FluentCartMigrator\Classes\Load\ProductWriter;
+use FluentCartMigrator\Classes\Support\BatchRuntime;
 
 /**
  * WooCommerce product source: Extract + Transform only.
@@ -39,12 +40,20 @@ class ProductMigrator
 
         $writer  = new ProductWriter();
         $results = [];
+        $i       = 0;
         foreach ($productIds as $productId) {
             try {
                 $results[$productId] = $this->migrateProduct((int) $productId, $writer);
             } catch (\Throwable $e) {
                 // A single bad product must not abort the whole step.
                 $results[$productId] = new \WP_Error('woo_migrator_error', $e->getMessage());
+            }
+
+            // Reclaim memory periodically — WC product objects (esp. variable /
+            // subscription) and Query Monitor's per-query backtraces accumulate
+            // and can exhaust the limit over a large catalog.
+            if (++$i % 5 === 0) {
+                BatchRuntime::freeMemory();
             }
         }
 
@@ -67,16 +76,22 @@ class ProductMigrator
             $types[] = 'bundle';
         }
 
-        $parents = wc_get_products([
+        $parentIds = wc_get_products([
             'type'   => $types,
             'limit'  => -1,
-            'return' => 'objects',
+            'return' => 'ids',
             'status' => ['publish', 'private', 'draft'],
         ]);
 
-        foreach ($parents as $parent) {
-            $fctPostId = (int) get_post_meta($parent->get_id(), MigratorHelper::WC_TO_FCT_META, true);
+        $i = 0;
+        foreach ($parentIds as $parentId) {
+            $fctPostId = (int) get_post_meta($parentId, MigratorHelper::WC_TO_FCT_META, true);
             if (!$fctPostId) {
+                continue;
+            }
+
+            $parent = wc_get_product($parentId);
+            if (!$parent) {
                 continue;
             }
 
@@ -90,6 +105,10 @@ class ProductMigrator
 
             if ($childVariationIds) {
                 $writer->markBundle($fctPostId, $childVariationIds);
+            }
+
+            if (++$i % 5 === 0) {
+                BatchRuntime::freeMemory();
             }
         }
     }
