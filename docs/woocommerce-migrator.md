@@ -11,9 +11,8 @@ a store and map records to a normalized, typed contract; a shared, source-agnost
 ```
 WooCommerce store ──Extract──▶ WooCommerce/ ──Transform──▶ Dto/ ──▶ Load/ ──▶ fct_* tables
  (wc_get_products /            (OrderMigrator,            (typed     (OrderWriter,
-  wc_get_orders, HPOS-safe)     ProductMigrator)          value      ProductWriter,
-                                                          objects)   CustomerWriter,
-                                                                     CategoryWriter)
+  wc_get_orders, HPOS-safe;     ProductMigrator,          value      ProductWriter,
+  WC_Coupon, WC_Tax, ...)       CouponMigrator, ...)      objects)   CustomerWriter, ...)
 ```
 
 | Layer | Namespace / dir | Responsibility |
@@ -24,9 +23,9 @@ WooCommerce store ──Extract──▶ WooCommerce/ ──Transform──▶ D
 | **Support** | `Classes/Support/` | Cross-cutting helpers: money, sku, validation, cascade delete, memory. |
 | **Orchestration** | `Classes/Contracts/AbstractSourceMigrator.php` | State machine, resumable paginated loop, failed-log, recount dispatch, summary. |
 
-The same Load/Support/Dto layers are designed to serve every source. EDD still
-runs on its own legacy path (`Classes/MigratorService.php` + `Classes/EDD3/`)
-behind the same interface; only WooCommerce is on the new layer today.
+The same Load/Support/Dto layers serve every source. EDD still runs on its own
+legacy path (`Classes/MigratorService.php` + `Classes/EDD3/`) behind the same
+interface and is never modified by the WooCommerce source.
 
 ## 2. Entry points
 
@@ -34,165 +33,200 @@ behind the same interface; only WooCommerce is on the new layer today.
   source as a `?source=woocommerce` query param (set once via `setApiSource()`
   in `assets/js/api.js`), so `RestApi::resolveMigrator()` routes to the
   WooCommerce source instead of defaulting to EDD.
-- **REST** namespace `fct-migrator/v1` (`Classes/Admin/RestApi.php`), e.g.
-  `GET /sources`, `GET /stats/woocommerce`, `GET /status`,
-  `POST /migrate/products`, `POST /migrate/payments`, `POST /migrate/recount`,
-  `POST /reset`.
+- **REST** namespace `fct-migrator/v1` (`Classes/Admin/RestApi.php`):
+  `GET /sources`, `GET /stats/woocommerce`, `GET /status`, and `POST /migrate/{products|tax-rates|coupons|payments|missing-customers|recount}`, `POST /reset`.
+- **WP-CLI** — `wp fluent_cart_migrator migrate_from_woo` (see §12).
 - **Source registry** `Classes/SourceManager.php` maps `woocommerce` →
   `WooCommerce\WooSourceMigrator`.
 
 ## 3. Detection, compatibility, stats
 
 `WooSourceMigrator::detect()` returns a `compatibility` verdict the wizard
-renders directly (so it never shows EDD copy):
-- not active → blocked ("WooCommerce not detected")
-- version `< 3.0` (the CRUD-API baseline) → blocked
-- otherwise → pass.
-
+renders directly (not active → blocked; version `< 3.0` → blocked; else pass).
 `getStats()` counts products / orders / paid orders / customers / coupons /
-subscriptions via the CRUD API (HPOS-safe), and lists gateways + order statuses
-for the overview screen.
+subscriptions via the CRUD API (HPOS-safe) and lists gateways + order statuses.
 
-## 4. Product migration
+## 4. Products  (`POST /migrate/products`)
 
-`POST /migrate/products` → `WooSourceMigrator::migrateProducts()` →
-`WooCommerce\ProductMigrator` (Transform) → `Load\ProductWriter` (Load).
+`WooSourceMigrator::migrateProducts()` → `ProductMigrator` (Transform) →
+`ProductWriter` (Load).
 
-Per product:
-1. `ProductMigrator::sourceCategories()` flattens `product_cat` terms; once per
-   run `Load\CategoryWriter::sync()` creates/maps them into FluentCart's
-   `product-categories` taxonomy **parents-first**, returning `wcTermId → fctTermId`.
-2. `ProductMigrator::buildProduct()` builds a `Dto\ProductData` with
-   `Dto\ProductVariationData[]` (each carrying `Dto\ProductDownloadData[]`),
-   resolved category ids, and the id-mapping meta keys.
-3. `ProductWriter::write()`:
-   - Upserts the `fluent-products` CPT post (updates in place if already mapped).
-   - Inserts `fct_product_variations` — each SKU passed through
-     `Support\Sku::unique()`.
-   - Inserts `fct_product_details` (min/max price, default variation, fulfillment).
-   - Inserts `fct_product_downloads` (driver/extension derived from the file).
-   - Writes the bidirectional mapping postmeta.
+- **Store settings** are migrated here first, once, non-destructively via
+  `StoreSettingsMigrator` (WC store address / country-state / currency /
+  currency position / decimal separator → FluentCart `StoreSettings`; only fills
+  empty keys).
+- Categories: `CategoryWriter::sync()` maps `product_cat` → FluentCart
+  `product-categories` **parents-first** (`wcTermId → fctTermId`).
+- Each product → `Dto\ProductData` (+ `ProductVariationData[]`, each with
+  `ProductDownloadData[]`). `ProductWriter` upserts the `fluent-products` CPT post,
+  `fct_product_variations` (SKU via `Support\Sku::unique()`), `fct_product_details`,
+  `fct_product_downloads`, and the bidirectional mapping postmeta.
 
-Variations: a simple product → one variation (`variation_identifier = '0'`);
-a variable product → one per child, keyed by the WC variation id.
+Simple product → one variation (`variation_identifier = '0'`); variable product
+→ one per child keyed by the WC variation id.
 
-## 5. Order migration
+## 5. Tax rates  (`POST /migrate/tax-rates`)
 
-`POST /migrate/payments` → `AbstractSourceMigrator::migratePayments()` (shared
-loop) → `WooSourceMigrator::migrateOrdersPage()` → `WooCommerce\OrderMigrator`
-(Transform) → `Load\OrderWriter` (Load).
+`WooSourceMigrator::migrateTaxRates()` → `TaxRateMigrator`. Mirrors EDD but reads
+WooCommerce and uses FluentCart **core** services (no EDD code):
 
-### Per-order transform (`OrderMigrator::migrateOrder`)
-1. **Customer** — build `Dto\CustomerData` from the WC billing details;
-   `Load\CustomerWriter::findOrCreate()` dedupes by email (per-batch cache) and
-   returns the `fct_customers` row.
-2. **Items** — each `WC_Order_Item_Product` → `Dto\OrderItemData`
-   (cents amounts, product/variation mapped to FluentCart ids, subscription
-   line flagged). Unmapped products keep `post_id = 0` so the historical line
-   is preserved.
-3. **Totals & reconciliation** — subtotal/coupon-discount come from the items;
-   tax/shipping/fee from the order. The remainder needed to make the components
-   equal the real `WC_Order::get_total()` is absorbed into `manual_discount_total`
-   (or `fee_total` if negative), so the FluentCart accounting identity always
-   holds: `total = subtotal + tax + shipping + fee − coupon − manual`.
-4. **Status** — `MigratorHelper::orderStatus()` / `paymentStatus()` map WC
-   statuses + refund amount to FluentCart `Status` enums.
-5. **Transactions** — one charge `Dto\TransactionData` (= `total_paid`); refunds
-   from `WC_Order::get_refunds()` become refund transactions.
-6. **Addresses / coupons / taxes** — `Dto\AddressData[]` (billing+shipping),
-   `Dto\AppliedCouponData[]` (coupon id resolved via
-   `MigratorHelper::couponIdByCode`), `Dto\TaxRateData[]`.
-7. **Subscriptions** (WooCommerce Subscriptions, if active) — parent orders build
-   `Dto\SubscriptionData[]`; renewal orders set `linkedSubscriptionId` resolved
-   from the already-migrated parent subscription. Guarded by `function_exists`,
-   so it's a no-op when the plugin isn't installed.
+- Syncs `fluent_cart_tax_configuration_settings` (`enable_tax`, `tax_inclusion`
+  from `wc_prices_include_tax()`).
+- Ensures tax classes via `TaxClassController::checkAndCreateInitialTaxClasses()`
+  and generates rates for the taxed countries via `TaxManager::generateTaxClasses()`.
+- Builds a **`WC tax_rate_id → fct_tax_rates.id` map** (country+state, country-only
+  fallback) stored in option `_woo_fct_tax_rate_maps`.
 
-### Persistence (`OrderWriter::write`)
-Order of operations, all via raw `fluentCart('db')->table()->insert` (never
-Eloquent — see §7):
-`OrderValidator::validate()` → if the order id already exists,
-`OrderDeleter::deleteById()` (idempotent re-run) → `fct_orders` (uuid generated
-here) → `fct_order_items` (+ nested bundle children) → `fct_subscriptions` →
-charge `fct_order_transactions` (linked to the subscription) → refund
-transactions → `fct_order_addresses` → `fct_applied_coupons` →
-`fct_order_tax_rate` → `fct_order_operations` → optional `fct_licenses` /
-`fct_activity` (populated only by sources that have them — WooCommerce leaves
-them empty).
+The order step consumes that map: `OrderMigrator::buildTaxRates()` resolves it to
+a valid `fct_order_tax_rate.tax_rate_id` (a NOT NULL column) and **skips unmapped
+rates** rather than writing null. Run tax-rates before payments so orders link.
 
-## 6. The resumable batch loop
+## 6. Coupons  (`POST /migrate/coupons`)
 
-`AbstractSourceMigrator::migratePayments($page, $perPage, $maxSeconds)` is shared:
+`WooSourceMigrator::migrateCoupons()` → `CouponMigrator` (Transform) →
+`CouponWriter` (Load, upsert by unique `code`). Each `WC_Coupon` →
+`Dto\CouponData`:
 
-- Skips if the `payments` step is already done.
-- Per page: `resetBatchCaches()` (clears the customer cache) →
-  `migrateOrdersPage()` → save `last_order_page` → `BatchRuntime::freeMemory()`.
-- Breaks when there are no more pages, when `$maxSeconds` elapses (REST passes
-  25s), or when `BatchRuntime::memoryNearLimit()` (70% of the PHP memory_limit)
-  trips — returning `has_more = true` so the next (fresh) request resumes.
-- On completion marks `payments = yes` and rebuilds the summary.
+- type: `percent`/`percent_product` → `percentage`, `fixed_*` → `fixed`, pure
+  free-shipping → `free_shipping`; amount in cents (fixed) or raw percent.
+- `conditions`: usage limits, min/max purchase amount, product & category
+  include/exclude (mapped to migrated FluentCart ids/terms).
+- `individual_use` → `stackable = 'no'`; status `publish` → `active`.
 
-REST uses `perPage = 50`; the front-end loops until `has_more` is false. The
-memory guard auto-disables when `memory_limit` is unlimited (e.g. WP-CLI), so a
-CLI run goes start-to-finish in one process.
+Once coupons exist, the order step back-links `applied_coupons.coupon_id` via
+`MigratorHelper::couponIdByCode()` on the next payments run.
 
-Why the memory guard exists: WooCommerce order objects retain memory that
-survives cache flushing, so a single web request can only safely process a
-bounded number of orders before handing off.
+## 7. Orders  (`POST /migrate/payments`)
 
-## 7. Idempotency & key conventions
+`AbstractSourceMigrator::migratePayments()` (shared loop) →
+`WooSourceMigrator::migrateOrdersPage()` → `OrderMigrator` (Transform) →
+`OrderWriter` (Load).
 
-- **Order id is reused**: `fct_orders.id = WooCommerce order id`. Re-running
-  deletes the prior order (cascade) and re-inserts — no duplicates.
-- **Product mapping postmeta**:
-  - `_fct_migrated_id` on the **WC product** → FluentCart post id
-  - `_wc_migrated_from` on the **FluentCart post** → WC product id
-  - `__wc_migrated_variation_maps` on the FluentCart post → `wcVariationId → fctVariationId`
-- WooCommerce-migrated orders are tagged `config.migrated_from = "woocommerce"`.
-- **Raw inserts, not models**: lets us reuse the source id, keep historical
-  `created_at`/`updated_at`, set `uuid`/`receipt_number`/`invoice_no` explicitly,
-  and bypass FluentCart model `boot()` hooks (which auto-generate those and can
-  fire emails/webhooks on the `created` event).
-- **SKU**: the `fct_product_variations.sku` column is `VARCHAR(30)` with a UNIQUE
-  index, and MySQL here is non-strict (silent truncation). `Support\Sku::unique()`
-  truncates to 30 and dedupes on the *stored* value (trimming the base so the
-  `-wc-N` suffix survives), preventing collisions from long/duplicate WC SKUs.
+Per-order transform (`OrderMigrator::migrateOrder`):
+1. **Customer** — `CustomerData` from WC billing; `CustomerWriter::findOrCreate()`
+   dedupes by email.
+2. **Items** — each line → `OrderItemData` (cents, product/variation mapped,
+   subscription line flagged). Unmapped products keep `post_id = 0`.
+3. **Totals & reconciliation** — derived from items + order tax/shipping/fee;
+   the gap to the real `WC_Order::get_total()` lands in `manual_discount_total`
+   (or `fee_total` if negative), so `total = subtotal + tax + shipping + fee −
+   coupon − manual` always holds.
+4. **Status** — `MigratorHelper::orderStatus()/paymentStatus()` → FluentCart enums.
+5. **Payment method** — `MigratorHelper::gatewaySlug()` normalizes the WC gateway
+   id to FluentCart slugs (`stripe*`→`stripe`, `ppcp*`/`paypal*`→`paypal`,
+   `cod`/`cheque`/`bacs`→`offline_payment`, …) on the order + transactions.
+6. **Transactions** — one charge (= `total_paid`); refunds from
+   `WC_Order::get_refunds()` become refund transactions, and **per-line refund
+   amounts** are written to `fct_order_items.refund_total` (via
+   `_refunded_item_id`, or distributed proportionally when not line-allocated).
+7. **Addresses / coupons / taxes** — billing+shipping, `AppliedCouponData[]`
+   (`coupon_id` resolved from migrated coupons), `TaxRateData[]` (rate id from §5 map).
+8. **Activity** — WC order notes (`wc_get_order_notes`, system + customer) →
+   `ActivityData[]` → `fct_activity` (module = Order).
+9. **Subscriptions** (WooCommerce Subscriptions, if active) — parent orders build
+   `SubscriptionData[]`; renewals link to the migrated parent subscription.
+   Guarded by `function_exists`, so a no-op when the plugin is absent.
 
-## 8. Recount
+Persistence (`OrderWriter::write`), all raw inserts (see §10):
+validate → cascade-delete if the id exists (idempotent) → `fct_orders` →
+items (+ bundle children) → subscriptions → charge + refund transactions →
+addresses → applied coupons → tax rates → operations → optional licenses /
+activities.
 
-`POST /migrate/recount` runs the substeps the source declares.
-WooCommerce → `['customers', 'subscriptions']` (EDD's reactivation / UUID fixes
-don't apply). Both recompute aggregates purely from the migrated FluentCart
-tables (so they're source-agnostic and reused from `MigratorService`):
-- **customers** — LTV, purchase count, AOV, first/last purchase dates.
-- **subscriptions** — bill counts and completed status from renewal orders.
+On completion the source also **masks shared IPs** — clears `ip_address` on
+WooCommerce-migrated orders whose IP appears on more than N orders (likely a
+gateway/proxy IP). Scoped to `migrated_from = woocommerce`, so EDD data is untouched.
 
-The substep list is exposed in `GET /status` as `recount_substeps`, and the
-wizard runs exactly those — so it never sends EDD-only substeps to WooCommerce.
+## 8. Customers without orders  (`POST /migrate/missing-customers`)
 
-## 9. Reset (dev mode only)
+`WooSourceMigrator::migrateMissingCustomers()` paginates
+`WP_User_Query(role=customer)` and creates `fct_customers` for users not already
+present (deduped by email via `CustomerWriter`), using `WC_Customer` billing
+details. Order-derived customers are skipped. (Opt-in wizard step.)
 
-`POST /reset` → `WooSourceMigrator::reset()` (gated behind
-`FLUENT_CART_DEV_MODE`). It clears the WooCommerce migration options and runs
-`DBMigrator::refresh()` (drop + recreate all FluentCart tables), then removes
-migrated products and the mapping postmeta.
+## 9. The resumable batch loop
 
-Note: during `refresh()` you may see logged DB warnings like
-`Can't DROP 'wp_fct_..._0'; check that column/key exists`. These are **benign** —
-WordPress core's `drop_index()` speculatively drops `index_0..index_24` with
-errors hidden; Query Monitor logs the hidden error. The reset still succeeds.
+`AbstractSourceMigrator::migratePayments($page, $perPage, $maxSeconds)`:
+- skips if the `payments` step is done;
+- per page: reset caches → `migrateOrdersPage()` → save `last_order_page` →
+  `BatchRuntime::freeMemory()`;
+- breaks on no-more-pages, on `$maxSeconds` (REST passes 25s), or on
+  `BatchRuntime::memoryNearLimit()` (70% of `memory_limit`) — returning
+  `has_more = true` so the next (fresh) request resumes.
 
-## 10. Current limitations
+REST uses `perPage = 50` and the front-end loops until `has_more` is false. The
+memory guard auto-disables when `memory_limit` is unlimited (CLI), so a CLI run
+completes in one process. (It exists because WC order objects retain memory that
+survives cache flushing.)
 
-- **Standalone coupon and tax-rate steps** (`migrateCoupons` / `migrateTaxRates`)
-  are not implemented for WooCommerce. Order-level coupons and taxes *are*
-  captured inline with each order; only the separate catalog-level migration of
-  `fct_coupons` / `fct_tax_rates` is pending.
-- **No WP-CLI command** for WooCommerce yet — migration runs through the admin
-  wizard / REST. (A long CLI run would need a raised `memory_limit`.)
-- WooCommerce Subscriptions support is best-effort and depends on the
-  WooCommerce Subscriptions plugin being active.
+## 10. Idempotency & key conventions
 
-## 11. File map
+- **Order id reused**: `fct_orders.id = WooCommerce order id`; re-running cascade-
+  deletes then re-inserts — no duplicates. Catalog steps upsert by natural key
+  (coupon code; tax rate by region+class via the map).
+- **Product mapping postmeta**: `_fct_migrated_id` (on WC product) → FC post id;
+  `_wc_migrated_from` (on FC post) → WC product id;
+  `__wc_migrated_variation_maps` (on FC post) → `wcVariationId → fctVariationId`.
+- WooCommerce-migrated orders carry `config.migrated_from = "woocommerce"`.
+- **Raw inserts, not models** — to reuse the source id, keep historical
+  timestamps, set `uuid`/`receipt_number`/`invoice_no` explicitly, and bypass
+  model `boot()` hooks (which auto-generate those and can fire emails/webhooks).
+- **SKU** — `fct_product_variations.sku` is `VARCHAR(30)` UNIQUE and MySQL is
+  non-strict (silent truncation); `Support\Sku::unique()` truncates to 30 and
+  dedupes on the *stored* value so long/duplicate WC SKUs don't collide.
+
+## 11. Recount  (`POST /migrate/recount`)
+
+WooCommerce substeps: `['coupons', 'customers', 'subscriptions']`, recomputed
+purely from the migrated FluentCart tables (reused read-only from
+`MigratorService`): coupon `use_count`; customer LTV / purchase count / AOV /
+first&last purchase dates; subscription bill counts. The list is exposed in
+`GET /status` as `recount_substeps`, which drives the wizard.
+
+## 12. WP-CLI
+
+```bash
+wp fluent_cart_migrator migrate_from_woo --all
+wp fluent_cart_migrator migrate_from_woo --products       # also store settings
+wp fluent_cart_migrator migrate_from_woo --tax_rates
+wp fluent_cart_migrator migrate_from_woo --coupons
+wp fluent_cart_migrator migrate_from_woo --payments
+wp fluent_cart_migrator migrate_from_woo --missing-customers
+wp fluent_cart_migrator migrate_from_woo --recount
+wp fluent_cart_migrator migrate_from_woo --stats           # counts only
+wp fluent_cart_migrator migrate_from_woo --reset           # dev mode only
+```
+
+Implemented in `Classes/WooCommerce/Commands.php`, registered as a sibling
+subcommand in the bootstrap (the production EDD `Classes/Commands.php` is
+untouched). For very large stores raise the memory limit, e.g.
+`wp --exec='ini_set("memory_limit","1G");' fluent_cart_migrator migrate_from_woo --all`.
+
+## 13. Reset (dev mode only)
+
+`POST /reset` / `--reset` → `WooSourceMigrator::reset()` (gated behind
+`FLUENT_CART_DEV_MODE`): clears the WooCommerce migration options, runs
+`DBMigrator::refresh()`, and removes migrated products + mapping postmeta.
+
+During `refresh()` you may see logged DB warnings like
+`Can't DROP 'wp_fct_..._0'`; these are **benign** — WordPress core's
+`drop_index()` speculatively drops `index_0..index_24` with errors hidden and
+Query Monitor logs them. The reset still succeeds.
+
+## 14. Not yet implemented (deferred — need test data)
+
+- **Grouped / bundle products** — WC core `grouped` type and the Product Bundles
+  extension. Needs a FluentCart bundle-modeling decision and a store that has them.
+- **Advanced WooCommerce Subscriptions** — switching/upgrade-downgrade chains,
+  dummy-subscription-for-renewal, and subscription notes. Basic parent/renewal
+  subscription migration *is* supported (§7.9); these extras need WC Subscriptions
+  active to build and verify.
+
+Everything else EDD does that applies to a core WooCommerce store is implemented.
+(EDD-only concepts — software licenses, EDD legacy API/IPN endpoints, Paddle
+backfill — do not apply to WooCommerce core.)
+
+## 15. File map
 
 ```
 Classes/
@@ -200,39 +234,33 @@ Classes/
   Dto/                                   # OrderData, OrderItemData, TransactionData,
                                          #  AddressData, AppliedCouponData, TaxRateData,
                                          #  SubscriptionData, LicenseData, ActivityData,
-                                         #  CustomerData, ProductData, ProductVariationData,
-                                         #  ProductDownloadData
+                                         #  CustomerData, CouponData, ProductData,
+                                         #  ProductVariationData, ProductDownloadData
   Load/
-    OrderWriter.php        # writes the whole order graph
-    ProductWriter.php      # writes product + variations + downloads + details
-    CustomerWriter.php     # find-or-create, dedupe by email
-    CategoryWriter.php     # parents-first taxonomy sync
+    OrderWriter.php / ProductWriter.php / CustomerWriter.php
+    CategoryWriter.php / CouponWriter.php
   Support/
-    Money.php              # toCents (zero-decimal aware)
-    Sku.php                # VARCHAR(30)-safe unique SKU
-    OrderValidator.php     # accounting identity guard
-    OrderDeleter.php       # cascade delete (idempotency)
-    BatchRuntime.php       # freeMemory + memory-limit guard
+    Money.php / Sku.php / OrderValidator.php / OrderDeleter.php / BatchRuntime.php
   WooCommerce/
-    WooSourceMigrator.php  # detect/stats/steps + migrateOrdersPage hook + reset
-    OrderMigrator.php      # WC order → OrderData (Transform)
-    ProductMigrator.php    # WC product → ProductData (Transform)
-    MigratorHelper.php     # WC-specific maps (status/stock/fulfillment), money/date getters
+    WooSourceMigrator.php   # detect/stats/steps, migrateOrdersPage hook, reset, IP mask
+    OrderMigrator.php       # WC order  → OrderData
+    ProductMigrator.php     # WC product → ProductData
+    CouponMigrator.php      # WC coupon  → CouponData
+    TaxRateMigrator.php     # WC tax     → fct tax classes/rates + rate-id map
+    StoreSettingsMigrator.php
+    Commands.php            # migrate_from_woo WP-CLI
+    MigratorHelper.php      # WC-specific maps (status/stock/fulfillment/gateway), money/date
 ```
 
-## 12. Verifying a run (WP-CLI)
+## 16. Verifying a run (WP-CLI)
 
 ```bash
-wp eval '
-  $s = new \FluentCartMigrator\Classes\WooCommerce\WooSourceMigrator();
-  $s->migrateProducts();
-  $r = $s->migratePayments(1, 50, 0);            // perPage 50, no time box (CLI)
-  foreach ($s->getRecountSubsteps() as $sub) { $s->recountStats($sub); }
-  echo "orders processed={$r["processed"]} errors={$r["errors_in_batch"]}\n";
-'
+wp fluent_cart_migrator migrate_from_woo --all
+wp fluent_cart_migrator migrate_from_woo --stats
 ```
 
-Checks worth asserting: migrated counts match the store; the accounting identity
-holds per order (`total_amount == subtotal + tax + shipping + fee − coupon −
-manual`); `total_amount == round(WC total × 100)`; a second run produces no
-duplicate rows (idempotency); recount populates customer `ltv` / `purchase_count`.
+Worth asserting: migrated counts match the store; the accounting identity holds
+per order (`total_amount == subtotal + tax + shipping + fee − coupon − manual`,
+and `== round(WC total × 100)`); a second run produces no duplicate rows
+(idempotency); coupons/tax-rates back-link `coupon_id` / `tax_rate_id` on orders;
+recount populates customer `ltv` / `purchase_count`.
