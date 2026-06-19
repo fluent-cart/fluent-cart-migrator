@@ -99,13 +99,66 @@ class ProductWriter
             $row['post_id'] = $postId;
             $row['sku']     = Sku::unique($variation->sku);
 
+            // Advanced variations: the DB variation_identifier is the joined
+            // attribute term ids and other_info.variant carries them, while the
+            // source->fct postmeta map below stays keyed by the source
+            // variationIdentifier (the WC variation id) so order migration can
+            // still resolve a line item's variation.
+            $termIds = array_values(array_filter(array_map(function ($p) {
+                return (int) ($p['term_id'] ?? 0);
+            }, $variation->variantTermIds)));
+
+            if ($termIds) {
+                $row['variation_identifier'] = implode('_', $termIds);
+
+                // Advanced variations carry the full FluentCart variant baseline
+                // so downstream readers (order-item insert, editor) find every
+                // expected key; any values the source already set win over it.
+                $existing          = json_decode($row['other_info'], true);
+                $info              = array_merge(
+                    $this->defaultVariantOtherInfo(),
+                    is_array($existing) ? $existing : []
+                );
+                $info['variant']   = $termIds;
+                $row['other_info'] = json_encode($info);
+            }
+
             $variationId = $db->table('fct_product_variations')->insertGetId($row);
             $map[(string) $variation->variationIdentifier] = (int) $variationId;
+
+            if ($termIds) {
+                AttributeWriter::writeRelations($variationId, $variation->variantTermIds);
+            }
 
             $this->writeDownloads($postId, $variationId, $variation->downloads, $row['created_at']);
         }
 
         return $map;
+    }
+
+    /**
+     * FluentCart's canonical per-variant other_info baseline (mirrors
+     * AdvancedVariationService::defaultVariantOtherInfo) so migrated advanced
+     * variations store the same shape the editor writes.
+     */
+    protected function defaultVariantOtherInfo()
+    {
+        return [
+            'description'        => '',
+            'payment_type'       => 'onetime',
+            'tax_class'          => 'standard',
+            'tax_exempt'         => 'no',
+            'tax_inclusion'      => '',
+            'times'              => '',
+            'repeat_interval'    => 'yearly',
+            'billing_summary'    => '',
+            'manage_setup_fee'   => 'no',
+            'signup_fee_name'    => '',
+            'signup_fee'         => '',
+            'setup_fee_per_item' => 'no',
+            'package_slug'       => '',
+            'weight'             => null,
+        ];
     }
 
     protected function writeDownloads($postId, $variationId, $downloads, $createdAt)
@@ -158,6 +211,20 @@ class ProductWriter
         }, $product->variations)));
         $productFulfillment = count($fulfillments) === 1 ? $fulfillments[0] : 'mixed';
 
+        $otherInfo = [
+            'group_pricing_by'  => 'repeat_interval',
+            'use_pricing_table' => 'yes',
+        ];
+
+        // Advanced variations carry the attribute config so the FluentCart
+        // editor renders the grouped attribute/term variation table.
+        if ($product->attributeConfig) {
+            $variationType                  = 'advanced_variations';
+            $otherInfo['attribute_config']  = $product->attributeConfig;
+        } else {
+            $variationType = $product->isVariable ? 'simple_variations' : 'simple';
+        }
+
         fluentCart('db')->table('fct_product_details')->insertGetId([
             'post_id'              => $postId,
             'fulfillment_type'     => $productFulfillment,
@@ -167,12 +234,9 @@ class ProductWriter
             'default_media'        => json_encode([]),
             'manage_stock'         => $product->manageStock,
             'stock_availability'   => $product->stockAvailability,
-            'variation_type'       => $product->isVariable ? 'simple_variations' : 'simple',
+            'variation_type'       => $variationType,
             'manage_downloadable'  => $product->isDownloadable,
-            'other_info'           => json_encode([
-                'group_pricing_by'  => 'repeat_interval',
-                'use_pricing_table' => 'yes',
-            ]),
+            'other_info'           => json_encode($otherInfo),
             'created_at'           => $createdAt,
             'updated_at'           => gmdate('Y-m-d H:i:s'),
         ]);
@@ -181,6 +245,17 @@ class ProductWriter
     protected function cleanupExisting($postId)
     {
         $db = fluentCart('db');
+
+        // Clear attribute relations for this product's variations before the
+        // variation rows are dropped, so a re-run doesn't orphan them.
+        $existingVariations = $db->table('fct_product_variations')
+            ->where('post_id', $postId)->get();
+        $variationIds = [];
+        foreach ($existingVariations as $v) {
+            $variationIds[] = (int) $v->id;
+        }
+        AttributeWriter::deleteRelationsForVariations($variationIds);
+
         $db->table('fct_product_variations')->where('post_id', $postId)->delete();
         $db->table('fct_product_details')->where('post_id', $postId)->delete();
         $db->table('fct_product_downloads')->where('post_id', $postId)->delete();

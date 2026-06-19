@@ -35,6 +35,16 @@ class ProductData
     /** @var ProductVariationData[] */
     public $variations = [];
 
+    /**
+     * Advanced-variation attribute config for fct_product_details.other_info.
+     * Each entry is ['group_id' => int, 'variants' => int[]] (fct group id and
+     * the term ids selected for it). When non-empty the writer marks the product
+     * detail variation_type = 'advanced_variations'.
+     *
+     * @var array<int,array{group_id:int,variants:int[]}>
+     */
+    public $attributeConfig = [];
+
     /** @var array{source:string,fct:string,variationMap:string} */
     public $mappingKeys = [];
 

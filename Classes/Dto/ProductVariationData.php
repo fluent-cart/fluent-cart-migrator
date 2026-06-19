@@ -32,6 +32,16 @@ class ProductVariationData
     public $createdAt = '';
     public $updatedAt = '';
 
+    /**
+     * Advanced-variation attribute terms this variation maps to. Each entry is
+     * ['term_id' => int, 'group_id' => int] (resolved fct_atts_terms ids). When
+     * non-empty the writer sets variation_identifier to the joined term ids,
+     * stores them under other_info.variant, and writes fct_atts_relations rows.
+     *
+     * @var array<int,array{term_id:int,group_id:int}>
+     */
+    public $variantTermIds = [];
+
     /** @var ProductDownloadData[] */
     public $downloads = [];
 

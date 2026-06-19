@@ -65,6 +65,50 @@ subscriptions via the CRUD API (HPOS-safe) and lists gateways + order statuses.
 Simple product → one variation (`variation_identifier = '0'`); variable product
 → one per child keyed by the WC variation id.
 
+### Advanced variations (attributes & terms)
+
+**Any product that carries attributes** is migrated as a FluentCart
+**advanced-variations** product. `ProductMigrator::resolveAttributeGroups()`
+(Transform) maps each WC attribute — global taxonomy (`pa_*`) and custom — onto
+the shared FluentCart attribute library via `Load\AttributeWriter`:
+
+- **Group** (`fct_atts_groups`) per attribute, deduped by slug across the whole
+  store (taxonomy → `wc_attribute_label()` title + taxonomy slug; custom →
+  attribute name). Reused across products; defaults to a "Text" type.
+- **Term** (`fct_atts_terms`) per value, deduped by `group_id + slug` (taxonomy
+  term name/slug; custom option). A variation referencing a value missing from
+  the parent's configured options is resolved from the taxonomy (or created from
+  the custom value) so no variation loses a dimension; a value that exists in
+  neither is skipped.
+
+Variations are built per product type:
+
+- **Variable / variable-subscription** → one FluentCart variation per WC child,
+  carrying the terms (in group order) that define it. Only variation-defining
+  attributes participate.
+- **Non-variable with attributes** (simple/subscription) → the cartesian product
+  of **all** attribute terms, one variation per combination, each sharing the
+  source price/stock. Capped at `ProductMigrator::MAX_COMBINATIONS` (500); above
+  it the product stays a plain single-variation product. The first combination
+  keeps the legacy `'0'` map key so pre-existing orders still resolve.
+
+Each advanced variation matches FluentCart's canonical shape (see the editor's
+`AdvancedVariationService`):
+
+- `variation_identifier` = the `_`-joined term ids in group order.
+- `other_info` = the full default variant baseline (`tax_class`, `payment_type`,
+  `repeat_interval`, …) plus `variant` = the term ids.
+- `variation_title` = the term titles joined by ` / ` (e.g. `Red / XS / Wool`).
+- `fct_atts_relations` rows link the **variation id** (`object_id`) → term/group.
+- The product detail is marked `variation_type = 'advanced_variations'` with
+  `other_info.attribute_config = [{group_id, variants:[termIds]}]` (each group's
+  configured term set, in WC attribute order).
+
+The source→fct postmeta map stays keyed by the WC variation id (not the term-id
+identifier), so order migration still resolves line-item variations. Re-runs are
+idempotent: groups/terms are never deleted (re-resolved by slug); a product's
+relations are cleared before its variations are re-created.
+
 ## 5. Tax rates  (`POST /migrate/tax-rates`)
 
 `WooSourceMigrator::migrateTaxRates()` → `TaxRateMigrator`. Mirrors EDD but reads
@@ -247,7 +291,7 @@ Classes/
                                          #  ProductVariationData, ProductDownloadData
   Load/
     OrderWriter.php / ProductWriter.php / CustomerWriter.php
-    CategoryWriter.php / CouponWriter.php
+    CategoryWriter.php / CouponWriter.php / AttributeWriter.php
   Support/
     Money.php / Sku.php / OrderValidator.php / OrderDeleter.php / BatchRuntime.php
   WooCommerce/
