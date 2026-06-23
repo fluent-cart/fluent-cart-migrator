@@ -444,12 +444,13 @@ class WooSourceMigrator extends AbstractSourceMigrator
 
     /**
      * Post-migration recount substeps supported by the WooCommerce source.
-     * EDD's reactivation / subscription-UUID fixes don't apply here; we only
-     * recompute the aggregates that the order import leaves at their defaults.
+     * EDD's subscription-UUID fix doesn't apply (the writer always sets a uuid).
+     * `reactivations` runs before `subscriptions` so orphan renewal transactions
+     * are re-attached to their subscription before bill counts are recomputed.
      */
     public function getRecountSubsteps()
     {
-        return ['coupons', 'customers', 'subscriptions'];
+        return ['coupons', 'customers', 'reactivations', 'subscriptions'];
     }
 
     /**
@@ -468,6 +469,12 @@ class WooSourceMigrator extends AbstractSourceMigrator
 
             case 'customers':
                 return $recounter->recountCustomers();
+
+            case 'reactivations':
+                // Re-attach paid renewal transactions left without a subscription_id
+                // (e.g. parent subscription migrated after the renewal) to the
+                // right subscription. Source-agnostic, reused read-only from EDD.
+                return $recounter->fixReactivations();
 
             case 'subscriptions':
                 $result = $recounter->recountSubscriptions();

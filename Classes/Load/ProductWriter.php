@@ -176,26 +176,83 @@ class ProductWriter
                 continue;
             }
 
-            $isUrl = (bool) preg_match('#^https?://#i', $file);
-            $name  = $download->name ?: basename(parse_url($file, PHP_URL_PATH) ?: $file);
-            $ext   = pathinfo(parse_url($file, PHP_URL_PATH) ?: $file, PATHINFO_EXTENSION);
+            // Relocate local files into uploads/fluent-cart/ (stored as basename,
+            // the way FluentCart serves them) mirroring the EDD source. True
+            // remote URLs keep the url driver. Failure-tolerant: any problem
+            // falls back to storing the original path.
+            $relocated = $this->relocateLocalDownload($file);
+            if ($relocated !== null) {
+                $driver    = 'local';
+                $storePath = $relocated;
+                $storeUrl  = $relocated;
+            } else {
+                $driver    = preg_match('#^https?://#i', $file) ? 'url' : 'local';
+                $storePath = $file;
+                $storeUrl  = $file;
+            }
+
+            $name = $download->name ?: basename(parse_url($storePath, PHP_URL_PATH) ?: $storePath);
+            $ext  = pathinfo(parse_url($storePath, PHP_URL_PATH) ?: $storePath, PATHINFO_EXTENSION);
 
             $db->table('fct_product_downloads')->insert([
                 'download_identifier'  => md5($file . '_' . $postId . '_' . $variationId . '_' . $serial . '_' . wp_generate_uuid4()),
                 'post_id'              => $postId,
                 'product_variation_id' => json_encode($variationId ? [(int) $variationId] : []),
-                'driver'               => $isUrl ? 'url' : 'local',
+                'driver'               => $driver,
                 'title'                => $name,
                 'type'                 => $ext,
                 'file_name'            => $name,
-                'file_path'            => $file,
-                'file_url'             => $file,
+                'file_path'            => $storePath,
+                'file_url'             => $storeUrl,
                 'serial'               => $serial,
                 'settings'             => json_encode(['download_limit' => '', 'download_expiry' => '']),
                 'created_at'           => $createdAt,
                 'updated_at'           => current_time('mysql'),
             ]);
         }
+    }
+
+    /**
+     * Copy a WooCommerce downloadable file that lives on local disk (an uploads
+     * URL for this site, or an absolute path) into uploads/fluent-cart/ and
+     * return its basename — the form FluentCart serves downloads from. Returns
+     * null for remote URLs or any failure, so the caller keeps the original
+     * path. Idempotent (skips the copy if the destination already exists).
+     *
+     * @return string|null
+     */
+    protected function relocateLocalDownload($file)
+    {
+        $uploads = wp_upload_dir();
+        if (!empty($uploads['error']) || empty($uploads['basedir'])) {
+            return null;
+        }
+
+        $localPath = null;
+        if (preg_match('#^https?://#i', $file)) {
+            if (!empty($uploads['baseurl']) && strpos($file, $uploads['baseurl']) === 0) {
+                $localPath = $uploads['basedir'] . substr($file, strlen($uploads['baseurl']));
+            }
+        } elseif (isset($file[0]) && ($file[0] === '/' || preg_match('#^[A-Za-z]:[\\\\/]#', $file))) {
+            $localPath = $file;
+        }
+
+        if (!$localPath || !@file_exists($localPath)) {
+            return null;
+        }
+
+        $destDir = trailingslashit($uploads['basedir']) . 'fluent-cart/';
+        if (!file_exists($destDir)) {
+            wp_mkdir_p($destDir);
+        }
+
+        $fileName = basename($localPath);
+        $destFile = $destDir . $fileName;
+        if (!file_exists($destFile) && !@copy($localPath, $destFile)) {
+            return null;
+        }
+
+        return $fileName;
     }
 
     protected function writeDetails(ProductData $product, $postId, array $variationMap, $createdAt)

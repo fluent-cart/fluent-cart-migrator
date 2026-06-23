@@ -106,8 +106,8 @@ class ProductMigrator
             }
 
             $childVariationIds = [];
-            foreach ($this->bundleChildIds($parent) as $childWcId) {
-                $varId = $this->firstFctVariationId((int) $childWcId);
+            foreach ($this->bundleChildIds($parent) as $child) {
+                $varId = $this->fctVariationId($child['product_id'], $child['variation_id']);
                 if ($varId) {
                     $childVariationIds[] = $varId;
                 }
@@ -124,34 +124,50 @@ class ProductMigrator
     }
 
     /**
-     * Child WooCommerce product ids for a grouped or bundle parent.
+     * Child references for a grouped or bundle parent. Each entry is
+     * ['product_id' => int, 'variation_id' => int] — variation_id is set only
+     * when a Product Bundles item is pinned to a specific variation, else 0.
      *
-     * @return int[]
+     * @return array<int,array{product_id:int,variation_id:int}>
      */
     private function bundleChildIds($parent)
     {
         if ($parent->is_type('grouped')) {
-            return array_map('intval', $parent->get_children());
+            $out = [];
+            foreach ($parent->get_children() as $childId) {
+                $out[] = ['product_id' => (int) $childId, 'variation_id' => 0];
+            }
+            return $out;
         }
 
         // Product Bundles extension.
         if (method_exists($parent, 'get_bundled_items')) {
-            $ids = [];
+            $out = [];
             foreach ($parent->get_bundled_items() as $item) {
-                if (method_exists($item, 'get_product_id')) {
-                    $ids[] = (int) $item->get_product_id();
+                if (!method_exists($item, 'get_product_id')) {
+                    continue;
                 }
+                $variationId = 0;
+                if (method_exists($item, 'get_product')) {
+                    $bundled = $item->get_product();
+                    if ($bundled && $bundled->is_type('variation')) {
+                        $variationId = (int) $bundled->get_id();
+                    }
+                }
+                $out[] = ['product_id' => (int) $item->get_product_id(), 'variation_id' => $variationId];
             }
-            return $ids;
+            return $out;
         }
 
         return [];
     }
 
     /**
-     * The first (default) migrated FluentCart variation id for a WC product.
+     * The migrated FluentCart variation id for a WC product — the specific
+     * variation when $wcVariationId is given and mapped, else the first
+     * (default) migrated variation.
      */
-    private function firstFctVariationId($wcProductId)
+    private function fctVariationId($wcProductId, $wcVariationId = 0)
     {
         $fctPost = (int) get_post_meta($wcProductId, MigratorHelper::WC_TO_FCT_META, true);
         if (!$fctPost) {
@@ -161,6 +177,10 @@ class ProductMigrator
         $map = get_post_meta($fctPost, MigratorHelper::VARIATION_MAP_META, true);
         if (!is_array($map) || !$map) {
             return 0;
+        }
+
+        if ($wcVariationId && isset($map[(string) $wcVariationId])) {
+            return (int) $map[(string) $wcVariationId];
         }
 
         return (int) reset($map);
@@ -219,6 +239,7 @@ class ProductMigrator
         $data->postExcerpt       = $product->get_short_description();
         $data->postStatus        = $product->get_status();
         $data->postName          = $product->get_slug();
+        $data->postAuthor        = (int) get_post_field('post_author', $product->get_id());
         $data->createdAt         = $createdAt;
         $data->thumbnailId       = $product->get_image_id() ?: null;
         $data->isVariable        = $isVariable;
@@ -254,12 +275,19 @@ class ProductMigrator
         $regular = MigratorHelper::toCents($source->get_regular_price());
         $price   = MigratorHelper::toCents($source->get_price() !== '' ? $source->get_price() : $source->get_regular_price());
 
-        return [
+        // Subscription products carry recurring config on the variation (mirrors
+        // EDD's getPriceVariationDetails); everything else is a one-time payment.
+        // payment_type is always set explicitly so the column is never NULL.
+        $isSubscription = class_exists('WC_Subscriptions_Product')
+            && \WC_Subscriptions_Product::is_subscription($source);
+
+        $fields = [
             'mediaId'             => $source->get_image_id() ?: null,
             'serialIndex'         => 1,
             'variationTitle'      => '',
             'variationIdentifier' => '0',
             'sku'                 => (string) $source->get_sku(),
+            'paymentType'         => $isSubscription ? 'subscription' : 'onetime',
             'manageStock'         => $source->get_manage_stock() ? 1 : 0,
             'stockStatus'         => MigratorHelper::stockStatus($source->get_stock_status()),
             'backorders'          => $source->get_backorders() !== 'no' ? 1 : 0,
@@ -272,6 +300,44 @@ class ProductMigrator
             'downloads'           => $source->is_downloadable() ? $this->buildDownloads($source) : [],
             'createdAt'           => $createdAt,
             'updatedAt'           => current_time('mysql'),
+        ];
+
+        if ($isSubscription) {
+            $fields['otherInfo'] = $this->subscriptionVariantInfo($source);
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Recurring config for a subscription product's variation other_info,
+     * matching the shape FluentCart's ProductVariation reads and EDD writes.
+     *
+     * @return array
+     */
+    private function subscriptionVariantInfo($source)
+    {
+        $period   = \WC_Subscriptions_Product::get_period($source);
+        $interval = (int) \WC_Subscriptions_Product::get_interval($source);
+        $length   = (int) \WC_Subscriptions_Product::get_length($source);        // 0 = until cancelled
+        $trial    = (int) \WC_Subscriptions_Product::get_trial_length($source);
+        $signup   = MigratorHelper::toCents(\WC_Subscriptions_Product::get_sign_up_fee($source));
+        $repeat   = MigratorHelper::repeatInterval($period, $interval);
+
+        $summary = $length > 0
+            ? sprintf('%s every %s for %d times', $source->get_price(), $repeat, $length)
+            : sprintf('%s every %s until cancelled', $source->get_price(), $repeat);
+
+        return [
+            'payment_type'     => 'subscription',
+            'repeat_interval'  => $repeat,
+            'times'            => $length,
+            'trial_days'       => $trial,
+            'manage_setup_fee' => $signup > 0 ? 'yes' : 'no',
+            'signup_fee'       => $signup,
+            'signup_fee_name'  => '',
+            'installment'      => $length > 0 ? 'yes' : 'no',
+            'billing_summary'  => $summary,
         ];
     }
 

@@ -163,7 +163,9 @@ class OrderMigrator
         $data->shippingTotal       = $shippingTotal;
         $data->feeTotal            = $feeTotal;
         $data->taxTotal            = $taxTotal;
-        $data->taxBehavior         = $taxTotal > 0 ? 1 : 0;
+        // FluentCart tax_behavior: 0 = none, 1 = exclusive, 2 = inclusive.
+        $pricesIncludeTax          = function_exists('wc_prices_include_tax') && wc_prices_include_tax();
+        $data->taxBehavior         = $taxTotal > 0 ? ($pricesIncludeTax ? 2 : 1) : 0;
         $data->totalAmount         = $orderTotal;
         $data->totalPaid           = $totalPaid;
         $data->totalRefund         = $totalRefund;
@@ -190,9 +192,13 @@ class OrderMigrator
         if ($orderType === Status::ORDER_TYPE_SUBSCRIPTION) {
             $data->subscriptions = $this->buildSubscriptions($order, $wcOrderId, $currency, $createdAt);
         } elseif ($orderType === Status::ORDER_TYPE_RENEWAL) {
-            $linked = $this->findRenewalSubscriptionId($wcOrderId);
+            $linked = $this->findRenewalSubscription($wcOrderId);
             if ($linked) {
-                $data->linkedSubscriptionId = $linked;
+                $data->linkedSubscriptionId = $linked['id'];
+                // Stamp the parent (subscription's first) order id so the shared
+                // recountSubscriptions/fixReactivations can attribute this renewal
+                // to its subscription — WC renewal orders have no WP post parent.
+                $data->parentId = $linked['parent_order_id'];
             } else {
                 $dummy = $this->buildDummySubscription($order, $currency, $createdAt);
                 if ($dummy) {
@@ -201,9 +207,18 @@ class OrderMigrator
             }
         }
 
-        // Best-effort switch/upgrade marker (WC Subscriptions only).
+        // Best-effort switch/upgrade marker (WC Subscriptions only). Record the
+        // related subscription ids so the upgrade/downgrade chain isn't entirely
+        // lost (mirrors EDD's upgraded_from/to intent). UNVERIFIED — needs the
+        // WC Subscriptions switching feature.
         if (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) {
             $data->config['contains_switch'] = true;
+            if (function_exists('wcs_get_subscriptions_for_switch_order')) {
+                $switchedIds = array_values(array_map('intval', array_keys(wcs_get_subscriptions_for_switch_order($order))));
+                if ($switchedIds) {
+                    $data->config['switched_subscription_ids'] = $switchedIds;
+                }
+            }
         }
 
         $result = $writer->write($data);
@@ -317,11 +332,14 @@ class OrderMigrator
 
     private function buildCharge($order, $orderType, $totalPaid, $currency, $createdAt)
     {
+        $method = MigratorHelper::gatewaySlug($order->get_payment_method());
+
         return TransactionData::make([
             'orderType'         => $orderType,
             'transactionType'   => Status::TRANSACTION_TYPE_CHARGE,
             'vendorChargeId'    => (string) $order->get_transaction_id(),
-            'paymentMethod'     => MigratorHelper::gatewaySlug($order->get_payment_method()),
+            'paymentMethod'     => $method,
+            'paymentMethodType' => $method === 'stripe' ? 'card' : '',
             'paymentMode'       => Status::ORDER_MODE_LIVE,
             'status'            => $totalPaid > 0 ? Status::TRANSACTION_SUCCEEDED : Status::TRANSACTION_PENDING,
             'currency'          => $currency,
@@ -425,8 +443,11 @@ class OrderMigrator
      */
     private function buildTaxRates($order, $currency, $createdAt)
     {
-        $rates   = [];
-        $rateMap = TaxRateMigrator::rateMap();
+        $rates     = [];
+        $rateMap   = TaxRateMigrator::rateMap();
+        $inclusive = function_exists('wc_prices_include_tax') && wc_prices_include_tax();
+        $country   = $order->get_billing_country();
+        $db        = fluentCart('db');
 
         foreach ($order->get_items('tax') as $tax) {
             /** @var \WC_Order_Item_Tax $tax */
@@ -437,14 +458,13 @@ class OrderMigrator
                 continue;
             }
 
-            // fct_order_tax_rate.tax_rate_id is NOT NULL — only write the
-            // per-rate breakdown row when the WC rate maps to a FluentCart rate
-            // (run the tax-rates step first). The order header tax_total still
-            // carries the amount regardless.
-            $fctRateId = $rateMap[(int) $tax->get_rate_id()] ?? null;
-            if (!$fctRateId) {
-                continue;
-            }
+            // Mirror EDD: always write the breakdown row. When the WC rate maps to
+            // a FluentCart rate use its id + details; otherwise fall back to 0
+            // (the order header tax_total still carries the amount). fct's
+            // tax_rate_id is declared NOT NULL but MySQL coerces 0, as EDD relies on.
+            $fctRateId = (int) ($rateMap[(int) $tax->get_rate_id()] ?? 0);
+            $fctRate   = $fctRateId ? $db->table('fct_tax_rates')->where('id', $fctRateId)->first() : null;
+            $ratePct   = $fctRate ? (float) $fctRate->rate : 0.0;
 
             $rates[] = TaxRateData::make([
                 'taxRateId'   => $fctRateId,
@@ -452,13 +472,19 @@ class OrderMigrator
                 'orderTax'    => $orderTax,
                 'totalTax'    => $taxAmount,
                 'meta'        => [
-                    'inclusive'     => false,
+                    'inclusive'     => $inclusive,
                     'rates'         => [[
-                        'label'      => $tax->get_label(),
-                        'tax_amount' => $taxAmount,
-                        'rate_id'    => (int) $tax->get_rate_id(),
+                        'rate_id'        => $fctRateId,
+                        'label'          => $tax->get_label(),
+                        'tax_amount'     => $taxAmount,
+                        'rate'           => $ratePct,
+                        'rate_percent'   => $ratePct,
+                        'for_shipping'   => $fctRate ? ($fctRate->for_shipping ?? '') : ($shippingTax > 0 ? 'yes' : ''),
+                        'country'        => $fctRate ? ($fctRate->country ?: $country) : $country,
+                        'is_compound'    => (bool) ($fctRate->is_compound ?? false),
+                        'taxable_amount' => $ratePct > 0 ? (int) round($taxAmount * 100 / $ratePct) : 0,
                     ]],
-                    'tax_country'   => $order->get_billing_country(),
+                    'tax_country'   => $country,
                     'migrated_from' => 'woocommerce',
                 ],
                 'createdAt'   => $createdAt,
@@ -530,25 +556,47 @@ class OrderMigrator
             }
 
             $map       = $this->mapProduct($productId, $variation);
-            $recurring = MigratorHelper::toCents($wcSub->get_total(), $currency);
             $signupFee = method_exists($wcSub, 'get_sign_up_fee')
                 ? MigratorHelper::toCents($wcSub->get_sign_up_fee(), $currency)
+                : 0;
+
+            // WC get_total() is tax-inclusive; split it so recurring_amount is
+            // ex-tax, recurring_tax_total is the tax, recurring_total the gross
+            // (recurring_amount + recurring_tax_total) — matches EDD semantics.
+            $recurringTotal = MigratorHelper::toCents($wcSub->get_total(), $currency);
+            $recurringTax   = method_exists($wcSub, 'get_total_tax')
+                ? MigratorHelper::toCents($wcSub->get_total_tax(), $currency)
+                : 0;
+            $recurringAmount = max(0, $recurringTotal - $recurringTax);
+
+            // bill_times / trial_days live on the (variation) product; without
+            // bill_times the recount can never auto-complete a fixed-term sub.
+            $subProduct = wc_get_product($variation ?: $productId);
+            $billTimes  = ($subProduct && class_exists('WC_Subscriptions_Product'))
+                ? (int) \WC_Subscriptions_Product::get_length($subProduct)
+                : 0;
+            $trialDays  = ($subProduct && class_exists('WC_Subscriptions_Product'))
+                ? (int) \WC_Subscriptions_Product::get_trial_length($subProduct)
                 : 0;
 
             $out[] = SubscriptionData::make([
                 'productId'            => $map['post_id'],
                 'itemName'             => $itemName,
                 'variationId'          => $map['variation_id'] ?: 0,
-                'billingInterval'      => MigratorHelper::billingInterval($wcSub->get_billing_period()),
+                'billingInterval'      => MigratorHelper::repeatInterval($wcSub->get_billing_period(), $wcSub->get_billing_interval()),
                 'signupFee'            => max(0, $signupFee),
-                'recurringAmount'      => $recurring,
-                'recurringTotal'       => $recurring,
+                'initialTaxTotal'      => MigratorHelper::toCents($order->get_total_tax(), $currency),
+                'recurringAmount'      => $recurringAmount,
+                'recurringTaxTotal'    => $recurringTax,
+                'recurringTotal'       => $recurringTotal,
+                'billTimes'            => $billTimes,
+                'trialDays'            => $trialDays,
                 'expireAt'             => $this->nullableDate($wcSub->get_date('end')),
                 'trialEndsAt'          => $this->nullableDate($wcSub->get_date('trial_end')),
                 'canceledAt'           => $wcSub->get_status() === 'cancelled' ? $this->nullableDate($wcSub->get_date('cancelled')) : null,
                 'nextBillingDate'      => $this->nullableDate($wcSub->get_date('next_payment')),
                 'vendorSubscriptionId' => (string) $wcSub->get_id(),
-                'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status()),
+                'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status(), $wcSub->get_date('end')),
                 'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
                 'createdAt'            => $createdAt,
                 'updatedAt'            => current_time('mysql'),
@@ -637,7 +685,14 @@ class OrderMigrator
         ]);
     }
 
-    private function findRenewalSubscriptionId($orderId)
+    /**
+     * Resolve the migrated FluentCart subscription for a WC renewal order.
+     *
+     * @return array{id:int,parent_order_id:int}|null id = fct_subscriptions.id,
+     *         parent_order_id = the subscription's parent order id (reused 1:1 as
+     *         the FluentCart order id), used to stamp the renewal's parent_id.
+     */
+    private function findRenewalSubscription($orderId)
     {
         if (!function_exists('wcs_get_subscriptions_for_renewal_order')) {
             return null;
@@ -650,7 +705,7 @@ class OrderMigrator
             }
             $fctSub = fluentCart('db')->table('fct_subscriptions')->where('parent_order_id', $parentId)->first();
             if ($fctSub) {
-                return (int) $fctSub->id;
+                return ['id' => (int) $fctSub->id, 'parent_order_id' => $parentId];
             }
         }
 

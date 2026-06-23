@@ -22,6 +22,7 @@ class ProductData
     public $postExcerpt = '';
     public $postStatus = 'publish';
     public $postName = '';
+    public $postAuthor = 0;
     public $createdAt = '';
     public $thumbnailId = null;
     public $isVariable = false;
@@ -64,7 +65,7 @@ class ProductData
      */
     public function postArray()
     {
-        return [
+        $data = [
             'post_title'   => $this->postTitle,
             'post_content' => $this->postContent,
             'post_excerpt' => $this->postExcerpt,
@@ -72,5 +73,13 @@ class ProductData
             'post_name'    => $this->postName,
             'post_date'    => $this->createdAt,
         ];
+
+        // Only set author when known, so wp_insert_post keeps its default
+        // (current user) rather than author 0 for an unattributed product.
+        if ($this->postAuthor) {
+            $data['post_author'] = (int) $this->postAuthor;
+        }
+
+        return $data;
     }
 }

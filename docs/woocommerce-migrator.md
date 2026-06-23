@@ -104,6 +104,14 @@ Each advanced variation matches FluentCart's canonical shape (see the editor's
   `other_info.attribute_config = [{group_id, variants:[termIds]}]` (each group's
   configured term set, in WC attribute order).
 
+**Subscription products.** `variationFields()` always sets `payment_type`
+explicitly (never NULL). For a WC Subscription / variable-subscription source
+(`WC_Subscriptions_Product::is_subscription`) it sets `payment_type =
+'subscription'` and the recurring `other_info` FluentCart reads —
+`repeat_interval` (period × interval), `times` (length, 0 = until cancelled),
+`trial_days`, `manage_setup_fee`/`signup_fee`, `installment`, `billing_summary` —
+mirroring EDD's `getPriceVariationDetails`.
+
 The source→fct postmeta map stays keyed by the WC variation id (not the term-id
 identifier), so order migration still resolves line-item variations. Re-runs are
 idempotent: groups/terms are never deleted (re-resolved by slug); a product's
@@ -168,8 +176,20 @@ Per-order transform (`OrderMigrator::migrateOrder`):
 8. **Activity** — WC order notes (`wc_get_order_notes`, system + customer) →
    `ActivityData[]` → `fct_activity` (module = Order).
 9. **Subscriptions** (WooCommerce Subscriptions, if active) — parent orders build
-   `SubscriptionData[]`; renewals link to the migrated parent subscription.
-   Guarded by `function_exists`, so a no-op when the plugin is absent.
+   `SubscriptionData[]` with `billing_interval` (period × interval multiplier →
+   `quarterly`/`half_yearly` where applicable), `bill_times` (subscription length,
+   so the recount can auto-complete fixed-term subs), and the recurring split
+   (`recurring_amount` ex-tax, `recurring_tax_total`, `recurring_total`). Status
+   gets a past-expiry override (active-but-ended → expired). Renewals link to the
+   migrated parent subscription **and stamp `parent_id`** = the subscription's
+   parent order id, so `recountSubscriptions`/`fixReactivations` can attribute the
+   renewal. Guarded by `function_exists`, so a no-op when the plugin is absent.
+
+Tax behavior on the order is derived from `wc_prices_include_tax()` (0 none /
+1 exclusive / 2 inclusive). Tax-rate breakdown rows are always written (mirroring
+EDD) — mapped to a FluentCart rate id when the tax-rates step ran, else `0` — with
+full meta (`rate_percent`, `country`, `is_compound`, `for_shipping`,
+`taxable_amount`). Stripe charges carry `payment_method_type = card`.
 
 Persistence (`OrderWriter::write`), all raw inserts (see §10):
 validate → cascade-delete if the id exists (idempotent) → `fct_orders` →
@@ -221,11 +241,14 @@ survives cache flushing.)
 
 ## 11. Recount  (`POST /migrate/recount`)
 
-WooCommerce substeps: `['coupons', 'customers', 'subscriptions']`, recomputed
-purely from the migrated FluentCart tables (reused read-only from
+WooCommerce substeps: `['coupons', 'customers', 'reactivations', 'subscriptions']`,
+recomputed purely from the migrated FluentCart tables (reused read-only from
 `MigratorService`): coupon `use_count`; customer LTV / purchase count / AOV /
-first&last purchase dates; subscription bill counts. The list is exposed in
-`GET /status` as `recount_substeps`, which drives the wizard.
+first&last purchase dates; `reactivations` re-attaches paid renewal transactions
+left without a `subscription_id` to their subscription (runs before the bill
+count); subscription bill counts (auto-completing fixed-term subs once
+`bill_count >= bill_times`). The list is exposed in `GET /status` as
+`recount_substeps`, which drives the wizard.
 
 ## 12. WP-CLI
 

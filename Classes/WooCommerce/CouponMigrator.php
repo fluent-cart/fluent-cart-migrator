@@ -51,6 +51,18 @@ class CouponMigrator
         return $results;
     }
 
+    /**
+     * Whether a coupon applies to subscription renewals. WC Subscriptions'
+     * `recurring_*` / `renewal_*` discount types do; `sign_up_fee*` and regular
+     * cart/product coupons apply to the first payment only.
+     */
+    private function isRecurringCoupon($discountType)
+    {
+        return (strpos((string) $discountType, 'recurring') === 0 || strpos((string) $discountType, 'renewal') === 0)
+            ? 'yes'
+            : 'no';
+    }
+
     private function build(\WC_Coupon $coupon)
     {
         $discountType = $coupon->get_discount_type();
@@ -81,7 +93,7 @@ class CouponMigrator
             'excluded_products'   => $this->mapProducts($coupon->get_excluded_product_ids()),
             'included_categories' => $this->mapCategories($coupon->get_product_categories()),
             'excluded_categories' => $this->mapCategories($coupon->get_excluded_product_categories()),
-            'is_recurring'        => 'yes',
+            'is_recurring'        => $this->isRecurringCoupon($discountType),
         ];
 
         $expires = $coupon->get_date_expires();

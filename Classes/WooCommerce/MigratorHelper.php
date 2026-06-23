@@ -149,7 +149,7 @@ class MigratorHelper
     /**
      * Map a WooCommerce Subscriptions status to a FluentCart subscription status.
      */
-    public static function subscriptionStatus($wcStatus)
+    public static function subscriptionStatus($wcStatus, $endDate = '')
     {
         $maps = [
             'active'         => Status::SUBSCRIPTION_ACTIVE,
@@ -160,14 +160,37 @@ class MigratorHelper
             'expired'        => Status::SUBSCRIPTION_EXPIRED,
         ];
 
-        return $maps[$wcStatus] ?? Status::SUBSCRIPTION_PENDING;
+        $status = $maps[$wcStatus] ?? Status::SUBSCRIPTION_PENDING;
+
+        // Mirror EDD: an otherwise-active subscription whose end date has passed
+        // is really expired (WC may leave it 'active' until a cron run).
+        if ($status === Status::SUBSCRIPTION_ACTIVE && $endDate && strtotime($endDate) && strtotime($endDate) < time()) {
+            return Status::SUBSCRIPTION_EXPIRED;
+        }
+
+        return $status;
     }
 
     /**
-     * Map a WooCommerce Subscriptions billing period to a FluentCart interval.
+     * Map a WooCommerce Subscriptions billing period (+ interval multiplier) to a
+     * FluentCart repeat_interval slug. FluentCart supports daily/weekly/monthly/
+     * quarterly/half_yearly/yearly, so common month multiples collapse to the
+     * named slug; anything else falls back to the base period.
      */
-    public static function billingInterval($period)
+    public static function repeatInterval($period, $interval = 1)
     {
+        $period   = (string) $period;
+        $interval = max(1, (int) $interval);
+
+        if ($period === 'month') {
+            if ($interval === 3) {
+                return 'quarterly';
+            }
+            if ($interval === 6) {
+                return 'half_yearly';
+            }
+        }
+
         $maps = [
             'day'   => 'daily',
             'week'  => 'weekly',
