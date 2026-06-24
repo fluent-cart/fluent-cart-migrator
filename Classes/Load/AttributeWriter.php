@@ -25,8 +25,10 @@ class AttributeWriter
 
     /**
      * Find (by unique slug) or create an attribute group. Returns the fct id.
+     * $settings (e.g. ['type' => 'color'|'image'|'options']) is applied only on
+     * creation — an existing group keeps its own settings.
      */
-    public static function ensureGroup($title, $slug)
+    public static function ensureGroup($title, $slug, $settings = null)
     {
         $slug  = self::slug($slug ?: $title);
         $title = trim((string) $title) !== '' ? $title : $slug;
@@ -51,7 +53,7 @@ class AttributeWriter
             'title'       => $title,
             'slug'        => $slug,
             'description' => null,
-            'settings'    => null,
+            'settings'    => ($settings !== null && $settings !== []) ? json_encode($settings) : null,
             'serial'      => $serial,
             'is_system'   => 0,
             'created_at'  => $now,
@@ -63,8 +65,10 @@ class AttributeWriter
 
     /**
      * Find (by group_id + unique slug) or create a term. Returns the fct id.
+     * $settings (e.g. ['color' => '#hex'] or ['image' => '<url>']) is applied
+     * only on creation — an existing term keeps its own settings.
      */
-    public static function ensureTerm($groupId, $title, $slug)
+    public static function ensureTerm($groupId, $title, $slug, $settings = null)
     {
         $groupId = (int) $groupId;
         $slug    = self::slug($slug ?: $title);
@@ -96,7 +100,7 @@ class AttributeWriter
             'title'       => $title,
             'slug'        => $slug,
             'description' => null,
-            'settings'    => null,
+            'settings'    => ($settings !== null && $settings !== []) ? json_encode($settings) : null,
             'created_at'  => $now,
             'updated_at'  => $now,
         ]);

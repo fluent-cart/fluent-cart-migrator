@@ -33,6 +33,9 @@ class ProductMigrator
     /** @var array<int,int> WC term id => FC term id, built once per run */
     private $categoryMap = [];
 
+    /** @var array<string,string>|null taxonomy => WC attribute_type, lazy-built */
+    private $attributeTypeMap = null;
+
     /**
      * @return array<int, int|\WP_Error> wcProductId => fctPostId|WP_Error
      */
@@ -496,9 +499,16 @@ class ProductMigrator
             }
 
             $taxonomy = $attribute->is_taxonomy() ? $attribute->get_name() : null;
-            $groupId  = $taxonomy
-                ? AttributeWriter::ensureGroup(wc_attribute_label($taxonomy), $taxonomy)
-                : AttributeWriter::ensureGroup($attribute->get_name(), $attribute->get_name());
+
+            // Swatch type: color/image global attributes become FluentCart
+            // color/image groups (so the editor renders swatches); everything
+            // else — custom attributes and plain select/text taxonomies — is an
+            // "options" (text) group.
+            $fctType = $taxonomy ? $this->attributeType($taxonomy) : 'options';
+
+            $groupId = $taxonomy
+                ? AttributeWriter::ensureGroup(wc_attribute_label($taxonomy), $taxonomy, ['type' => $fctType])
+                : AttributeWriter::ensureGroup($attribute->get_name(), $attribute->get_name(), ['type' => 'options']);
 
             if (!$groupId) {
                 continue;
@@ -507,7 +517,7 @@ class ProductMigrator
             $terms = [];
             if ($taxonomy) {
                 foreach ($attribute->get_terms() as $term) {
-                    $termId = AttributeWriter::ensureTerm($groupId, $term->name, $term->slug);
+                    $termId = AttributeWriter::ensureTerm($groupId, $term->name, $term->slug, $this->termSwatch($fctType, $term->term_id));
                     if ($termId) {
                         // WC variation meta stores the term slug.
                         $terms[] = ['id' => $termId, 'title' => $term->name, 'valueKeys' => [$term->slug]];
@@ -536,6 +546,55 @@ class ProductMigrator
         }
 
         return $groups;
+    }
+
+    /**
+     * FluentCart attribute group type for a WC global attribute taxonomy. WC
+     * stores the swatch type in woocommerce_attribute_taxonomies.attribute_type
+     * (set by swatch plugins); `color`/`image` map through, everything else
+     * (select/button/text/…) becomes `options`.
+     */
+    private function attributeType($taxonomy)
+    {
+        if ($this->attributeTypeMap === null) {
+            $this->attributeTypeMap = [];
+            if (function_exists('wc_get_attribute_taxonomies')) {
+                foreach (wc_get_attribute_taxonomies() as $tax) {
+                    // Taxonomy name is 'pa_' . attribute_name.
+                    $this->attributeTypeMap['pa_' . $tax->attribute_name] = $tax->attribute_type;
+                }
+            }
+        }
+
+        $wcType = $this->attributeTypeMap[$taxonomy] ?? '';
+
+        return in_array($wcType, ['color', 'image'], true) ? $wcType : 'options';
+    }
+
+    /**
+     * Term swatch settings for a color/image group, read from the WC term meta
+     * the common swatch plugins write (`product_attribute_color` hex,
+     * `product_attribute_image` attachment id). Empty when not a swatch type or
+     * no value is stored — the term still migrates as a plain value.
+     *
+     * @return array
+     */
+    private function termSwatch($fctType, $wcTermId)
+    {
+        if ($fctType === 'color') {
+            $color = get_term_meta($wcTermId, 'product_attribute_color', true);
+            return $color ? ['color' => $color] : [];
+        }
+
+        if ($fctType === 'image') {
+            $imageId = get_term_meta($wcTermId, 'product_attribute_image', true);
+            if ($imageId && is_numeric($imageId)) {
+                $url = wp_get_attachment_url((int) $imageId);
+                return $url ? ['image' => $url] : [];
+            }
+        }
+
+        return [];
     }
 
     /**
