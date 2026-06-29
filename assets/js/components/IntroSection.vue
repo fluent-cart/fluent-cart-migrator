@@ -27,7 +27,7 @@
                     </svg>
                 </div>
                 <div>
-                    <h3>EDD Migration Completed</h3>
+                    <h3>{{ sourceLabel }} Migration Completed</h3>
                     <p v-if="migrationSummary.completed_at">Completed on {{ formattedDate }}</p>
                 </div>
             </div>
@@ -97,7 +97,7 @@
                         <table class="fct-table">
                             <thead>
                                 <tr>
-                                    <th>EDD Payment ID</th>
+                                    <th>{{ isEdd ? 'EDD Payment ID' : 'Record ID' }}</th>
                                     <th>Stage</th>
                                     <th>Message</th>
                                 </tr>
@@ -115,8 +115,8 @@
                 <p v-else class="fct-error-log-empty">No error details available.</p>
             </div>
 
-            <!-- Backward-compat notice -->
-            <div class="fct-notice fct-notice--warning">
+            <!-- Backward-compat notice (EDD only — the migrator routes legacy EDD endpoints) -->
+            <div v-if="isEdd" class="fct-notice fct-notice--warning">
                 <svg class="fct-notice-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
                     <path d="M10 2L1.5 17h17L10 2z" stroke="#D97706" stroke-width="1.5" fill="#FFFBEB"/>
                     <path d="M10 8v3m0 2.5v.5" stroke="#D97706" stroke-width="1.5" stroke-linecap="round"/>
@@ -234,6 +234,20 @@ export default {
         },
         eddSource: function () {
             return this.sources.find(function (s) { return s.key === 'edd'; }) || null;
+        },
+        summarySource: function () {
+            return (this.migrationSummary && this.migrationSummary.source) || 'edd';
+        },
+        isEdd: function () {
+            return this.summarySource === 'edd';
+        },
+        sourceLabel: function () {
+            var labels = { edd: 'EDD', woocommerce: 'WooCommerce', surecart: 'SureCart' };
+            var key = this.summarySource;
+            if (labels[key]) return labels[key];
+            // Fall back to the matching source card's display name, else the raw key.
+            var match = this.sources.find(function (s) { return s.key === key; });
+            return (match && match.name) || key;
         }
     },
     methods: {
