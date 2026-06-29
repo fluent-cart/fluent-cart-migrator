@@ -30,6 +30,7 @@ class OrderValidator
 
         $expectedTotal = (int) $order->subtotal
             + (int) $order->taxTotal
+            + (int) $order->shippingTax
             + (int) $order->shippingTotal
             + (int) $order->feeTotal
             - (int) $order->couponDiscountTotal

@@ -61,7 +61,20 @@ class Commands
 
         if ($all || !empty($assoc_args['products'])) {
             \WP_CLI::line('Migrating products + store settings...');
-            $this->report($src->migrateProducts(), 'Products');
+            $migrated = 0;
+            $failed   = 0;
+            do {
+                $page   = $src->getProductResumePage();
+                $result = $src->migrateProducts($page, 100, 0);
+                if (is_wp_error($result)) {
+                    \WP_CLI::warning($result->get_error_message());
+                    break;
+                }
+                $migrated += (int) ($result['migrated'] ?? 0);
+                $failed   += (int) ($result['failed'] ?? 0);
+                \WP_CLI::line('  page ' . $page . ': migrated ' . ($result['migrated'] ?? 0) . (!empty($result['skipped']) ? ' [already done]' : ''));
+            } while (!empty($result['has_more']));
+            \WP_CLI::line('Products migrated: ' . $migrated . ($failed ? ' (' . $failed . ' failed)' : ''));
         }
 
         if ($all || !empty($assoc_args['tax_rates'])) {

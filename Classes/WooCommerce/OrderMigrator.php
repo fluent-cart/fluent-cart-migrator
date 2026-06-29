@@ -97,13 +97,17 @@ class OrderMigrator
         // --- Totals (derived from items, reconciled to the WC order total) ---
         $subtotal       = array_sum(array_map(function ($i) { return $i->subtotal; }, $items));
         $couponDiscount = array_sum(array_map(function ($i) { return $i->discountTotal; }, $items));
-        $taxTotal       = MigratorHelper::toCents($order->get_total_tax(), $currency);
+        // WC get_total_tax() = cart tax + shipping tax. FluentCart stores cart tax
+        // in tax_total and shipping tax in shipping_tax as *separate* additive
+        // components (Order::… tax_total + shipping_tax), so use cart tax only
+        // here — otherwise shipping tax is counted twice on shipping-taxed stores.
+        $taxTotal       = MigratorHelper::toCents($order->get_cart_tax(), $currency);
         $shippingTotal  = MigratorHelper::toCents($order->get_shipping_total(), $currency);
         $shippingTax    = MigratorHelper::toCents($order->get_shipping_tax(), $currency);
         $feeTotal       = $this->feeTotal($order, $currency);
         $orderTotal     = MigratorHelper::toCents($order->get_total(), $currency);
 
-        $components     = $subtotal + $taxTotal + $shippingTotal + $feeTotal - $couponDiscount;
+        $components     = $subtotal + $taxTotal + $shippingTax + $shippingTotal + $feeTotal - $couponDiscount;
         $diff           = $components - $orderTotal;
         $manualDiscount = 0;
         if ($diff > 0) {
@@ -584,6 +588,12 @@ class OrderMigrator
                 ? (int) \WC_Subscriptions_Product::get_trial_length($subProduct)
                 : 0;
 
+            // Subscription records migrate as history; renewals are NOT managed
+            // by FluentCart — WooCommerce remains the biller. Keep the gateway
+            // customer id (accurate reference) and flag the sub as externally
+            // billed so the data is self-describing.
+            $vendorCustomerId = $this->subscriptionCustomerId($wcSub);
+
             $out[] = SubscriptionData::make([
                 'productId'            => $map['post_id'],
                 'itemName'             => $itemName,
@@ -601,6 +611,7 @@ class OrderMigrator
                 'canceledAt'           => $wcSub->get_status() === 'cancelled' ? $this->nullableDate($wcSub->get_date('cancelled')) : null,
                 'nextBillingDate'      => $this->nullableDate($wcSub->get_date('next_payment')),
                 'vendorSubscriptionId' => (string) $wcSub->get_id(),
+                'vendorCustomerId'     => $vendorCustomerId ?: null,
                 'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status(), $wcSub->get_date('end')),
                 'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
                 'createdAt'            => $createdAt,
@@ -611,11 +622,33 @@ class OrderMigrator
                     'billing_interval'   => (int) $wcSub->get_billing_interval(),
                     'currency'           => $currency,
                     'switched'           => (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) ? 'yes' : 'no',
+                    // Renewals stay in WooCommerce; FluentCart does not bill these.
+                    'external_billing'   => 'woocommerce',
                 ],
             ]);
         }
 
         return $out;
+    }
+
+    /**
+     * Gateway customer id stored on the WC subscription (Stripe customer or PayPal
+     * payer), kept on the FluentCart subscription as an accurate reference.
+     *
+     * @return string
+     */
+    private function subscriptionCustomerId($wcSub)
+    {
+        $method = (string) $wcSub->get_payment_method();
+
+        if (strpos($method, 'stripe') !== false) {
+            return (string) $wcSub->get_meta('_stripe_customer_id');
+        }
+        if (strpos($method, 'ppcp') === 0 || strpos($method, 'paypal') !== false) {
+            return (string) $wcSub->get_meta('_paypal_payer_id');
+        }
+
+        return '';
     }
 
     /**

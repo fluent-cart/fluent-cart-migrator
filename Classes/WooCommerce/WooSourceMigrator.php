@@ -122,53 +122,99 @@ class WooSourceMigrator extends AbstractSourceMigrator
         ];
     }
 
-    public function migrateProducts()
+    /**
+     * Migrate the product catalog, paginated and resumable so large stores don't
+     * try to migrate in a single non-resumable PHP request (the headline scale
+     * risk). Mirrors the payments loop: time/memory-boxed, persists
+     * last_product_page, and the front-end re-calls while has_more is true.
+     * Bundle wiring + step completion run only on the final page.
+     *
+     * @param int|null $page null = resume from saved state (the REST/UI path)
+     */
+    public function migrateProducts($page = null, $perPage = 20, $maxSeconds = 25)
     {
         if (!class_exists('WooCommerce')) {
             return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
         }
 
-        // Non-destructive store-settings migration runs with the first step.
-        (new StoreSettingsMigrator())->migrate();
-
         if ($this->isStepDone('products')) {
             return [
                 'success'         => true,
                 'step'            => 'products',
-                'total'           => 0,
                 'migrated'        => 0,
                 'failed'          => 0,
                 'errors'          => [],
+                'has_more'        => false,
                 'skipped'         => true,
                 'migration_state' => $this->getState(),
             ];
         }
 
-        $results = (new ProductMigrator())->migrate(true);
+        if ($page === null) {
+            $page = $this->getProductResumePage();
+        }
 
+        // Non-destructive store-settings migration runs once, with the first page.
+        if ($page <= 1) {
+            (new StoreSettingsMigrator())->migrate();
+        }
+
+        $migrator = new ProductMigrator();
+        $start    = time();
         $migrated = 0;
         $failed   = 0;
         $errors   = [];
-        foreach ($results as $wcId => $result) {
-            if (is_wp_error($result)) {
-                $failed++;
-                $errors[] = ['wc_id' => $wcId, 'message' => $result->get_error_message()];
-            } else {
-                $migrated++;
-            }
-        }
+        $hasMore  = true;
 
-        $state = $this->markStep('products');
+        do {
+            $batch     = $migrator->migratePage($page, $perPage);
+            $migrated += (int) $batch['migrated'];
+            $failed   += (int) $batch['failed'];
+            if (!empty($batch['errors'])) {
+                $errors = array_merge($errors, $batch['errors']);
+            }
+            $hasMore = !empty($batch['has_more']);
+
+            $state                      = $this->getState();
+            $state['last_product_page'] = $page;
+            $this->saveState($state);
+
+            $page++;
+        } while ($hasMore && (time() - $start) < $maxSeconds && !BatchRuntime::memoryNearLimit());
+
+        // Only when the whole catalog is in: wire bundle relationships (children
+        // must all exist first) and mark the step complete.
+        if (!$hasMore) {
+            $migrator->syncBundles();
+            $state = $this->markStep('products');
+        } else {
+            $state = $this->getState();
+        }
 
         return [
             'success'         => true,
             'step'            => 'products',
-            'total'           => count($results),
             'migrated'        => $migrated,
             'failed'          => $failed,
             'errors'          => $errors,
+            'has_more'        => $hasMore,
             'migration_state' => $state,
         ];
+    }
+
+    /**
+     * Next product page to process: 1 when the step is done (it then skips), else
+     * the page after the last completed one. Mirrors getPaymentResumePage().
+     */
+    public function getProductResumePage()
+    {
+        $state = $this->getState();
+
+        if (($state['products'] ?? '') === 'yes') {
+            return 1;
+        }
+
+        return (int) ($state['last_product_page'] ?? 0) + 1;
     }
 
     /**

@@ -305,11 +305,31 @@ export default {
             }
         },
         runProducts: async function () {
-            var result = await apiRequest('POST', 'migrate/products');
-            this.progress.products.total = result.total;
-            this.progress.products.migrated = result.migrated;
-            this.progress.products.failed = result.failed;
-            this.progress.products.errors = result.errors || [];
+            var hasMore = true;
+            var retries = 0;
+            var maxRetries = 2;
+
+            while (hasMore && !this.paused) {
+                try {
+                    // Server paginates + time-boxes (~25s per call); loop until
+                    // the whole catalog is migrated, just like payments.
+                    var result = await apiRequest('POST', 'migrate/products');
+                    hasMore = result.has_more;
+                    this.progress.products.migrated = this.progress.products.migrated + (result.migrated || 0);
+                    this.progress.products.failed = this.progress.products.failed + (result.failed || 0);
+                    if (result.errors && result.errors.length) {
+                        this.progress.products.errors = this.progress.products.errors.concat(result.errors);
+                    }
+                    retries = 0;
+                } catch (e) {
+                    if (retries < maxRetries) {
+                        retries++;
+                        await new Promise(function (r) { setTimeout(r, 2000); });
+                    } else {
+                        throw e;
+                    }
+                }
+            }
         },
         runTaxRates: async function () {
             await apiRequest('POST', 'migrate/tax-rates');

@@ -78,12 +78,77 @@ class ProductMigrator
     }
 
     /**
+     * Migrate one page of products (resumable path used by the REST/UI loop so
+     * large catalogs don't migrate in a single non-resumable request). Bundle
+     * wiring is NOT done here — the caller runs syncBundles() once, after the
+     * final page, because bundle children must all exist first.
+     *
+     * @return array{processed:int,migrated:int,failed:int,errors:array,has_more:bool}
+     */
+    public function migratePage($page, $perPage = 20)
+    {
+        // Categories are cheap + idempotent; ensure the map exists before the
+        // first product references it (kept across pages on this instance).
+        if (!$this->categoryMap) {
+            $this->categoryMap = CategoryWriter::sync($this->sourceCategories());
+        }
+
+        $query = wc_get_products([
+            'limit'    => $perPage,
+            'page'     => $page,
+            'paginate' => true,
+            'return'   => 'ids',
+            'status'   => ['publish', 'private', 'draft'],
+            'orderby'  => 'ID',
+            'order'    => 'ASC',
+        ]);
+
+        $ids     = $query->products ?? [];
+        $hasMore = $page < (int) ($query->max_num_pages ?? 1);
+
+        $writer   = new ProductWriter();
+        $migrated = 0;
+        $failed   = 0;
+        $errors   = [];
+        $i        = 0;
+        foreach ($ids as $productId) {
+            try {
+                $result = $this->migrateProduct((int) $productId, $writer);
+                if (is_wp_error($result)) {
+                    $failed++;
+                    $errors[] = ['wc_id' => (int) $productId, 'message' => $result->get_error_message()];
+                } else {
+                    $migrated++;
+                }
+            } catch (\Throwable $e) {
+                // A single bad product must not abort the whole step.
+                $failed++;
+                $errors[] = ['wc_id' => (int) $productId, 'message' => $e->getMessage()];
+            }
+
+            if (++$i % 5 === 0) {
+                BatchRuntime::freeMemory();
+            }
+        }
+
+        return [
+            'processed' => count($ids),
+            'migrated'  => $migrated,
+            'failed'    => $failed,
+            'errors'    => $errors,
+            'has_more'  => $hasMore,
+        ];
+    }
+
+    /**
      * Map WooCommerce grouped products (core) and Product Bundles (extension)
      * to FluentCart's bundle model: the parent product's default variation gets
      * the child variation ids, and the product is flagged as a bundle.
      */
-    private function syncBundles(ProductWriter $writer)
+    public function syncBundles(ProductWriter $writer = null)
     {
+        $writer = $writer ?: new ProductWriter();
+
         $types = ['grouped'];
         if (class_exists('WC_Product_Bundle')) {
             $types[] = 'bundle';
