@@ -192,7 +192,8 @@ class OrderMigrator
         if ($orderType === Status::ORDER_TYPE_SUBSCRIPTION) {
             $data->subscriptions = $this->buildSubscriptions($order, $wcOrderId, $currency, $createdAt);
         } elseif ($orderType === Status::ORDER_TYPE_RENEWAL) {
-            $linked = $this->findRenewalSubscription($wcOrderId);
+            $sourceSubIds = $this->renewalSubscriptionIds($order);
+            $linked       = $this->findRenewalSubscription($wcOrderId, $sourceSubIds);
             if ($linked) {
                 $data->linkedSubscriptionId = $linked['id'];
                 // Stamp the parent (subscription's first) order id so the shared
@@ -200,7 +201,11 @@ class OrderMigrator
                 // to its subscription — WC renewal orders have no WP post parent.
                 $data->parentId = $linked['parent_order_id'];
             } else {
-                $dummy = $this->buildDummySubscription($order, $currency, $createdAt);
+                // No migrated parent (and no prior placeholder): create a single
+                // dummy keyed by the source subscription id, so every later
+                // renewal of the same deleted subscription links to this one
+                // instead of spawning its own.
+                $dummy = $this->buildDummySubscription($order, $currency, $createdAt, reset($sourceSubIds) ?: 0);
                 if ($dummy) {
                     $data->subscriptions = [$dummy];
                 }
@@ -652,7 +657,7 @@ class OrderMigrator
      * parent subscription wasn't migrated, so the renewal transaction still
      * links to a subscription. Mirrors the EDD source's dummy subscription.
      */
-    private function buildDummySubscription($order, $currency, $createdAt)
+    private function buildDummySubscription($order, $currency, $createdAt, $wcSubscriptionId = 0)
     {
         $item = null;
         foreach ($order->get_items() as $lineItem) {
@@ -673,43 +678,89 @@ class OrderMigrator
             'billingInterval'      => 'monthly',
             'recurringAmount'      => $recurring,
             'recurringTotal'       => $recurring,
+            // Key the placeholder by the source subscription id so subsequent
+            // renewals of the same (deleted) subscription dedupe onto this row.
+            'vendorSubscriptionId' => $wcSubscriptionId ? (string) $wcSubscriptionId : '',
             'status'               => Status::SUBSCRIPTION_CANCELED,
             'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
             'createdAt'            => $createdAt,
             'updatedAt'            => current_time('mysql'),
             'config'               => [
-                'dummy'    => true,
-                'currency' => $currency,
-                'reason'   => 'renewal_without_parent_subscription',
+                'dummy'              => true,
+                'currency'           => $currency,
+                'reason'             => 'renewal_without_parent_subscription',
+                'wc_subscription_id' => $wcSubscriptionId ?: null,
             ],
         ]);
     }
 
     /**
-     * Resolve the migrated FluentCart subscription for a WC renewal order.
+     * Resolve the migrated FluentCart subscription a WC renewal order belongs to,
+     * preferring the real migrated subscription and falling back to a placeholder
+     * already created for a deleted/trashed source subscription.
      *
+     * @param int[] $sourceSubIds source WC subscription ids this renewal renews
+     *                            (incl. ids whose subscription post is now gone)
      * @return array{id:int,parent_order_id:int}|null id = fct_subscriptions.id,
-     *         parent_order_id = the subscription's parent order id (reused 1:1 as
+     *         parent_order_id = the subscription's first order id (reused 1:1 as
      *         the FluentCart order id), used to stamp the renewal's parent_id.
      */
-    private function findRenewalSubscription($orderId)
+    private function findRenewalSubscription($orderId, array $sourceSubIds = [])
     {
-        if (!function_exists('wcs_get_subscriptions_for_renewal_order')) {
-            return null;
+        $db = fluentCart('db');
+
+        // 1. Real subscription: the renewal's parent order was migrated and
+        //    created a subscription (matched by parent_order_id, reused 1:1).
+        if (function_exists('wcs_get_subscriptions_for_renewal_order')) {
+            foreach (wcs_get_subscriptions_for_renewal_order($orderId) as $wcSub) {
+                $parentId = (int) $wcSub->get_parent_id();
+                if (!$parentId) {
+                    continue;
+                }
+                $fctSub = $db->table('fct_subscriptions')->where('parent_order_id', $parentId)->first();
+                if ($fctSub) {
+                    return ['id' => (int) $fctSub->id, 'parent_order_id' => $parentId];
+                }
+            }
         }
 
-        foreach (wcs_get_subscriptions_for_renewal_order($orderId) as $wcSub) {
-            $parentId = (int) $wcSub->get_parent_id();
-            if (!$parentId) {
-                continue;
-            }
-            $fctSub = fluentCart('db')->table('fct_subscriptions')->where('parent_order_id', $parentId)->first();
+        // 2. A placeholder subscription already stands in for this (deleted)
+        //    source subscription — link to it instead of spawning another, so
+        //    each missing subscription yields exactly one dummy, not one per
+        //    renewal order. Keyed on the source subscription id we stamped onto
+        //    the placeholder's vendor_subscription_id.
+        foreach ($sourceSubIds as $wcSubId) {
+            $fctSub = $db->table('fct_subscriptions')
+                ->where('vendor_subscription_id', (string) $wcSubId)
+                ->first();
             if ($fctSub) {
-                return ['id' => (int) $fctSub->id, 'parent_order_id' => $parentId];
+                return ['id' => (int) $fctSub->id, 'parent_order_id' => (int) $fctSub->parent_order_id];
             }
         }
 
         return null;
+    }
+
+    /**
+     * Source WooCommerce subscription ids a renewal order renews — read straight
+     * from order meta so the link survives even when the subscription post was
+     * deleted (WC's wcs_get_subscriptions_for_renewal_order can't rehydrate a
+     * missing subscription). HPOS-safe via the order's own meta accessor.
+     *
+     * @return int[]
+     */
+    private function renewalSubscriptionIds($order)
+    {
+        $ids = [];
+        foreach ((array) $order->get_meta('_subscription_renewal', false) as $meta) {
+            $value = (is_object($meta) && isset($meta->value)) ? $meta->value : $meta;
+            $id    = (int) $value;
+            if ($id) {
+                $ids[] = $id;
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /* -----------------------------------------------------------------

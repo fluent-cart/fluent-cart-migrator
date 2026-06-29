@@ -38,12 +38,18 @@ class OrderDeleter
         }
         $db->table('fct_subscriptions')->where('parent_order_id', $orderId)->delete();
 
-        // Licenses + activations (EDD).
-        $licenses = $db->table('fct_licenses')->where('order_id', $orderId)->get();
-        foreach ($licenses as $license) {
-            $db->table('fct_license_activations')->where('license_id', $license->id)->delete();
+        // Licenses + activations (EDD). The licensing tables only exist on
+        // installs with the licensing module — guard so a WooCommerce-only
+        // store (no fct_licenses) doesn't abort the cascade on re-migration.
+        try {
+            $licenses = $db->table('fct_licenses')->where('order_id', $orderId)->get();
+            foreach ($licenses as $license) {
+                $db->table('fct_license_activations')->where('license_id', $license->id)->delete();
+            }
+            $db->table('fct_licenses')->where('order_id', $orderId)->delete();
+        } catch (\Exception $e) {
+            // Licensing tables absent on this install — nothing to delete.
         }
-        $db->table('fct_licenses')->where('order_id', $orderId)->delete();
 
         // Order-scoped records.
         $db->table('fct_order_items')->where('order_id', $orderId)->delete();
