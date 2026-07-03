@@ -46,16 +46,15 @@ class AttributeWriter
             return self::$groupCache[$slug] = (int) $row->id;
         }
 
-        $now    = current_time('mysql');
-        $serial = (int) $db->table('fct_atts_groups')->max('serial') + 1;
+        $now = current_time('mysql');
 
+        // fct_atts_groups has no serial/is_system columns (see FluentCart's
+        // AttributeGroupsMigrator schema) — only fct_atts_terms carries serial.
         $id = $db->table('fct_atts_groups')->insertGetId([
             'title'       => $title,
             'slug'        => $slug,
             'description' => null,
             'settings'    => ($settings !== null && $settings !== []) ? json_encode($settings) : null,
-            'serial'      => $serial,
-            'is_system'   => 0,
             'created_at'  => $now,
             'updated_at'  => $now,
         ]);
