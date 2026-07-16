@@ -694,10 +694,10 @@ class OrderMigrator
                     'method'           => 'stripe',
                     'type'             => 'card',
                     'vendor_method_id' => $token,
-                    'details'          => [
-                        'type'              => 'card',
-                        'payment_method_id' => $token,
-                    ],
+                    'details'          => array_merge(
+                        ['type' => 'card', 'payment_method_id' => $token],
+                        $this->stripeCardDetails($token)
+                    ),
                 ];
             }
         }
@@ -724,6 +724,51 @@ class OrderMigrator
         }
 
         return $cache[$slug];
+    }
+
+    /**
+     * Card display info (brand / last4 / expiry) for a Stripe PaymentMethod, read
+     * from the WooCommerce payment-tokens vault (WC_Payment_Token_CC). FluentCart's
+     * admin + customer portal render the card-on-file from
+     * active_payment_method.details.brand/last_4 (Subscription::getPaymentMethodText),
+     * so without these the saved card shows blank even though the token charges fine.
+     *
+     * Looks the token up by its string in the vault (not scoped to the
+     * subscription's customer — WooCommerce can hold the same card under a
+     * different user row), then hydrates the WC_Payment_Token for its getters.
+     * Returns an empty array when the store kept only the raw source id (no vault
+     * row) — the token still migrates, the display is just sparser.
+     *
+     * @return array{brand?:string,last_4?:string,exp_month?:string,exp_year?:string}
+     */
+    private function stripeCardDetails($token)
+    {
+        if (!$token || !class_exists('WC_Payment_Tokens')) {
+            return [];
+        }
+
+        global $wpdb;
+        $tokenId = $wpdb->get_var($wpdb->prepare(
+            "SELECT token_id FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE token = %s ORDER BY token_id DESC LIMIT 1",
+            $token
+        ));
+        if (!$tokenId) {
+            return [];
+        }
+
+        $wcToken = \WC_Payment_Tokens::get((int) $tokenId);
+        if (!($wcToken instanceof \WC_Payment_Token_CC)) {
+            return [];
+        }
+
+        return array_filter([
+            'brand'     => $wcToken->get_card_type(),
+            'last_4'    => $wcToken->get_last4(),
+            'exp_month' => $wcToken->get_expiry_month(),
+            'exp_year'  => $wcToken->get_expiry_year(),
+        ], function ($v) {
+            return $v !== '' && $v !== null;
+        });
     }
 
     /**

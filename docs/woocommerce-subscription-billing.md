@@ -63,15 +63,23 @@ token    = active_payment_method meta → vendor_method_id              ← Stri
 ```
 
 The migrator writes both: `vendor_customer_id` on the subscription row, and an
-`active_payment_method` row in `fct_subscription_meta`:
+`active_payment_method` row in `fct_subscription_meta`. Card display info (brand /
+last4 / expiry) is pulled from WooCommerce's payment-tokens vault
+(`WC_Payment_Token_CC`, looked up by the `pm_` string) so the admin + portal
+card-on-file renders — `Subscription::getPaymentMethodText()` reads
+`details.brand` + `details.last_4`:
 
 ```json
 { "method": "stripe", "type": "card", "vendor_method_id": "pm_…",
-  "details": { "type": "card", "payment_method_id": "pm_…" } }
+  "details": { "type": "card", "payment_method_id": "pm_…",
+               "brand": "visa", "last_4": "4242", "exp_month": "03", "exp_year": "2027" } }
 ```
 
 This is the same shape FluentCart's card-update / confirmation flows write, so the stock
 `SystemChargeService` charges a migrated `system` subscription with no special-casing.
+When the saved method has no card row to display (Stripe **Link**, or a subscription
+that kept only the raw source id without a vault entry), the token still migrates
+charge-ready — only the brand/last4 display is omitted.
 
 ## 3. What migrates
 
