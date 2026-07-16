@@ -38,6 +38,16 @@ class SubscriptionData
     public $createdAt = '';
     public $updatedAt = '';
 
+    /**
+     * Rows for fct_subscription_meta, keyed by meta_key. Written by the writer
+     * after the subscription row is inserted (array/object values are JSON
+     * encoded to match SubscriptionMeta's cast). Used to carry the reusable
+     * `active_payment_method` token for `system` collection.
+     *
+     * @var array<string,mixed>
+     */
+    public $meta = [];
+
     /** @var ActivityData[] optional subscription notes (written with module = Subscription) */
     public $activities = [];
 

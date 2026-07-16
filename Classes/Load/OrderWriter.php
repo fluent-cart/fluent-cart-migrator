@@ -113,6 +113,26 @@ class OrderWriter
 
             $id = $db->table('fct_subscriptions')->insertGetId($row);
 
+            // Subscription meta → fct_subscription_meta. Carries the reusable
+            // `active_payment_method` token that a `system` subscription's
+            // renewal charge reads at fire time. Array/object values are JSON
+            // encoded to match SubscriptionMeta's meta_value cast.
+            if (!empty($sub->meta)) {
+                $now = current_time('mysql');
+                foreach ($sub->meta as $metaKey => $metaValue) {
+                    if (is_array($metaValue) || is_object($metaValue)) {
+                        $metaValue = json_encode($metaValue, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    }
+                    $db->table('fct_subscription_meta')->insert([
+                        'subscription_id' => $id,
+                        'meta_key'        => $metaKey,
+                        'meta_value'      => $metaValue,
+                        'created_at'      => $now,
+                        'updated_at'      => $now,
+                    ]);
+                }
+            }
+
             // Subscription notes → fct_activity (module = Subscription).
             if (!empty($sub->activities)) {
                 foreach ($sub->activities as $activity) {

@@ -461,13 +461,10 @@ class WooSourceMigrator extends AbstractSourceMigrator
         delete_option($this->failedLogOptionKey());
         delete_option($this->summaryOptionKey());
 
-        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=0;");
-        try {
-            DBMigrator::refresh();
-        } catch (\Exception $e) {
-            // Ignore — tables may be partially present.
+        $refresh = $this->refreshFluentCartSchema();
+        if (is_wp_error($refresh)) {
+            return $refresh;
         }
-        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
 
         $cpt = FluentProducts::CPT_NAME;
         $wpdb->query("DELETE pm FROM {$wpdb->prefix}postmeta pm INNER JOIN {$wpdb->prefix}posts p ON pm.post_id = p.ID WHERE p.post_type = '{$cpt}'");
@@ -486,6 +483,89 @@ class WooSourceMigrator extends AbstractSourceMigrator
             'success' => true,
             'message' => 'All migrated data and WooCommerce migration state have been reset.',
         ];
+    }
+
+    /**
+     * Drop & recreate the FluentCart schema, then verify the core tables came
+     * back.
+     *
+     * DBMigrator::refresh() drops every fct_* table and recreates them. If the
+     * recreate throws partway (the drop having already succeeded), the store is
+     * left with a half-missing schema — and FluentCart's Tax module then fatals
+     * on every `init` because fct_meta is gone, taking the whole site down.
+     * Swallowing that failure silently (as the original reset did) hides a
+     * bricked site behind a "success" response. So: attempt the recreate, then
+     * verify a couple of sentinel tables exist, retrying the up-migration once
+     * before surfacing a WP_Error the caller can show the user.
+     *
+     * @return true|\WP_Error
+     */
+    private function refreshFluentCartSchema()
+    {
+        global $wpdb;
+
+        // migrateDown() unconditionally truncates the licensing tables when the
+        // License class is loaded, even on stores that never created them (e.g.
+        // WooCommerce sources) — that raises an expected wpdb error we handle
+        // below, so silence the notices instead of spamming the log.
+        $showErrors     = $wpdb->hide_errors();
+        $suppressErrors = $wpdb->suppress_errors(true);
+
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=0;");
+
+        $error = null;
+        try {
+            DBMigrator::refresh();
+        } catch (\Throwable $e) {
+            $error = $e;
+        }
+
+        // Post-condition check: the recreate must have brought the core tables
+        // back. If not, try the up-migration once more before giving up.
+        if (!$this->coreFluentCartTablesExist()) {
+            try {
+                DBMigrator::migrateUp();
+            } catch (\Throwable $e) {
+                $error = $e;
+            }
+        }
+
+        $wpdb->query("SET SESSION FOREIGN_KEY_CHECKS=1;");
+
+        $wpdb->suppress_errors($suppressErrors);
+        if ($showErrors) {
+            $wpdb->show_errors();
+        }
+
+        if (!$this->coreFluentCartTablesExist()) {
+            return new \WP_Error(
+                'fct_schema_recreate_failed',
+                'Reset dropped the FluentCart tables but failed to recreate them'
+                . ($error ? ': ' . $error->getMessage() : '.')
+                . ' Re-activate FluentCart (or run its DB migration) to restore the schema before retrying.',
+                ['status' => 500]
+            );
+        }
+
+        return true;
+    }
+
+    /**
+     * True when the FluentCart tables the store cannot boot without are present.
+     * fct_meta in particular is read on every `init` by the Tax module.
+     */
+    private function coreFluentCartTablesExist()
+    {
+        global $wpdb;
+
+        foreach (['fct_meta', 'fct_orders', 'fct_subscriptions'] as $table) {
+            $full = $wpdb->prefix . $table;
+            if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $full)) !== $full) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

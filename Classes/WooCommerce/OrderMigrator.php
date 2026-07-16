@@ -588,11 +588,14 @@ class OrderMigrator
                 ? (int) \WC_Subscriptions_Product::get_trial_length($subProduct)
                 : 0;
 
-            // Subscription records migrate as history; renewals are NOT managed
-            // by FluentCart — WooCommerce remains the biller. Keep the gateway
-            // customer id (accurate reference) and flag the sub as externally
-            // billed so the data is self-describing.
-            $vendorCustomerId = $this->subscriptionCustomerId($wcSub);
+            // Renewals are handled by FluentCart's store-managed invoice engine
+            // (WooCommerce Subscriptions has no gateway subscription object to
+            // hand off). The collection method decides how each renewal is paid:
+            //   - system : a reusable gateway token is on file and FluentCart's
+            //              gateway can auto-charge it (Stripe pm_ + customer).
+            //   - manual : no auto-chargeable token — FluentCart issues the
+            //              renewal invoice and the customer pays it.
+            $collection = $this->resolveSubscriptionCollection($wcSub);
 
             $out[] = SubscriptionData::make([
                 'productId'            => $map['post_id'],
@@ -606,29 +609,121 @@ class OrderMigrator
                 'recurringTotal'       => $recurringTotal,
                 'billTimes'            => $billTimes,
                 'trialDays'            => $trialDays,
+                'collectionMethod'     => $collection['method'],
                 'expireAt'             => $this->nullableDate($wcSub->get_date('end')),
                 'trialEndsAt'          => $this->nullableDate($wcSub->get_date('trial_end')),
                 'canceledAt'           => $wcSub->get_status() === 'cancelled' ? $this->nullableDate($wcSub->get_date('cancelled')) : null,
                 'nextBillingDate'      => $this->nullableDate($wcSub->get_date('next_payment')),
                 'vendorSubscriptionId' => (string) $wcSub->get_id(),
-                'vendorCustomerId'     => $vendorCustomerId ?: null,
+                'vendorCustomerId'     => $collection['customerId'] ?: null,
                 'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status(), $wcSub->get_date('end')),
                 'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
                 'createdAt'            => $createdAt,
                 'updatedAt'            => current_time('mysql'),
                 'activities'           => $this->buildSubscriptionNotes($wcSub->get_id(), $createdAt),
+                'meta'                 => $collection['meta'],
                 'config'               => [
                     'wc_subscription_id' => $wcSub->get_id(),
                     'billing_interval'   => (int) $wcSub->get_billing_interval(),
                     'currency'           => $currency,
                     'switched'           => (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) ? 'yes' : 'no',
-                    // Renewals stay in WooCommerce; FluentCart does not bill these.
-                    'external_billing'   => 'woocommerce',
+                    'migration_source'   => 'woocommerce',
                 ],
             ]);
         }
 
         return $out;
+    }
+
+    /**
+     * Decide how a migrated WooCommerce subscription's renewals get paid, and
+     * carry the reusable token when FluentCart can auto-charge it.
+     *
+     * `system` is returned ONLY when the saved token is genuinely chargeable by
+     * FluentCart's system-charge engine, so a migrated subscription never lands
+     * in a state that fails every renewal:
+     *   - the subscription is not flagged for manual renewal;
+     *   - the gateway is Stripe with a PaymentMethod token (`pm_…`) plus its
+     *     Stripe customer id — the exact pair Stripe::chargeRenewalInvoice()
+     *     needs (vendor_customer_id + active_payment_method token);
+     *   - the FluentCart Stripe gateway actually declares `system_subscription`.
+     *
+     * Everything else stays `manual` (store-issued invoice the customer pays):
+     *   - PayPal here stores a Billing Agreement id (`B-…`), not a PayPal Vault
+     *     id, so FluentCart's vault-based charge cannot use it — the payer id is
+     *     still kept as vendor_customer_id for reference;
+     *   - legacy Stripe source/card tokens (`src_…`/`card_…`) aren't usable as a
+     *     PaymentMethod;
+     *   - offline / unknown gateways have nothing to charge.
+     *
+     * @return array{method:string,customerId:string,meta:array<string,mixed>}
+     */
+    private function resolveSubscriptionCollection($wcSub)
+    {
+        $slug = MigratorHelper::gatewaySlug($wcSub->get_payment_method());
+
+        $result = [
+            'method'     => 'manual',
+            'customerId' => $this->subscriptionCustomerId($wcSub),
+            'meta'       => [],
+        ];
+
+        // Use the stored manual-renewal flag, NOT WC_Subscription::is_manual():
+        // is_manual() also returns true under the WooCommerce Subscriptions
+        // "duplicate site" lock (any staging clone) and when the live gateway
+        // isn't currently available — staging/runtime artifacts that would
+        // wrongly downgrade every token-backed subscription to manual. The flag
+        // reflects the merchant/customer's actual choice.
+        $requiresManual = method_exists($wcSub, 'get_requires_manual_renewal')
+            ? $wcSub->get_requires_manual_renewal()
+            : $wcSub->get_meta('_requires_manual_renewal');
+        if (filter_var($requiresManual, FILTER_VALIDATE_BOOLEAN)) {
+            return $result;
+        }
+
+        if ($slug === 'stripe' && $this->gatewayCanSystemCharge('stripe')) {
+            $customer = (string) $wcSub->get_meta('_stripe_customer_id');
+            $token    = (string) $wcSub->get_meta('_stripe_source_id');
+
+            // Only a PaymentMethod (pm_) is chargeable off-session via
+            // payment_intents; src_/card_ legacy tokens are not.
+            if ($customer !== '' && strpos($token, 'pm_') === 0) {
+                $result['method']     = 'system';
+                $result['customerId'] = $customer;
+                $result['meta']['active_payment_method'] = [
+                    'method'           => 'stripe',
+                    'type'             => 'card',
+                    'vendor_method_id' => $token,
+                    'details'          => [
+                        'type'              => 'card',
+                        'payment_method_id' => $token,
+                    ],
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Whether the installed FluentCart gateway advertises token-based renewal
+     * charging (`system_subscription`). Cached per slug. Degrades to false when
+     * the gateway addon isn't registered.
+     */
+    private function gatewayCanSystemCharge($slug)
+    {
+        static $cache = [];
+
+        if (!isset($cache[$slug])) {
+            $can = false;
+            if (class_exists('\FluentCart\App\Modules\PaymentMethods\Core\GatewayManager')) {
+                $gateway = \FluentCart\App\Modules\PaymentMethods\Core\GatewayManager::getInstance($slug);
+                $can = $gateway && method_exists($gateway, 'has') && $gateway->has('system_subscription');
+            }
+            $cache[$slug] = $can;
+        }
+
+        return $cache[$slug];
     }
 
     /**
@@ -715,6 +810,7 @@ class OrderMigrator
             // renewals of the same (deleted) subscription dedupe onto this row.
             'vendorSubscriptionId' => $wcSubscriptionId ? (string) $wcSubscriptionId : '',
             'status'               => Status::SUBSCRIPTION_CANCELED,
+            'collectionMethod'     => 'manual',
             'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
             'createdAt'            => $createdAt,
             'updatedAt'            => current_time('mysql'),
