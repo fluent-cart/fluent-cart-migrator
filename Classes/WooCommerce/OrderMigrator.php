@@ -145,6 +145,9 @@ class OrderMigrator
         $orderType   = $this->resolveOrderType($order);
         $completedAt = $order->get_date_completed() ? MigratorHelper::date($order->get_date_completed()) : null;
         $modifiedAt  = MigratorHelper::date($order->get_date_modified());
+        // Resolved once and threaded through the transactions, so an order can
+        // never disagree with its own charge about which account it belongs to.
+        $mode        = MigratorHelper::orderMode($order);
 
         $data                      = new OrderData();
         $data->id                  = $wcOrderId;
@@ -154,7 +157,7 @@ class OrderMigrator
         $data->invoiceNo           = (string) $order->get_order_number();
         $data->fulfillmentType     = $this->orderFulfillmentType($items);
         $data->type                = $orderType;
-        $data->mode                = Status::ORDER_MODE_LIVE;
+        $data->mode                = $mode;
         $data->customerId          = (int) $customer->id;
         $data->paymentMethod       = MigratorHelper::gatewaySlug($order->get_payment_method());
         $data->paymentStatus       = $paymentStatus;
@@ -187,8 +190,8 @@ class OrderMigrator
         $data->taxRates  = $this->buildTaxRates($order, $currency, $createdAt);
         $data->activities = $this->buildActivities($order, $wcOrderId);
 
-        $data->transactions = [$this->buildCharge($order, $orderType, $totalPaid, $currency, $createdAt)];
-        $data->refunds      = $this->buildRefunds($order, $orderType, $currency);
+        $data->transactions = [$this->buildCharge($order, $orderType, $totalPaid, $currency, $createdAt, $mode)];
+        $data->refunds      = $this->buildRefunds($order, $orderType, $currency, $mode);
 
         // Subscriptions: parent orders create them; renewal orders link to one
         // (or, if the parent subscription is missing, get a dummy so the renewal
@@ -339,7 +342,7 @@ class OrderMigrator
         return $map;
     }
 
-    private function buildCharge($order, $orderType, $totalPaid, $currency, $createdAt)
+    private function buildCharge($order, $orderType, $totalPaid, $currency, $createdAt, $mode)
     {
         $method = MigratorHelper::gatewaySlug($order->get_payment_method());
 
@@ -349,7 +352,7 @@ class OrderMigrator
             'vendorChargeId'    => (string) $order->get_transaction_id(),
             'paymentMethod'     => $method,
             'paymentMethodType' => $method === 'stripe' ? 'card' : '',
-            'paymentMode'       => Status::ORDER_MODE_LIVE,
+            'paymentMode'       => $mode,
             'status'            => $totalPaid > 0 ? Status::TRANSACTION_SUCCEEDED : Status::TRANSACTION_PENDING,
             'currency'          => $currency,
             'total'             => $totalPaid,
@@ -362,7 +365,7 @@ class OrderMigrator
     /**
      * @return TransactionData[]
      */
-    private function buildRefunds($order, $orderType, $currency)
+    private function buildRefunds($order, $orderType, $currency, $mode)
     {
         $refunds = [];
         foreach ($order->get_refunds() as $refund) {
@@ -374,7 +377,7 @@ class OrderMigrator
                 'orderType'       => $orderType,
                 'transactionType' => Status::TRANSACTION_TYPE_REFUND,
                 'paymentMethod'   => MigratorHelper::gatewaySlug($order->get_payment_method()),
-                'paymentMode'     => Status::ORDER_MODE_LIVE,
+                'paymentMode'     => $mode,
                 'status'          => Status::TRANSACTION_REFUNDED,
                 'currency'        => $currency,
                 'total'           => $amount,

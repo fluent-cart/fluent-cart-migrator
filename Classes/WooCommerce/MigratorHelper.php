@@ -2,6 +2,7 @@
 
 namespace FluentCartMigrator\Classes\WooCommerce;
 
+use FluentCart\Api\StoreSettings;
 use FluentCart\App\Helpers\Status;
 use FluentCartMigrator\Classes\Support\Money;
 
@@ -228,6 +229,77 @@ class MigratorHelper
         ];
 
         return $maps[$wcGateway] ?? $wcGateway;
+    }
+
+    /**
+     * Resolve the FluentCart order mode (test|live) for a WooCommerce order.
+     *
+     * WooCommerce keeps no per-order mode — Stripe and PayPal write their
+     * vendor ids onto the order without recording which account minted them —
+     * so the source gateway's own configuration is the only evidence available
+     * at migration time. That makes this a best-effort read of the CURRENT
+     * gateway settings: an order taken before the merchant last flipped
+     * test/live is mapped by today's setting, not the one in force back then.
+     * Woo does not retain the older value, so no reading of it can do better.
+     *
+     * Getting it wrong is not cosmetic. FluentCart selects its API keys by
+     * order mode, so a test-mode order imported as live cannot be charged at
+     * all — the renewal dies with "no Stripe live secret key is configured for
+     * this store", and the saved card is unreachable.
+     *
+     * Gateways with no test/live concept (offline, cheque, BACS) and any
+     * gateway we don't recognise fall back to the store's own order mode.
+     *
+     * @param \WC_Order $order
+     * @return string One of Status::ORDER_MODE_TEST | Status::ORDER_MODE_LIVE
+     */
+    public static function orderMode($order)
+    {
+        $gateway = (string) $order->get_payment_method();
+        $mode    = null;
+
+        if (strpos($gateway, 'stripe') === 0) {
+            $mode = self::modeFromFlag('woocommerce_stripe_settings', 'testmode');
+        } elseif (strpos($gateway, 'ppcp') === 0) {
+            // The newer PayPal Payments plugin stores a boolean, not 'yes'/'no'.
+            $mode = self::modeFromFlag('woocommerce-ppcp-settings', 'sandbox_on');
+        } elseif (strpos($gateway, 'paypal') === 0) {
+            $mode = self::modeFromFlag('woocommerce_paypal_settings', 'testmode');
+        }
+
+        if ($mode === null) {
+            $mode = (new StoreSettings())->get('order_mode') === Status::ORDER_MODE_TEST
+                ? Status::ORDER_MODE_TEST
+                : Status::ORDER_MODE_LIVE;
+        }
+
+        return apply_filters('fluentcart_migrator_woo_order_mode', $mode, [
+            'order'   => $order,
+            'gateway' => $gateway,
+        ]);
+    }
+
+    /**
+     * Read a sandbox/test flag out of a WooCommerce gateway settings option.
+     * Returns null when the option or key is missing, so the caller can fall
+     * back rather than assume live for a gateway that was never configured.
+     *
+     * @return string|null
+     */
+    private static function modeFromFlag($option, $key)
+    {
+        $settings = get_option($option, null);
+
+        if (!is_array($settings) || !array_key_exists($key, $settings)) {
+            return null;
+        }
+
+        $flag = $settings[$key];
+
+        // 'yes' (classic Stripe/PayPal) or true/1 (PayPal Payments) — both sandbox.
+        $isTest = $flag === 'yes' || $flag === true || $flag === 1 || $flag === '1';
+
+        return $isTest ? Status::ORDER_MODE_TEST : Status::ORDER_MODE_LIVE;
     }
 
     /* -----------------------------------------------------------------
