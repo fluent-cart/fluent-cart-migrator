@@ -49,6 +49,19 @@ class OrderValidator
             return self::fail($order, 'refund exceeds paid (' . $order->totalRefund . ' > ' . $order->totalPaid . ')');
         }
 
+        $taxRateIds = [];
+        foreach ($order->taxRates as $taxRate) {
+            if (!(int) $taxRate->totalTax) {
+                continue;
+            }
+
+            $taxRateId = (int) $taxRate->taxRateId;
+            if (isset($taxRateIds[$taxRateId])) {
+                return self::fail($order, 'duplicate tax rate id (' . $taxRateId . ')');
+            }
+            $taxRateIds[$taxRateId] = true;
+        }
+
         return true;
     }
 

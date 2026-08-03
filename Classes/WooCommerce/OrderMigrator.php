@@ -51,7 +51,16 @@ class OrderMigrator
         $writer    = new OrderWriter();
         $processed = 0;
         foreach ($ids as $orderId) {
-            $result = $this->migrateOrder((int) $orderId, $writer);
+            try {
+                $result = $this->migrateOrder((int) $orderId, $writer);
+            } catch (\Throwable $e) {
+                $result = new \WP_Error(
+                    'woo_order_exception',
+                    sprintf('Order #%d failed: %s', (int) $orderId, $e->getMessage()),
+                    ['exception' => get_class($e)]
+                );
+            }
+
             if (is_wp_error($result)) {
                 $this->logFailed((int) $orderId, $result);
             }
@@ -470,40 +479,52 @@ class OrderMigrator
                 continue;
             }
 
-            // Mirror EDD: always write the breakdown row. When the WC rate maps to
-            // a FluentCart rate use its id + details; otherwise fall back to 0
-            // (the order header tax_total still carries the amount). fct's
-            // tax_rate_id is declared NOT NULL but MySQL coerces 0, as EDD relies on.
-            $fctRateId = (int) ($rateMap[(int) $tax->get_rate_id()] ?? 0);
-            $fctRate   = $fctRateId ? $db->table('fct_tax_rates')->where('id', $fctRateId)->first() : null;
-            $ratePct   = $fctRate ? (float) $fctRate->rate : 0.0;
+            // FluentCart permits only one row for each (order_id, tax_rate_id).
+            // Multiple Woo rates can map to the same FluentCart country/state
+            // rate, so accumulate their totals into that one row and retain each
+            // source component in meta.rates.
+            $sourceRateId = (int) $tax->get_rate_id();
+            $fctRateId    = (int) ($rateMap[$sourceRateId] ?? 0);
+            $fctRate      = $fctRateId ? $db->table('fct_tax_rates')->where('id', $fctRateId)->first() : null;
+            $ratePct      = method_exists($tax, 'get_rate_percent')
+                ? (float) $tax->get_rate_percent()
+                : ($fctRate ? (float) $fctRate->rate : 0.0);
 
-            $rates[] = TaxRateData::make([
-                'taxRateId'   => $fctRateId,
-                'shippingTax' => $shippingTax,
-                'orderTax'    => $orderTax,
-                'totalTax'    => $taxAmount,
-                'meta'        => [
-                    'inclusive'     => $inclusive,
-                    'rates'         => [[
-                        'rate_id'        => $fctRateId,
-                        'label'          => $tax->get_label(),
-                        'tax_amount'     => $taxAmount,
-                        'rate'           => $ratePct,
-                        'rate_percent'   => $ratePct,
-                        'for_shipping'   => $fctRate ? ($fctRate->for_shipping ?? '') : ($shippingTax > 0 ? 'yes' : ''),
-                        'country'        => $fctRate ? ($fctRate->country ?: $country) : $country,
-                        'is_compound'    => (bool) ($fctRate->is_compound ?? false),
-                        'taxable_amount' => $ratePct > 0 ? (int) round($taxAmount * 100 / $ratePct) : 0,
-                    ]],
-                    'tax_country'   => $country,
-                    'migrated_from' => 'woocommerce',
-                ],
-                'createdAt'   => $createdAt,
-                'updatedAt'   => $createdAt,
-            ]);
+            if (!isset($rates[$fctRateId])) {
+                $rates[$fctRateId] = TaxRateData::make([
+                    'taxRateId' => $fctRateId,
+                    'meta'      => [
+                        'inclusive'     => $inclusive,
+                        'rates'         => [],
+                        'tax_country'   => $country,
+                        'migrated_from' => 'woocommerce',
+                    ],
+                    'createdAt' => $createdAt,
+                    'updatedAt' => $createdAt,
+                ]);
+            }
+
+            $rate = $rates[$fctRateId];
+            $rate->shippingTax += $shippingTax;
+            $rate->orderTax    += $orderTax;
+            $rate->totalTax    += $taxAmount;
+            $rate->meta['rates'][] = [
+                'rate_id'        => $fctRateId,
+                'source_rate_id' => $sourceRateId,
+                'label'          => $tax->get_label(),
+                'tax_amount'     => $taxAmount,
+                'rate'           => $ratePct,
+                'rate_percent'   => $ratePct,
+                'for_shipping'   => $fctRate ? ($fctRate->for_shipping ?? '') : ($shippingTax > 0 ? 'yes' : ''),
+                'country'        => $fctRate ? ($fctRate->country ?: $country) : $country,
+                'is_compound'    => method_exists($tax, 'is_compound')
+                    ? (bool) $tax->is_compound()
+                    : (bool) ($fctRate->is_compound ?? false),
+                'taxable_amount' => $ratePct > 0 ? (int) round($taxAmount * 100 / $ratePct) : 0,
+            ];
         }
-        return $rates;
+
+        return array_values($rates);
     }
 
     /**
