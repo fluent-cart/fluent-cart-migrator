@@ -9,11 +9,109 @@ use FluentCart\App\Models\Customer;
 use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
 use FluentCart\Database\DBMigrator;
+use FluentCartMigrator\Classes\Contracts\SourceMigratorInterface;
 use FluentCartMigrator\Classes\Edd3\MigratorCli;
 use FluentCartMigrator\Classes\Edd3\MigratorHelper;
 
-class MigratorService
+/**
+ * EDD migration source. Implements SourceMigratorInterface so it can be resolved
+ * generically by SourceManager alongside other sources (WooCommerce, SureCart).
+ */
+class MigratorService implements SourceMigratorInterface
 {
+    /**
+     * EDD migration progress option key.
+     */
+    const STATE_OPTION = '__fluent_cart_edd3_migration_steps';
+
+    /**
+     * EDD failed-payment log option key.
+     */
+    const FAILED_LOG_OPTION = '_fluent_edd_failed_payment_logs';
+
+    public function key()
+    {
+        return 'edd';
+    }
+
+    public function detect()
+    {
+        global $wpdb;
+
+        $eddActive   = class_exists('Easy_Digital_Downloads') || defined('EDD_VERSION');
+        $hasV3Tables = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}edd_orders'") !== null;
+        $version     = defined('EDD_VERSION') ? EDD_VERSION : null;
+
+        if ($hasV3Tables && $version) {
+            $compatibility = [
+                'state'   => 'pass',
+                'title'   => sprintf('EDD 3.x detected (v%s)', $version),
+                'message' => 'Your Easy Digital Downloads installation is compatible with the migration tool.',
+            ];
+        } elseif ($hasV3Tables) {
+            $compatibility = [
+                'state'   => 'data_only',
+                'title'   => 'EDD data found',
+                'message' => 'EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.',
+            ];
+        } else {
+            $compatibility = [
+                'state'   => 'blocked',
+                'title'   => sprintf('EDD %s detected', $version ?: '(unknown version)'),
+                'message' => 'Migration requires EDD 3.0 or later. Please upgrade EDD first, then return here.',
+            ];
+        }
+
+        return [
+            'key'           => 'edd',
+            'name'          => 'Easy Digital Downloads',
+            'detected'      => $eddActive || $hasV3Tables,
+            'version'       => $version,
+            'has_v3_tables' => $hasV3Tables,
+            'compatibility' => $compatibility,
+        ];
+    }
+
+    /**
+     * Interface alias for the EDD stats payload.
+     */
+    public function getStats()
+    {
+        return $this->getEddStats();
+    }
+
+    /**
+     * Page the payments step should resume from, derived from saved EDD state.
+     */
+    public function getPaymentResumePage()
+    {
+        $migrationSteps = get_option(self::STATE_OPTION, []);
+        $page = 1;
+
+        if (is_array($migrationSteps) && !empty($migrationSteps['last_order_page'])) {
+            $page = (int) $migrationSteps['last_order_page'];
+            // If resuming an unfinished run, start from the next page.
+            if ($page > 1 && ($migrationSteps['payments'] ?? '') !== 'yes') {
+                $page++;
+            }
+        }
+
+        return $page;
+    }
+
+    public function getRecountSubsteps()
+    {
+        return ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'];
+    }
+
+    /**
+     * Interface alias for resetMigration().
+     */
+    public function reset()
+    {
+        return $this->resetMigration();
+    }
+
     private function loadEddClasses()
     {
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/EDD3/MigratorCli.php';
@@ -29,35 +127,7 @@ class MigratorService
 
     public function getSources()
     {
-        global $wpdb;
-
-        $eddActive    = class_exists('Easy_Digital_Downloads') || defined('EDD_VERSION');
-        $eddVersion   = defined('EDD_VERSION') ? EDD_VERSION : null;
-        $hasV3Tables  = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}edd_orders'") !== null;
-
-        $sources = [
-            [
-                'key'           => 'edd',
-                'name'          => 'Easy Digital Downloads',
-                'detected'      => $eddActive || $hasV3Tables,
-                'version'       => $eddVersion,
-                'has_v3_tables' => $hasV3Tables,
-            ],
-            [
-                'key'         => 'woocommerce',
-                'name'        => 'WooCommerce',
-                'detected'    => false,
-                'coming_soon' => true,
-            ],
-            [
-                'key'         => 'surecart',
-                'name'        => 'SureCart',
-                'detected'    => false,
-                'coming_soon' => true,
-            ],
-        ];
-
-        return ['sources' => $sources];
+        return ['sources' => (new SourceManager())->sources()];
     }
 
     public function getEddStats()
@@ -150,6 +220,7 @@ class MigratorService
         return [
             'migration'        => $migration,
             'failed_log_count' => is_array($failedLogs) ? count($failedLogs) : 0,
+            'recount_substeps' => $this->getRecountSubsteps(),
         ];
     }
 

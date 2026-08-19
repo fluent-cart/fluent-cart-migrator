@@ -10,8 +10,8 @@
                 <path d="M10 16l4 4 8-8" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <div>
-                <h3>EDD 3.x detected (v{{ source.version }})</h3>
-                <p>Your Easy Digital Downloads installation is compatible with the migration tool.</p>
+                <h3>{{ compat.title }}</h3>
+                <p>{{ compat.message }}</p>
             </div>
         </div>
 
@@ -21,8 +21,8 @@
                 <path d="M12 12l8 8m0-8l-8 8" stroke="#DC2626" stroke-width="2.5" stroke-linecap="round"/>
             </svg>
             <div>
-                <h3>EDD {{ source.version || '(unknown version)' }} detected</h3>
-                <p>Migration requires <strong>EDD 3.0 or later</strong>. Please upgrade EDD first, then return here.</p>
+                <h3>{{ compat.title }}</h3>
+                <p v-html="compat.message"></p>
             </div>
         </div>
 
@@ -32,8 +32,8 @@
                 <path d="M16 11v6m0 4v.5" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
             </svg>
             <div>
-                <h3>EDD data found</h3>
-                <p>EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.</p>
+                <h3>{{ compat.title }}</h3>
+                <p>{{ compat.message }}</p>
             </div>
         </div>
 
@@ -56,12 +56,43 @@ export default {
     },
     emits: ['continue', 'go-back'],
     computed: {
-        versionState: function () {
+        // Each source declares its own compatibility verdict in detect().
+        // Fall back to the legacy EDD-shaped logic for older payloads.
+        compat: function () {
             var src = this.source;
-            if (!src) return 'unknown';
-            if (src.has_v3_tables && src.version) return 'pass';
-            if (src.has_v3_tables && !src.version) return 'data_only';
-            return 'blocked';
+            if (!src) {
+                return { state: 'unknown', title: 'Unknown source', message: '' };
+            }
+            if (src.compatibility && src.compatibility.state) {
+                return src.compatibility;
+            }
+            return this.legacyEddCompat(src);
+        },
+        versionState: function () {
+            return this.compat.state;
+        }
+    },
+    methods: {
+        legacyEddCompat: function (src) {
+            if (src.has_v3_tables && src.version) {
+                return {
+                    state: 'pass',
+                    title: 'EDD 3.x detected (v' + src.version + ')',
+                    message: 'Your Easy Digital Downloads installation is compatible with the migration tool.'
+                };
+            }
+            if (src.has_v3_tables && !src.version) {
+                return {
+                    state: 'data_only',
+                    title: 'EDD data found',
+                    message: 'EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.'
+                };
+            }
+            return {
+                state: 'blocked',
+                title: 'EDD ' + (src.version || '(unknown version)') + ' detected',
+                message: 'Migration requires <strong>EDD 3.0 or later</strong>. Please upgrade EDD first, then return here.'
+            };
         }
     }
 };

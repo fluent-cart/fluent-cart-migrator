@@ -157,13 +157,7 @@ export default {
             missing_customers: { status: 'pending', migrated: 0 },
             recount: {
                 status: 'pending',
-                substeps: {
-                    fix_reactivations: 'pending',
-                    fix_subs_uuid: 'pending',
-                    coupons: 'pending',
-                    customers: 'pending',
-                    subscriptions: 'pending'
-                }
+                substeps: {}
             }
         };
 
@@ -198,6 +192,15 @@ export default {
         totalOrders: function () {
             if (!this.stats) return 0;
             return this.stats.orders_count;
+        },
+        recountSubsteps: function () {
+            // Driven by the source (EDD vs WooCommerce vs ...). Fall back to the
+            // EDD set for older status payloads that don't include the list.
+            var m = this.migrationStatus;
+            if (m && Array.isArray(m.recount_substeps)) {
+                return m.recount_substeps;
+            }
+            return ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'];
         },
         paymentsPercent: function () {
             if (!this.totalOrders || !this.progress.payments.processed) return 0;
@@ -302,11 +305,31 @@ export default {
             }
         },
         runProducts: async function () {
-            var result = await apiRequest('POST', 'migrate/products');
-            this.progress.products.total = result.total;
-            this.progress.products.migrated = result.migrated;
-            this.progress.products.failed = result.failed;
-            this.progress.products.errors = result.errors || [];
+            var hasMore = true;
+            var retries = 0;
+            var maxRetries = 2;
+
+            while (hasMore && !this.paused) {
+                try {
+                    // Server paginates + time-boxes (~25s per call); loop until
+                    // the whole catalog is migrated, just like payments.
+                    var result = await apiRequest('POST', 'migrate/products');
+                    hasMore = result.has_more;
+                    this.progress.products.migrated = this.progress.products.migrated + (result.migrated || 0);
+                    this.progress.products.failed = this.progress.products.failed + (result.failed || 0);
+                    if (result.errors && result.errors.length) {
+                        this.progress.products.errors = this.progress.products.errors.concat(result.errors);
+                    }
+                    retries = 0;
+                } catch (e) {
+                    if (retries < maxRetries) {
+                        retries++;
+                        await new Promise(function (r) { setTimeout(r, 2000); });
+                    } else {
+                        throw e;
+                    }
+                }
+            }
         },
         runTaxRates: async function () {
             await apiRequest('POST', 'migrate/tax-rates');
@@ -346,7 +369,16 @@ export default {
             this.progress.missing_customers.migrated = result.migrated || 0;
         },
         runRecount: async function () {
-            var substeps = ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'];
+            var substeps = this.recountSubsteps;
+
+            // Build the per-source substep progress map up front (replaces any
+            // stale EDD-shaped map) so the UI only shows this source's substeps.
+            var map = {};
+            for (var k = 0; k < substeps.length; k++) {
+                map[substeps[k]] = 'pending';
+            }
+            this.progress.recount.substeps = map;
+
             for (var i = 0; i < substeps.length; i++) {
                 if (this.paused) break;
                 var sub = substeps[i];

@@ -3,7 +3,7 @@
 /*
 Plugin Name: FluentCart Migrator
 Description: Migrate your data to FluentCart from other platforms.
-Version: 1.0.1_beta2
+Version: 1.0.2
 Author: FluentCart Team
 Author URI: https://fluentcart.com
 Plugin URI: https://github.com/fluent-cart/fluent-cart-migrator
@@ -11,9 +11,31 @@ License: GPLv2 or later
 Text Domain: fluent-cart-migrator
 */
 
-define('FLUENTCART_MIGRATOR_VERSION', '1.0.1_beta2');
+define('FLUENTCART_MIGRATOR_VERSION', '1.0.2');
 define('FLUENTCART_MIGRATOR_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('FLUENTCART_MIGRATOR_URL', plugin_dir_url(__FILE__));// Enable development mode for detailed logging
+
+/**
+ * Lightweight autoloader for the FluentCartMigrator\Classes namespace.
+ *
+ * Maps FluentCartMigrator\Classes\Foo\Bar => Classes/Foo/Bar.php. Existing
+ * bootstrap require_once calls are kept for back-compat; this covers the newer
+ * source-generic classes (Contracts, SourceManager, WooCommerce\*) so they load
+ * without touching this file each time one is added.
+ */
+spl_autoload_register(function ($class) {
+    $prefix = 'FluentCartMigrator\\Classes\\';
+    if (strpos($class, $prefix) !== 0) {
+        return;
+    }
+
+    $relative = substr($class, strlen($prefix));
+    $path     = FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/' . str_replace('\\', '/', $relative) . '.php';
+
+    if (file_exists($path)) {
+        require_once $path;
+    }
+});
 
 class FluentCartMigrator
 {
@@ -69,6 +91,12 @@ add_action('plugins_loaded', function () {
     if (defined('WP_CLI') && WP_CLI) {
         require_once FLUENTCART_MIGRATOR_PLUGIN_PATH . 'Classes/Commands.php';
         \WP_CLI::add_command('fluent_cart_migrator', '\FluentCartMigrator\Classes\Commands');
+
+        // WooCommerce source CLI — added as a sibling subcommand so the
+        // production EDD command class is not touched.
+        \WP_CLI::add_command('fluent_cart_migrator migrate_from_woo', function ($args, $assoc_args) {
+            (new \FluentCartMigrator\Classes\WooCommerce\Commands())->run($args, $assoc_args);
+        });
     }
 
     if (!defined('FLUENTCART_VERSION')) {
