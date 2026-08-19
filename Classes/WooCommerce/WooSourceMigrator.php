@@ -313,13 +313,16 @@ class WooSourceMigrator extends AbstractSourceMigrator
         $perPage  = 200;
 
         while (true) {
+            // 'subscriber' included alongside 'customer': stores that let people
+            // register before buying keep them on WP's default role, and those
+            // accounts would otherwise be lost entirely.
             $users = get_users([
-                'role'    => 'customer',
-                'number'  => $perPage,
-                'paged'   => $page,
-                'orderby' => 'ID',
-                'order'   => 'ASC',
-                'fields'  => ['ID', 'user_email'],
+                'role__in' => ['customer', 'subscriber'],
+                'number'   => $perPage,
+                'paged'    => $page,
+                'orderby'  => 'ID',
+                'order'    => 'ASC',
+                'fields'   => ['ID', 'user_email'],
             ]);
 
             if (!$users) {
@@ -697,8 +700,10 @@ class WooSourceMigrator extends AbstractSourceMigrator
 
     protected function countRegisteredCustomers()
     {
+        // Same roles migrateMissingCustomers() walks, so the stat matches what
+        // the migration will actually pick up.
         $query = new \WP_User_Query([
-            'role'        => 'customer',
+            'role__in'    => ['customer', 'subscriber'],
             'number'      => 1,
             'count_total' => true,
             'fields'      => 'ID',

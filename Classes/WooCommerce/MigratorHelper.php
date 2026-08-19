@@ -165,6 +165,9 @@ class MigratorHelper
             'pending-cancel' => Status::SUBSCRIPTION_CANCELED,
             'cancelled'      => Status::SUBSCRIPTION_CANCELED,
             'expired'        => Status::SUBSCRIPTION_EXPIRED,
+            // Legacy (pre-WCS 2.0) status for a subscription superseded by a
+            // switch/upgrade — it no longer bills, so canceled, not pending.
+            'switched'       => Status::SUBSCRIPTION_CANCELED,
         ];
 
         $status = $maps[$wcStatus] ?? Status::SUBSCRIPTION_PENDING;

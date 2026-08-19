@@ -165,6 +165,7 @@ class OrderMigrator
         $data->receiptNumber       = $wcOrderId;
         $data->invoiceNo           = (string) $order->get_order_number();
         $data->fulfillmentType     = $this->orderFulfillmentType($items);
+        $data->shippingStatus      = $this->shippingStatus($order, $data->fulfillmentType);
         $data->type                = $orderType;
         $data->mode                = $mode;
         $data->customerId          = (int) $customer->id;
@@ -1054,6 +1055,24 @@ class OrderMigrator
             $total += MigratorHelper::toCents($fee->get_total(), $currency);
         }
         return $total;
+    }
+
+    /**
+     * FluentCart shipping status for a migrated order. Core convention (see
+     * SubscriptionService/RenewalService): only physically-fulfilled orders
+     * carry a shipping status, everything else stays ''. A WC 'completed'
+     * order has been fulfilled, so it lands as shipped rather than flooding
+     * the unshipped fulfillment queue with historical orders.
+     */
+    private function shippingStatus($order, $fulfillmentType)
+    {
+        if ($fulfillmentType !== 'physical') {
+            return '';
+        }
+
+        return $order->get_status() === 'completed'
+            ? Status::SHIPPING_SHIPPED
+            : Status::SHIPPING_UNSHIPPED;
     }
 
     /**
