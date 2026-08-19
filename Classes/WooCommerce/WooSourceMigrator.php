@@ -350,6 +350,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
                     'postcode'  => $wc->get_billing_postcode(),
                     'createdAt' => current_time('mysql'),
                     'updatedAt' => current_time('mysql'),
+                    'addresses' => $this->customerProfileAddresses($wc, $email),
                 ]));
 
                 if (!is_wp_error($result)) {
@@ -369,6 +370,49 @@ class WooSourceMigrator extends AbstractSourceMigrator
             'migrated'        => $migrated,
             'migration_state' => $state,
         ];
+    }
+
+    /**
+     * Address-book rows for an orderless registered customer, read from the
+     * WooCommerce customer profile (user meta). The writer drops entries with
+     * neither address_1 nor city.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function customerProfileAddresses(\WC_Customer $wc, $email)
+    {
+        $addresses = [
+            [
+                'is_primary' => 1,
+                'type'       => 'billing',
+                'name'       => trim($wc->get_billing_first_name() . ' ' . $wc->get_billing_last_name()),
+                'address_1'  => $wc->get_billing_address_1(),
+                'address_2'  => $wc->get_billing_address_2(),
+                'city'       => $wc->get_billing_city(),
+                'state'      => $wc->get_billing_state(),
+                'phone'      => $wc->get_billing_phone(),
+                'email'      => $email,
+                'postcode'   => $wc->get_billing_postcode(),
+                'country'    => $wc->get_billing_country(),
+            ],
+        ];
+
+        if ($wc->get_shipping_address_1()) {
+            $addresses[] = [
+                'is_primary' => 0,
+                'type'       => 'shipping',
+                'name'       => trim($wc->get_shipping_first_name() . ' ' . $wc->get_shipping_last_name()),
+                'address_1'  => $wc->get_shipping_address_1(),
+                'address_2'  => $wc->get_shipping_address_2(),
+                'city'       => $wc->get_shipping_city(),
+                'state'      => $wc->get_shipping_state(),
+                'phone'      => method_exists($wc, 'get_shipping_phone') ? $wc->get_shipping_phone() : '',
+                'postcode'   => $wc->get_shipping_postcode(),
+                'country'    => $wc->get_shipping_country(),
+            ];
+        }
+
+        return $addresses;
     }
 
     /**

@@ -83,7 +83,40 @@ class ProductWriter
 
         $this->writeDetails($product, $postId, $variationMap, $createdAt);
 
+        if ($product->meta) {
+            $this->writeProductMeta($postId, $product->meta, $createdAt);
+        }
+
         return (int) $postId;
+    }
+
+    /**
+     * Store source-supplied fct_product_meta rows against the migrated product.
+     * Idempotent per key: an existing row for the same key is replaced, so
+     * re-running a migration never duplicates meta.
+     */
+    protected function writeProductMeta($postId, array $meta, $createdAt)
+    {
+        $db = fluentCart('db');
+
+        foreach ($meta as $key => $value) {
+            $db->table('fct_product_meta')
+                ->where('object_id', $postId)
+                ->where('object_type', 'product')
+                ->where('meta_key', $key)
+                ->delete();
+
+            $db->table('fct_product_meta')->insert([
+                'object_id'   => $postId,
+                'object_type' => 'product',
+                'meta_key'    => $key,
+                'meta_value'  => is_scalar($value) || $value === null
+                    ? (string) $value
+                    : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'created_at'  => $createdAt,
+                'updated_at'  => current_time('mysql'),
+            ]);
+        }
     }
 
     /**

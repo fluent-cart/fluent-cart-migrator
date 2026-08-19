@@ -19,6 +19,18 @@ class CustomerData
     public $createdAt = '';
     public $updatedAt = '';
 
+    /**
+     * fct_customer_addresses rows to seed the customer's address book with when
+     * the writer CREATES the customer (skipped for an already-existing customer,
+     * so the first source record for an email wins and re-runs never duplicate).
+     * Each entry uses the table's column names (type, is_primary, name,
+     * address_1, address_2, city, state, phone, email, postcode, country, ...);
+     * customer_id and sane defaults are injected by the writer.
+     *
+     * @var array<int,array<string,mixed>>
+     */
+    public $addresses = [];
+
     public static function make(array $data)
     {
         $c = new self();

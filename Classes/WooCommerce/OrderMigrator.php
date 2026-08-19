@@ -274,7 +274,56 @@ class OrderMigrator
             'postcode'  => $order->get_billing_postcode(),
             'createdAt' => $createdAt,
             'updatedAt' => current_time('mysql'),
+            'addresses' => $this->buildCustomerAddresses($order, $email, $createdAt),
         ]);
+    }
+
+    /**
+     * Address-book rows for the customer, seeded from the order (the writer
+     * only inserts these when it creates the customer, so the customer's first
+     * migrated order wins). Billing carries the phone the order addresses only
+     * keep in meta.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function buildCustomerAddresses($order, $email, $createdAt)
+    {
+        $addresses = [];
+
+        if ($order->get_billing_address_1() || $order->get_billing_city()) {
+            $addresses[] = [
+                'is_primary' => 1,
+                'type'       => 'billing',
+                'name'       => trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name()),
+                'address_1'  => $order->get_billing_address_1(),
+                'address_2'  => $order->get_billing_address_2(),
+                'city'       => $order->get_billing_city(),
+                'state'      => $order->get_billing_state(),
+                'phone'      => $order->get_billing_phone(),
+                'email'      => $email,
+                'postcode'   => $order->get_billing_postcode(),
+                'country'    => $order->get_billing_country(),
+                'created_at' => $createdAt,
+            ];
+        }
+
+        if ($order->has_shipping_address() && $order->get_shipping_address_1()) {
+            $addresses[] = [
+                'is_primary' => 0,
+                'type'       => 'shipping',
+                'name'       => trim($order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name()),
+                'address_1'  => $order->get_shipping_address_1(),
+                'address_2'  => $order->get_shipping_address_2(),
+                'city'       => $order->get_shipping_city(),
+                'state'      => $order->get_shipping_state(),
+                'phone'      => method_exists($order, 'get_shipping_phone') ? $order->get_shipping_phone() : '',
+                'postcode'   => $order->get_shipping_postcode(),
+                'country'    => $order->get_shipping_country(),
+                'created_at' => $createdAt,
+            ];
+        }
+
+        return $addresses;
     }
 
     /**

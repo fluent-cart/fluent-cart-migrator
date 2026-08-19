@@ -48,9 +48,42 @@ class CustomerWriter
         $id  = fluentCart('db')->table('fct_customers')->insertGetId($row);
         $new = fluentCart('db')->table('fct_customers')->find($id);
 
+        self::writeAddresses($id, $customer, $row['created_at']);
+
         self::$cache[$key] = $new;
 
         return $new;
+    }
+
+    /**
+     * Seed the new customer's address book. Only runs on the create path (an
+     * existing customer keeps whatever addresses it already has), so the first
+     * migrated record for an email wins and re-runs never duplicate rows.
+     */
+    protected static function writeAddresses($customerId, CustomerData $customer, $createdAt)
+    {
+        if (!$customer->addresses) {
+            return;
+        }
+
+        $db = fluentCart('db');
+        foreach ($customer->addresses as $address) {
+            if (!is_array($address) || (empty($address['address_1']) && empty($address['city']))) {
+                continue;
+            }
+
+            $db->table('fct_customer_addresses')->insert(array_merge(
+                [
+                    'is_primary' => 0,
+                    'type'       => 'billing',
+                    'status'     => 'active',
+                    'created_at' => $createdAt,
+                    'updated_at' => current_time('mysql'),
+                ],
+                $address,
+                ['customer_id' => (int) $customerId]
+            ));
+        }
     }
 
     /**

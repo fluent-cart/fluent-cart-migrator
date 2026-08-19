@@ -83,11 +83,17 @@ class MigratorHelper
 
     /**
      * 'digital' when the product/variation is virtual or downloadable, else 'physical'.
+     * External/affiliate products only link out — nothing ships, so they are
+     * treated as digital regardless of their virtual/downloadable flags.
      *
      * @param \WC_Product $product
      */
     public static function fulfillmentType($product)
     {
+        if (method_exists($product, 'is_type') && $product->is_type('external')) {
+            return 'digital';
+        }
+
         return ($product->is_virtual() || $product->is_downloadable()) ? 'digital' : 'physical';
     }
 

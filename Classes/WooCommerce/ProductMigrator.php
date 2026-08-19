@@ -276,13 +276,15 @@ class ProductMigrator
     private function buildProduct($product)
     {
         $createdAt  = MigratorHelper::date($product->get_date_created());
-        $isVariable = $product->is_type(['variable', 'variable-subscription']);
+        $isExternal = $product->is_type('external');
+        $isVariable = !$isExternal && $product->is_type(['variable', 'variable-subscription']);
 
         // Resolve every (variation-defining for variable products, all for
         // non-variable) WooCommerce attribute into the shared FluentCart
         // attribute library (groups + terms) up front, then build variations.
         // Any product carrying attributes becomes an advanced-variations product.
-        $groups          = $this->resolveAttributeGroups($product, $isVariable);
+        // External products skip this: they migrate as catalog-only entries.
+        $groups          = $isExternal ? [] : $this->resolveAttributeGroups($product, $isVariable);
         $attributeConfig = [];
         $variations      = null;
 
@@ -300,6 +302,32 @@ class ProductMigrator
             $attributeConfig = $this->buildAttributeConfig($groups);
         }
 
+        // External/affiliate products have no cart flow in WooCommerce — they
+        // link out. FluentCart has no equivalent type, so migrate the catalog
+        // data but keep the variation inactive and out of stock so it can never
+        // be checked out, and stash the outbound URL + button text as product
+        // meta for a template/widget to read.
+        if ($isExternal) {
+            foreach ($variations as $variation) {
+                $variation->itemStatus  = 'inactive';
+                $variation->stockStatus = 'out-of-stock';
+                $variation->manageStock = 1;
+                $variation->totalStock  = 0;
+                $variation->available   = 0;
+            }
+        }
+
+        // FluentCart only enforces the stock check when BOTH
+        // fct_product_details.manage_stock and the variation's own manage_stock
+        // are truthy (ProductVariation::canPurchase). WC variable products
+        // usually keep the parent flag off while stock lives on the variations,
+        // so roll the flag up — otherwise a correctly-managed variation is
+        // ignored and the product sells as unlimited stock.
+        $anyManaged = (bool) $product->get_manage_stock();
+        foreach ($variations as $variation) {
+            $anyManaged = $anyManaged || (bool) $variation->manageStock;
+        }
+
         $data                    = new ProductData();
         $data->sourceId          = (int) $product->get_id();
         $data->postTitle         = $product->get_name();
@@ -311,12 +339,19 @@ class ProductMigrator
         $data->createdAt         = $createdAt;
         $data->thumbnailId       = $product->get_image_id() ?: null;
         $data->isVariable        = $isVariable;
-        $data->manageStock       = $product->get_manage_stock() ? 1 : 0;
-        $data->stockAvailability = MigratorHelper::stockStatus($product->get_stock_status());
+        $data->manageStock       = $anyManaged ? 1 : 0;
+        $data->stockAvailability = $isExternal ? 'out-of-stock' : MigratorHelper::stockStatus($product->get_stock_status());
         $data->isDownloadable    = $product->is_downloadable() ? 1 : 0;
         $data->categories        = $this->resolveCategories($product);
         $data->variations        = $variations;
         $data->attributeConfig   = $attributeConfig;
+        if ($isExternal) {
+            $data->meta = [
+                'is_external_product'     => 'yes',
+                'external_product_url'    => (string) $product->get_product_url(),
+                'external_product_button' => (string) ($product->get_button_text() ?: __('Buy Now', 'fluent-cart-migrator')),
+            ];
+        }
         $data->mappingKeys       = [
             'source'       => MigratorHelper::WC_TO_FCT_META,
             'fct'          => MigratorHelper::FCT_FROM_WC_META,
@@ -349,6 +384,8 @@ class ProductMigrator
         $isSubscription = class_exists('WC_Subscriptions_Product')
             && \WC_Subscriptions_Product::is_subscription($source);
 
+        $stock = $this->resolveStock($source);
+
         $fields = [
             'mediaId'             => $source->get_image_id() ?: null,
             'serialIndex'         => 1,
@@ -356,11 +393,11 @@ class ProductMigrator
             'variationIdentifier' => '0',
             'sku'                 => (string) $source->get_sku(),
             'paymentType'         => $isSubscription ? 'subscription' : 'onetime',
-            'manageStock'         => $source->get_manage_stock() ? 1 : 0,
+            'manageStock'         => $stock['manage'],
             'stockStatus'         => MigratorHelper::stockStatus($source->get_stock_status()),
             'backorders'          => $source->get_backorders() !== 'no' ? 1 : 0,
-            'totalStock'          => $source->get_stock_quantity(),
-            'available'           => (int) $source->get_stock_quantity(),
+            'totalStock'          => $stock['total'],
+            'available'           => $stock['available'],
             'fulfillmentType'     => MigratorHelper::fulfillmentType($source),
             'itemPrice'           => $price,
             'comparePrice'        => $source->is_on_sale() ? $regular : 0,
@@ -375,6 +412,36 @@ class ProductMigrator
         }
 
         return $fields;
+    }
+
+    /**
+     * fct stock fields for a WC product/variation. FluentCart's canPurchase()
+     * ignores stock_status entirely — it only blocks when manage_stock is on
+     * and the requested quantity exceeds `available` — so a WC item marked out
+     * of stock WITHOUT per-item stock management (a very common manual toggle)
+     * must be forced onto managed stock with 0 available, or it migrates as
+     * purchasable.
+     *
+     * get_manage_stock() is used deliberately over managing_stock(): the latter
+     * is gated by the store-wide "Manage stock" option and returns false for
+     * every product when that option is off, which would discard real per-item
+     * quantities. (For variations it returns 'parent' when inheriting — truthy,
+     * and get_stock_quantity() then reads the parent's quantity.)
+     *
+     * @return array{manage:int,total:int|null,available:int}
+     */
+    private function resolveStock($source)
+    {
+        if ($source->get_manage_stock()) {
+            $qty = (int) $source->get_stock_quantity();
+            return ['manage' => 1, 'total' => $qty, 'available' => max(0, $qty)];
+        }
+
+        if ($source->get_stock_status() === 'outofstock') {
+            return ['manage' => 1, 'total' => 0, 'available' => 0];
+        }
+
+        return ['manage' => 0, 'total' => null, 'available' => 0];
     }
 
     /**

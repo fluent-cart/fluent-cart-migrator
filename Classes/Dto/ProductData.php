@@ -46,6 +46,15 @@ class ProductData
      */
     public $attributeConfig = [];
 
+    /**
+     * fct_product_meta rows (object_type 'product') to store against the
+     * migrated product, e.g. the external/affiliate URL + button text. Arrays
+     * and objects are JSON-encoded by the writer. Idempotent per key.
+     *
+     * @var array<string,mixed>
+     */
+    public $meta = [];
+
     /** @var array{source:string,fct:string,variationMap:string} */
     public $mappingKeys = [];
 
