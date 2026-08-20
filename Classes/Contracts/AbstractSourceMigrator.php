@@ -4,6 +4,7 @@ namespace FluentCartMigrator\Classes\Contracts;
 
 use FluentCartMigrator\Classes\Load\CustomerWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
+use FluentCartMigrator\Classes\Support\MigrationLog;
 
 /**
  * Base class for new migration sources (WooCommerce, SureCart, ...).
@@ -72,18 +73,43 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
         return is_array($logs) ? $logs : [];
     }
 
+    /**
+     * Record a skipped/failed record. $args may carry the structured fields
+     * MigrationLog understands (type, code, severity, stage, context); anything
+     * else is stored as-is.
+     */
     protected function logFailed($id, $message = 'unknown reason', $args = [])
     {
-        $logs        = $this->getFailedLogs();
         $args['message'] = $message;
-        $logs[$id]   = $args;
-        update_option($this->failedLogOptionKey(), $logs, false);
+        MigrationLog::record($this->failedLogOptionKey(), (string) $id, $args);
 
         if (defined('WP_CLI') && WP_CLI) {
             \WP_CLI::line($id . ' => ' . $message);
         }
 
-        return $logs;
+        return $this->getFailedLogs();
+    }
+
+    /**
+     * Normalized log entries (see MigrationLog::normalize()).
+     *
+     * @return array<int,array>
+     */
+    protected function getLogEntries()
+    {
+        return MigrationLog::entries($this->getFailedLogs());
+    }
+
+    /**
+     * Source-level totals shown above the skip report (e.g. how many orders the
+     * source has vs how many were migrated). Sources override; keys are free-form
+     * but the UI knows `source_orders` and `migrated_orders`.
+     *
+     * @return array<string,int>
+     */
+    protected function logTotals()
+    {
+        return [];
     }
 
     /* -----------------------------------------------------------------
@@ -169,6 +195,7 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
                 'processed'       => 0,
                 'has_more'        => false,
                 'errors_in_batch' => count($this->getFailedLogs()),
+                'log_counts'      => MigrationLog::counts($this->getLogEntries()),
                 'skipped'         => true,
                 'migration_state' => $this->getState(),
             ];
@@ -222,6 +249,7 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
             'processed'       => $totalProcessed,
             'has_more'        => $hasMore,
             'errors_in_batch' => count($this->getFailedLogs()),
+            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
             'migration_state' => $state,
         ];
     }
@@ -259,24 +287,64 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
         return $this->notImplemented('recount:' . $substep);
     }
 
+    /**
+     * Skip/failure report: the raw log (back-compat), plus normalized entries,
+     * per-severity counts, one group per reason and source totals — everything
+     * the UI panel and the CSV export need.
+     */
     public function getLogs()
     {
-        $logs = $this->getFailedLogs();
+        $logs    = $this->getFailedLogs();
+        $entries = MigrationLog::entries($logs);
+
+        // The per-reason hint lives on the group; dropping it from every entry
+        // keeps the payload small on stores with thousands of skipped records.
+        $slim = array_map(function ($entry) {
+            unset($entry['hint']);
+            return $entry;
+        }, $entries);
 
         return [
-            'logs'  => $logs,
-            'count' => count($logs),
+            'logs'    => $logs,
+            'count'   => count($logs),
+            'entries' => $slim,
+            'counts'  => MigrationLog::counts($entries),
+            'groups'  => MigrationLog::groups($entries),
+            'totals'  => $this->logTotals(),
         ];
     }
 
     public function buildAndSaveSummary()
     {
-        $state = $this->getState();
+        $state  = $this->getState();
+        $counts = MigrationLog::counts($this->getLogEntries());
 
+        $done = function ($step) use ($state) {
+            return ['done' => ($state[$step] ?? '') === 'yes'];
+        };
+
+        // Same shape as the EDD summary (steps.{step}.done, steps.payments.errors)
+        // so the intro screen renders both sources the same way; `skipped` and
+        // `failed` split the error count by severity for the skip report.
         $summary = [
             'source'       => $this->key(),
             'completed_at' => current_time('mysql'),
-            'steps'        => $state,
+            'steps'        => [
+                'products'          => $done('products'),
+                'tax_rates'         => $done('tax_rates'),
+                'coupons'           => $done('coupons'),
+                'payments'          => [
+                    'done'    => ($state['payments'] ?? '') === 'yes',
+                    'errors'  => $counts['total'],
+                    'skipped' => $counts['skipped'],
+                    'failed'  => $counts['failed'],
+                ],
+                'missing_customers' => $done('missing_customers'),
+                'recount'           => $done('recount'),
+            ],
+            'state'        => $state,
+            'log_counts'   => $counts,
+            'totals'       => $this->logTotals(),
             'stats'        => [],
         ];
 

@@ -9,13 +9,14 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-08-20T07:08:29+00:00\n"
+"POT-Creation-Date: 2026-08-20T12:24:47+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 
 #. Plugin Name of the plugin
 #: fluent-cart-migrator.php
-#: Classes/Admin/AdminMenu.php:31
+#: Classes/Admin/AdminMenu.php:32
+#: Classes/Admin/AdminMenu.php:52
 #: assets/build/migrator-app.js:20
 msgid "FluentCart Migrator"
 msgstr ""
@@ -40,41 +41,41 @@ msgstr ""
 msgid "https://fluentcart.com"
 msgstr ""
 
-#: Classes/Admin/AdminMenu.php:19
-#: Classes/Admin/AdminMenu.php:32
+#: Classes/Admin/AdminMenu.php:20
+#: Classes/Admin/AdminMenu.php:33
 msgid "Migrator"
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Admin/RestApi.php:126
+#: Classes/Admin/RestApi.php:133
 #, php-format
 msgid "Unsupported migration source: %s"
 msgstr ""
 
 #. translators: %s: recount substep key
-#: Classes/Admin/RestApi.php:239
+#: Classes/Admin/RestApi.php:246
 #, php-format
 msgid "Invalid substep: %s"
 msgstr ""
 
-#: Classes/Admin/RestApi.php:264
+#: Classes/Admin/RestApi.php:304
 msgid "License verification is not supported for this source."
 msgstr ""
 
-#: Classes/Contracts/AbstractSourceMigrator.php:311
+#: Classes/Contracts/AbstractSourceMigrator.php:379
 #: Classes/MigratorService.php:965
-#: Classes/WooCommerce/WooSourceMigrator.php:494
+#: Classes/WooCommerce/WooSourceMigrator.php:602
 msgid "Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:323
+#: Classes/Contracts/AbstractSourceMigrator.php:391
 #, php-format
 msgid "Migration state for %s has been reset."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:333
+#: Classes/Contracts/AbstractSourceMigrator.php:401
 #, php-format
 msgid "This migration step is not implemented yet for %s."
 msgstr ""
@@ -150,6 +151,70 @@ msgstr ""
 msgid "All migrated data and migration state have been reset."
 msgstr ""
 
+#: Classes/Support/MigrationLog.php:35
+msgid "No line items in WooCommerce"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:36
+msgid "WooCommerce has no products recorded for this order (typical for very old orders or orders whose items were deleted), so there is nothing to migrate. Open the order in WooCommerce — if products are shown there, please report this order."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:40
+msgid "No customer email"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:41
+msgid "The order has no billing email and no customer account, so it cannot be attached to a FluentCart customer. These are usually abandoned or placeholder orders."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:45
+msgid "Unregistered order status"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:46
+msgid "The order uses a status that is not currently registered in WooCommerce (usually added by a plugin that is no longer active). Re-activate that plugin and run the orders step again to migrate these orders."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:50
+msgid "User has no email address"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:51
+msgid "The WordPress user account has no email address, so it cannot be created as a FluentCart customer."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:55
+msgid "Order could not be loaded"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:56
+msgid "WooCommerce returned no order for this id; it may have been deleted while the migration was running."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:60
+msgid "Order totals do not reconcile"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:61
+msgid "The migrated totals did not add up, so the order was not written to avoid corrupting the books. Please report the order id and details to support."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:65
+msgid "Unexpected error"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:66
+msgid "An unexpected error happened while migrating this record. Please report the details to support."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:81
+msgid "Migration failed"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:82
+msgid "The record could not be migrated. See the details for the exact message."
+msgstr ""
+
 #: Classes/WooCommerce/ProductMigrator.php:352
 msgid "Buy Now"
 msgstr ""
@@ -158,67 +223,67 @@ msgstr ""
 msgid "WooCommerce taxes are not enabled. Skipping tax rate migration."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:42
+#: Classes/WooCommerce/WooSourceMigrator.php:43
 msgid "WooCommerce not detected"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:43
+#: Classes/WooCommerce/WooSourceMigrator.php:44
 msgid "WooCommerce is not active. Please install and activate WooCommerce, then return here."
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:49
+#: Classes/WooCommerce/WooSourceMigrator.php:50
 #, php-format
 msgid "WooCommerce %s detected"
 msgstr ""
 
 #. translators: %s: minimum supported WooCommerce version
-#: Classes/WooCommerce/WooSourceMigrator.php:51
+#: Classes/WooCommerce/WooSourceMigrator.php:52
 #, php-format
 msgid "Migration requires WooCommerce %s or later. Please upgrade WooCommerce first, then return here."
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:57
+#: Classes/WooCommerce/WooSourceMigrator.php:58
 #, php-format
 msgid "WooCommerce detected (v%s)"
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:57
+#: Classes/WooCommerce/WooSourceMigrator.php:58
 msgid "WooCommerce detected"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:58
+#: Classes/WooCommerce/WooSourceMigrator.php:59
 msgid "Your WooCommerce installation is compatible with the migration tool."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:74
+#: Classes/WooCommerce/WooSourceMigrator.php:75
 msgid "WooCommerce plugin not found. Please install and activate WooCommerce and try again."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:78
+#: Classes/WooCommerce/WooSourceMigrator.php:79
 msgid "No WooCommerce products found. Nothing to migrate."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:87
-#: Classes/WooCommerce/WooSourceMigrator.php:140
-#: Classes/WooCommerce/WooSourceMigrator.php:231
-#: Classes/WooCommerce/WooSourceMigrator.php:280
-#: Classes/WooCommerce/WooSourceMigrator.php:311
-#: Classes/WooCommerce/WooSourceMigrator.php:431
+#: Classes/WooCommerce/WooSourceMigrator.php:88
+#: Classes/WooCommerce/WooSourceMigrator.php:141
+#: Classes/WooCommerce/WooSourceMigrator.php:232
+#: Classes/WooCommerce/WooSourceMigrator.php:281
+#: Classes/WooCommerce/WooSourceMigrator.php:312
+#: Classes/WooCommerce/WooSourceMigrator.php:539
 msgid "WooCommerce is not active."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:534
+#: Classes/WooCommerce/WooSourceMigrator.php:642
 msgid "All migrated data and WooCommerce migration state have been reset."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:593
+#: Classes/WooCommerce/WooSourceMigrator.php:701
 msgid "Reset dropped the FluentCart tables but failed to recreate them"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:595
+#: Classes/WooCommerce/WooSourceMigrator.php:703
 msgid "Re-activate FluentCart (or run its DB migration) to restore the schema before retrying."
 msgstr ""
 
@@ -228,6 +293,144 @@ msgstr ""
 
 #: views/admin-page.php:5
 msgid "Loading migrator..."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Could not load the report:"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s customer"
+msgid_plural "%s customers"
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s order"
+msgid_plural "%s orders"
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+msgid "Loading report..."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s record not migrated"
+msgid_plural "%s records not migrated"
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s skipped"
+msgid_plural "%s skipped"
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s failed"
+msgid_plural "%s failed"
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%1$s of %2$s orders migrated"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Refreshing..."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Refresh"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Download CSV report"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Skipped records are source data that cannot be migrated as-is (expected). Failed records hit an unexpected error and need attention."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Failed"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Skipped"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "User ID"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Name"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Email"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Registered"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Details"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Order"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Date"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Status"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Total"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Customer"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "ID %s"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "Show more (%s remaining)"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Record ID"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Stage"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Message"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Nothing was skipped — every record was migrated."
 msgstr ""
 
 #: assets/build/migrator-app.js:20
@@ -277,38 +480,7 @@ msgid "Tax Rates"
 msgstr ""
 
 #: assets/build/migrator-app.js:20
-#, js-format
-msgid "%s failed"
-msgid_plural "%s failed"
-msgstr[0] ""
-msgstr[1] ""
-
-#: assets/build/migrator-app.js:20
 msgid "Verified"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "Loading error log..."
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "EDD Payment ID"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "Record ID"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "Stage"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "Message"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "No error details available."
 msgstr ""
 
 #: assets/build/migrator-app.js:20
@@ -349,6 +521,10 @@ msgstr ""
 
 #: assets/build/migrator-app.js:20
 msgid "legacy EDD links won't resolve without it"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "charge ID resolution for migrated orders"
 msgstr ""
 
 #: assets/build/migrator-app.js:20
@@ -551,6 +727,14 @@ msgid "%s error"
 msgid_plural "%s errors"
 msgstr[0] ""
 msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+msgid "Hide details"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Why?"
+msgstr ""
 
 #: assets/build/migrator-app.js:20
 #, js-format

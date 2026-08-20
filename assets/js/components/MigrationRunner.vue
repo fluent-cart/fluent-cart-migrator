@@ -64,9 +64,20 @@
                     <strong>{{ __('Orders & Payments') }}</strong>
                     <span v-if="progress.payments.status === 'running' || progress.payments.status === 'completed'" class="fct-runner-meta">
                         {{ sprintf(_n('%s order processed', '%s orders processed', progress.payments.processed), progress.payments.processed) }}
-                        <span v-if="progress.payments.errorsCount" class="fct-text-danger">
+                        <template v-if="paymentLogCounts">
+                            <span v-if="paymentLogCounts.skipped" class="fct-text-warn">
+                                ({{ sprintf(_n('%s skipped', '%s skipped', paymentLogCounts.skipped), paymentLogCounts.skipped) }})
+                            </span>
+                            <span v-if="paymentLogCounts.failed" class="fct-text-danger">
+                                ({{ sprintf(_n('%s failed', '%s failed', paymentLogCounts.failed), paymentLogCounts.failed) }})
+                            </span>
+                        </template>
+                        <span v-else-if="progress.payments.errorsCount" class="fct-text-danger">
                             ({{ sprintf(_n('%s error', '%s errors', progress.payments.errorsCount), progress.payments.errorsCount) }})
                         </span>
+                        <button v-if="progress.payments.errorsCount" type="button" class="fct-link-btn" @click="showLog = !showLog">
+                            {{ showLog ? __('Hide details') : __('Why?') }}
+                        </button>
                     </span>
                     <div v-if="showPaymentProgress" class="fct-progress">
                         <div class="fct-progress-bar">
@@ -76,6 +87,9 @@
                             {{ sprintf(__('%1$s of ~%2$s orders'), progress.payments.processed, totalOrders) }}
                             <span v-if="etaText"> &middot; {{ sprintf(__('~%s remaining'), etaText) }}</span>
                         </span>
+                    </div>
+                    <div v-if="showLog" class="fct-runner-log">
+                        <MigrationLogPanel ref="logPanel" />
                     </div>
                 </div>
             </div>
@@ -92,6 +106,12 @@
                     <strong>{{ __('Missing Customers') }}</strong>
                     <span v-if="progress.missing_customers.status === 'completed'" class="fct-runner-meta">
                         {{ sprintf(__('%s migrated'), progress.missing_customers.migrated) }}
+                        <span v-if="progress.missing_customers.skipped" class="fct-text-warn">
+                            ({{ sprintf(_n('%s skipped', '%s skipped', progress.missing_customers.skipped), progress.missing_customers.skipped) }})
+                        </span>
+                        <button v-if="progress.missing_customers.skipped" type="button" class="fct-link-btn" @click="showLog = !showLog">
+                            {{ showLog ? __('Hide details') : __('Why?') }}
+                        </button>
                     </span>
                     <span v-else-if="stats && stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-runner-meta">
                         {{ sprintf(__('%s to migrate'), stats.customers_breakdown.missing) }}
@@ -139,9 +159,13 @@
 <script>
 import { apiRequest } from '../api.js';
 import { __, sprintf } from '../i18n.js';
+import MigrationLogPanel from './MigrationLogPanel.vue';
 
 export default {
     name: 'MigrationRunner',
+    components: {
+        MigrationLogPanel: MigrationLogPanel
+    },
     props: {
         stepsToRun: { type: Object, required: true },
         stats: { type: Object, default: null },
@@ -154,8 +178,8 @@ export default {
             products: { status: 'pending', total: 0, migrated: 0, failed: 0, errors: [] },
             tax_rates: { status: 'pending' },
             coupons: { status: 'pending', total: 0, migrated: 0 },
-            payments: { status: 'pending', processed: 0, hasMore: true, errorsCount: 0 },
-            missing_customers: { status: 'pending', migrated: 0 },
+            payments: { status: 'pending', processed: 0, hasMore: true, errorsCount: 0, logCounts: null },
+            missing_customers: { status: 'pending', migrated: 0, skipped: 0 },
             recount: {
                 status: 'pending',
                 substeps: {}
@@ -166,6 +190,7 @@ export default {
             progress: this.initialProgress ? JSON.parse(JSON.stringify(this.initialProgress)) : defaultProgress,
             running: false,
             paused: false,
+            showLog: false,
             startTime: null,
             endTime: null,
             paymentsStartTime: null,
@@ -193,6 +218,12 @@ export default {
         totalOrders: function () {
             if (!this.stats) return 0;
             return this.stats.orders_count;
+        },
+        // Per-severity counts from the server (newer sources); null for sources
+        // that only report a total error count.
+        paymentLogCounts: function () {
+            var c = this.progress.payments.logCounts;
+            return c && typeof c === 'object' ? c : null;
         },
         recountSubsteps: function () {
             // Driven by the source (EDD vs WooCommerce vs ...). Fall back to the
@@ -357,6 +388,10 @@ export default {
                     this.progress.payments.processed = this.progress.payments.processed + result.processed;
                     this.progress.payments.hasMore = hasMore;
                     this.progress.payments.errorsCount = result.errors_in_batch;
+                    if (result.log_counts) {
+                        this.progress.payments.logCounts = result.log_counts;
+                    }
+                    this.refreshLogPanel();
                     retries = 0;
                 } catch (e) {
                     if (retries < maxRetries) {
@@ -371,6 +406,18 @@ export default {
         runMissingCustomers: async function () {
             var result = await apiRequest('POST', 'migrate/missing-customers');
             this.progress.missing_customers.migrated = result.migrated || 0;
+            this.progress.missing_customers.skipped = result.skipped || 0;
+            if (result.log_counts) {
+                this.progress.payments.logCounts = result.log_counts;
+                this.progress.payments.errorsCount = result.log_counts.total;
+            }
+            this.refreshLogPanel();
+        },
+        // Keep the open report in sync while batches keep logging.
+        refreshLogPanel: function () {
+            if (this.showLog && this.$refs.logPanel && !this.$refs.logPanel.loading) {
+                this.$refs.logPanel.load();
+            }
         },
         runRecount: async function () {
             var substeps = this.recountSubsteps;

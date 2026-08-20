@@ -8,6 +8,7 @@ use FluentCartMigrator\Classes\Contracts\AbstractSourceMigrator;
 use FluentCartMigrator\Classes\Dto\CustomerData;
 use FluentCartMigrator\Classes\Load\CustomerWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
+use FluentCartMigrator\Classes\Support\MigrationLog;
 
 /**
  * WooCommerce migration source.
@@ -312,6 +313,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
         }
 
         $migrated = 0;
+        $skipped  = 0;
         $page     = 1;
         $perPage  = 200;
 
@@ -325,7 +327,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
                 'paged'    => $page,
                 'orderby'  => 'ID',
                 'order'    => 'ASC',
-                'fields'   => ['ID', 'user_email'],
+                'fields'   => ['ID', 'user_email', 'user_login', 'display_name', 'user_registered'],
             ]);
 
             if (!$users) {
@@ -335,6 +337,8 @@ class WooSourceMigrator extends AbstractSourceMigrator
             foreach ($users as $user) {
                 $email = $user->user_email;
                 if (!$email) {
+                    $skipped++;
+                    $this->logSkippedCustomer($user, 'customer_user_no_email', sprintf('User #%d (%s) has no email address.', (int) $user->ID, $user->user_login));
                     continue;
                 }
 
@@ -359,7 +363,10 @@ class WooSourceMigrator extends AbstractSourceMigrator
                     'addresses' => $this->customerProfileAddresses($wc, $email),
                 ]));
 
-                if (!is_wp_error($result)) {
+                if (is_wp_error($result)) {
+                    $skipped++;
+                    $this->logSkippedCustomer($user, $result->get_error_code(), $result->get_error_message());
+                } else {
                     $migrated++;
                 }
             }
@@ -374,7 +381,108 @@ class WooSourceMigrator extends AbstractSourceMigrator
             'success'         => true,
             'step'            => 'missing_customers',
             'migrated'        => $migrated,
+            'skipped'         => $skipped,
+            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
             'migration_state' => $state,
+        ];
+    }
+
+    /**
+     * Record a registered user that could not be migrated as a customer.
+     */
+    private function logSkippedCustomer($user, $code, $message)
+    {
+        $this->logFailed(MigrationLog::key('customer', (int) $user->ID), $message, [
+            'type'    => 'customer',
+            'id'      => (int) $user->ID,
+            'code'    => $code,
+            'stage'   => 'customer_migration',
+            'context' => [
+                'email' => (string) ($user->user_email ?? ''),
+                'name'  => (string) ($user->display_name ?: $user->user_login),
+                'date'  => !empty($user->user_registered) ? substr($user->user_registered, 0, 10) : '',
+                'url'   => get_edit_user_link((int) $user->ID),
+            ],
+        ]);
+    }
+
+    /**
+     * Skip report for the WooCommerce source. Logs written before the report
+     * existed have no order context (number/status/date/total/email); fill it
+     * in from WooCommerce once and persist, so older installs get the same
+     * report as fresh runs.
+     */
+    public function getLogs()
+    {
+        $this->backfillLogContext();
+
+        return parent::getLogs();
+    }
+
+    private function backfillLogContext()
+    {
+        if (!function_exists('wc_get_order')) {
+            return;
+        }
+
+        $logs    = $this->getFailedLogs();
+        $changed = false;
+
+        foreach ($logs as $key => $entry) {
+            if (!is_array($entry) || isset($entry['context']) || (($entry['type'] ?? 'order') !== 'order')) {
+                continue;
+            }
+
+            $orderId = (int) ($entry['id'] ?? $key);
+            $order   = $orderId ? wc_get_order($orderId) : null;
+            $context = [];
+            if ($order) {
+                $date    = $order->get_date_created();
+                $context = [
+                    'number'   => (string) $order->get_order_number(),
+                    'status'   => (string) $order->get_status(),
+                    'date'     => $date ? $date->date('Y-m-d') : '',
+                    'total'    => (string) $order->get_total(),
+                    'currency' => (string) $order->get_currency(),
+                    'email'    => (string) $order->get_billing_email(),
+                    'name'     => trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name()),
+                    'url'      => method_exists($order, 'get_edit_order_url') ? (string) $order->get_edit_order_url() : '',
+                ];
+            }
+
+            $entry['type']    = 'order';
+            $entry['id']      = $orderId;
+            $entry['code']    = $entry['code'] ?? ($entry['error_type'] ?? '');
+            $entry['context'] = $context; // empty array still marks it as processed
+            $logs[$key]       = $entry;
+            $changed          = true;
+        }
+
+        if ($changed) {
+            update_option($this->failedLogOptionKey(), $logs, false);
+        }
+    }
+
+    /**
+     * Totals for the skip report header: orders in WooCommerce (any status,
+     * which includes statuses that are no longer registered) vs orders that
+     * actually landed in FluentCart from this source.
+     */
+    protected function logTotals()
+    {
+        $migrated = 0;
+        if (function_exists('fluentCart')) {
+            // config is a JSON column/text; match loosely on the key+value so
+            // encoder spacing ("migrated_from": "woocommerce") doesn't matter.
+            $migrated = (int) fluentCart('db')->table('fct_orders')
+                ->where('config', 'like', '%migrated_from%')
+                ->where('config', 'like', '%woocommerce%')
+                ->count();
+        }
+
+        return [
+            'source_orders'   => $this->countOrders('shop_order', 'any'),
+            'migrated_orders' => $migrated,
         ];
     }
 

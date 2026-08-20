@@ -77,8 +77,11 @@
                 <span v-if="summarySteps.payments && summarySteps.payments.done" class="fct-step-tag fct-step-tag--done">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ __('Orders') }}
-                    <button v-if="summarySteps.payments.errors" class="fct-step-tag-warn fct-step-tag-btn" @click.stop="toggleErrorLog">
-                        ({{ sprintf(_n('%s failed', '%s failed', summarySteps.payments.errors), summarySteps.payments.errors) }})
+                    <button v-if="skippedCount" class="fct-step-tag-warn fct-step-tag-btn is-skipped" @click.stop="toggleErrorLog">
+                        ({{ sprintf(_n('%s skipped', '%s skipped', skippedCount), skippedCount) }})
+                    </button>
+                    <button v-if="failedCount" class="fct-step-tag-warn fct-step-tag-btn" @click.stop="toggleErrorLog">
+                        ({{ sprintf(_n('%s failed', '%s failed', failedCount), failedCount) }})
                     </button>
                 </span>
                 <span v-if="summarySteps.recount && summarySteps.recount.done" class="fct-step-tag fct-step-tag--done">
@@ -87,32 +90,9 @@
                 </span>
             </div>
 
-            <!-- Failed orders log -->
+            <!-- Skipped / failed records report -->
             <div v-if="showErrorLog" class="fct-error-log-wrap">
-                <div v-if="loadingLogs" class="fct-error-log-loading">
-                    <span class="fct-spinner fct-spinner--sm"></span> {{ __('Loading error log...') }}
-                </div>
-                <template v-else-if="errorLogEntries.length">
-                    <div class="fct-error-log">
-                        <table class="fct-table">
-                            <thead>
-                                <tr>
-                                    <th>{{ isEdd ? __('EDD Payment ID') : __('Record ID') }}</th>
-                                    <th>{{ __('Stage') }}</th>
-                                    <th>{{ __('Message') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="entry in errorLogEntries" :key="entry.paymentId">
-                                    <td>{{ entry.paymentId }}</td>
-                                    <td>{{ entry.stage || '-' }}</td>
-                                    <td>{{ entry.message }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </template>
-                <p v-else class="fct-error-log-empty">{{ __('No error details available.') }}</p>
+                <MigrationLogPanel :source="summarySource" />
             </div>
 
             <!-- Backward-compat notice (EDD only — the migrator routes legacy EDD endpoints) -->
@@ -202,10 +182,13 @@
 </template>
 
 <script>
-import { apiRequest } from '../api.js';
+import MigrationLogPanel from './MigrationLogPanel.vue';
 
 export default {
     name: 'IntroSection',
+    components: {
+        MigrationLogPanel: MigrationLogPanel
+    },
     props: {
         sources: { type: Array, default: function () { return []; } },
         migrationSummary: { type: Object, default: null },
@@ -217,9 +200,7 @@ export default {
     emits: ['select-source', 'reset'],
     data: function () {
         return {
-            showErrorLog: false,
-            loadingLogs: false,
-            errorLogEntries: []
+            showErrorLog: false
         };
     },
     computed: {
@@ -233,6 +214,21 @@ export default {
         summarySteps: function () {
             if (!this.migrationSummary || !this.migrationSummary.steps) return null;
             return this.migrationSummary.steps;
+        },
+        // Newer sources split the error count into skipped (expected,
+        // unmigratable data) and failed (real errors); EDD only reports the
+        // total, which is shown as "failed" like before.
+        skippedCount: function () {
+            var p = this.summarySteps && this.summarySteps.payments;
+            return p ? (parseInt(p.skipped, 10) || 0) : 0;
+        },
+        failedCount: function () {
+            var p = this.summarySteps && this.summarySteps.payments;
+            if (!p) return 0;
+            if (p.failed !== undefined || p.skipped !== undefined) {
+                return parseInt(p.failed, 10) || 0;
+            }
+            return parseInt(p.errors, 10) || 0;
         },
         formattedDate: function () {
             if (!this.migrationSummary || !this.migrationSummary.completed_at) return '';
@@ -274,38 +270,6 @@ export default {
         },
         toggleErrorLog: function () {
             this.showErrorLog = !this.showErrorLog;
-            if (this.showErrorLog && !this.errorLogEntries.length) {
-                this.fetchErrorLog();
-            }
-        },
-        fetchErrorLog: async function () {
-            this.loadingLogs = true;
-            try {
-                var data = await apiRequest('GET', 'logs');
-                var logs = data.logs || {};
-                if (Array.isArray(logs)) {
-                    this.errorLogEntries = logs.map(function (entry, i) {
-                        if (typeof entry === 'string') return { paymentId: i, message: entry };
-                        return entry;
-                    });
-                } else {
-                    this.errorLogEntries = Object.entries(logs).map(function (pair) {
-                        var id = pair[0];
-                        var d = pair[1];
-                        var obj = { paymentId: id };
-                        if (typeof d === 'string') {
-                            obj.message = d;
-                        } else {
-                            Object.assign(obj, d);
-                        }
-                        return obj;
-                    });
-                }
-            } catch (_) {
-                this.errorLogEntries = [];
-            } finally {
-                this.loadingLogs = false;
-            }
         }
     }
 };

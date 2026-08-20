@@ -9,7 +9,7 @@ use FluentCartMigrator\Classes\SourceManager;
  *
  *   wp fluent_cart_migrator migrate_from_woo [--all] [--products] [--tax_rates]
  *       [--coupons] [--payments] [--missing-customers] [--recount] [--stats]
- *       [--log] [--reset]
+ *       [--log [--verbose] [--export=<file.csv>]] [--reset]
  *
  * Separate from the production EDD command in Classes/Commands.php — registered
  * additively in the bootstrap. No EDD code is touched.
@@ -39,11 +39,7 @@ class Commands
         }
 
         if (!empty($assoc_args['log'])) {
-            $logs = $src->getLogs();
-            \WP_CLI::line('Failed: ' . $logs['count']);
-            foreach ($logs['logs'] as $id => $log) {
-                \WP_CLI::line($id . ' => ' . ($log['message'] ?? ''));
-            }
+            $this->printLog($src, $assoc_args);
             return;
         }
 
@@ -121,6 +117,49 @@ class Commands
         }
 
         \WP_CLI::success('WooCommerce migration step(s) complete.');
+    }
+
+    /**
+     * --log            grouped skip/failure report (reason, count, hint)
+     * --log --verbose  also lists every record
+     * --log --export=<file.csv>  write the full CSV report to a file
+     */
+    private function printLog($src, $assoc_args)
+    {
+        $data    = $src->getLogs();
+        $entries = $data['entries'] ?? [];
+        $counts  = $data['counts'] ?? ['total' => count($entries), 'skipped' => 0, 'failed' => 0];
+        $totals  = $data['totals'] ?? [];
+
+        if (isset($totals['source_orders'])) {
+            \WP_CLI::line(sprintf('Orders in WooCommerce: %d | migrated: %d', $totals['source_orders'], $totals['migrated_orders'] ?? 0));
+        }
+        \WP_CLI::line(sprintf('Not migrated: %d (skipped: %d, failed: %d)', $counts['total'], $counts['skipped'], $counts['failed']));
+
+        foreach ($data['groups'] ?? [] as $group) {
+            \WP_CLI::line('');
+            \WP_CLI::line(sprintf('[%s] %s — %d %s(s)', strtoupper($group['severity']), $group['title'], $group['count'], $group['type']));
+            \WP_CLI::line('  ' . $group['hint']);
+        }
+
+        if (!empty($assoc_args['verbose'])) {
+            \WP_CLI::line('');
+            foreach ($entries as $entry) {
+                $c = $entry['context'];
+                \WP_CLI::line(sprintf('%s #%s%s [%s] %s', $entry['type'], $entry['id'], $c['number'] ? ' (' . $c['number'] . ')' : '', $entry['severity'], $entry['message']));
+            }
+        }
+
+        if (!empty($assoc_args['export'])) {
+            $file = (string) $assoc_args['export'];
+            $fh   = fopen($file, 'w');
+            if (!$fh) {
+                \WP_CLI::error('Could not open ' . $file . ' for writing.');
+            }
+            \FluentCartMigrator\Classes\Support\MigrationLog::csv(\FluentCartMigrator\Classes\Support\MigrationLog::entries($data['logs'] ?? []), $fh);
+            fclose($fh);
+            \WP_CLI::success('Report written to ' . $file . ' (' . count($entries) . ' rows).');
+        }
     }
 
     private function printStats($src)

@@ -7,7 +7,32 @@ export function setApiSource(source) {
     currentSource = source || '';
 }
 
-export function apiRequest(method, path, data) {
+export function getApiSource() {
+    return currentSource;
+}
+
+/**
+ * Absolute REST URL for `path`, carrying the source and — when `withNonce` is
+ * set — the REST nonce as `_wpnonce`, so it can be used as a plain link (e.g.
+ * a file download) and still authenticate via cookies.
+ */
+export function apiUrl(path, source, withNonce) {
+    var url = window.fctMigrator.restUrl + path;
+    var src = source || currentSource;
+    var params = [];
+    if (src) {
+        params.push('source=' + encodeURIComponent(src));
+    }
+    if (withNonce) {
+        params.push('_wpnonce=' + encodeURIComponent(window.fctMigrator.nonce));
+    }
+    if (params.length) {
+        url += (url.indexOf('?') === -1 ? '?' : '&') + params.join('&');
+    }
+    return url;
+}
+
+export function apiRequest(method, path, data, source) {
     var opts = {
         method: method,
         headers: {
@@ -20,12 +45,7 @@ export function apiRequest(method, path, data) {
         opts.body = JSON.stringify(data);
     }
 
-    var url = window.fctMigrator.restUrl + path;
-    if (currentSource) {
-        url += (url.indexOf('?') === -1 ? '?' : '&') + 'source=' + encodeURIComponent(currentSource);
-    }
-
-    return fetch(url, opts).then(function (res) {
+    return fetch(apiUrl(path, source, false), opts).then(function (res) {
         if (!res.ok) {
             return res.json().catch(function () {
                 return {};

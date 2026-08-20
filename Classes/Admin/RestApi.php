@@ -4,6 +4,7 @@ namespace FluentCartMigrator\Classes\Admin;
 
 use FluentCartMigrator\Classes\MigratorService;
 use FluentCartMigrator\Classes\SourceManager;
+use FluentCartMigrator\Classes\Support\MigrationLog;
 
 class RestApi
 {
@@ -79,6 +80,12 @@ class RestApi
         register_rest_route($this->namespace, '/logs', [
             'methods'             => 'GET',
             'callback'            => [$this, 'getLogs'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/logs/export', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'exportLogs'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
@@ -250,6 +257,39 @@ class RestApi
         }
 
         return rest_ensure_response($migrator->getLogs());
+    }
+
+    /**
+     * Download the skip/failure report as CSV. Served raw (not JSON) — the
+     * front-end links to this URL with the REST nonce as `_wpnonce`, so the
+     * browser gets a normal file download.
+     */
+    public function exportLogs(\WP_REST_Request $request)
+    {
+        $migrator = $this->resolveMigrator($request);
+        if (is_wp_error($migrator)) {
+            return $migrator;
+        }
+
+        // Normalize from the raw log so every CSV row carries the full reason
+        // + hint (getLogs() trims the hint from entries for the UI payload).
+        $data    = $migrator->getLogs();
+        $entries = MigrationLog::entries(is_array($data['logs'] ?? null) ? $data['logs'] : []);
+
+        $source   = sanitize_key($request->get_param('source') ?: 'edd');
+        $filename = sprintf('fluent-cart-migration-report-%s-%s.csv', $source, gmdate('Y-m-d-His'));
+
+        nocache_headers();
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('X-Content-Type-Options: nosniff');
+
+        $out = fopen('php://output', 'w');
+        fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM so Excel reads accents correctly
+        MigrationLog::csv($entries, $out);
+        fclose($out);
+
+        exit;
     }
 
     public function verifyLicenses(\WP_REST_Request $request)

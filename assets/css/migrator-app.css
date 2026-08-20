@@ -1006,6 +1006,187 @@
     line-height: 1.4;
 }
 
+/* ─── Skip / failure report ──────────────────────────────────────────────── */
+
+.fct-text-warn {
+    color: var(--fct-warning);
+    font-weight: 500;
+}
+
+.fct-step-tag-warn.is-skipped {
+    color: var(--fct-warning);
+}
+
+.fct-link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-left: 6px;
+    font-size: 12px;
+    color: var(--fct-primary);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.fct-link-btn:hover {
+    opacity: 0.8;
+}
+
+.fct-badge--warning {
+    background: var(--fct-warning-light);
+    color: var(--fct-warning);
+}
+
+.fct-badge--danger {
+    background: var(--fct-danger-light);
+    color: var(--fct-danger);
+}
+
+.fct-runner-log {
+    margin-top: 12px;
+}
+
+.fct-log-panel {
+    border: 1px solid var(--fct-border);
+    border-radius: var(--fct-radius);
+    padding: 14px 16px;
+    background: var(--fct-card);
+}
+
+.fct-log-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.fct-log-panel-summary {
+    font-size: 13px;
+    color: var(--fct-text);
+}
+
+.fct-log-panel-breakdown {
+    color: var(--fct-text-secondary);
+}
+
+.fct-log-panel-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.fct-log-panel-actions .fct-btn {
+    text-decoration: none;
+}
+
+.fct-log-panel-note,
+.fct-log-panel-error {
+    font-size: 12px;
+    color: var(--fct-text-secondary);
+    margin: 10px 0 0;
+}
+
+.fct-log-panel-error {
+    color: var(--fct-danger);
+}
+
+.fct-log-groups {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.fct-log-group {
+    border: 1px solid var(--fct-border);
+    border-left-width: 3px;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.fct-log-group.is-skipped {
+    border-left-color: var(--fct-warning);
+}
+
+.fct-log-group.is-failed {
+    border-left-color: var(--fct-danger);
+}
+
+.fct-log-group-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: var(--fct-text);
+}
+
+.fct-log-group-title {
+    font-size: 13px;
+}
+
+.fct-log-group-count {
+    font-size: 12px;
+    color: var(--fct-text-secondary);
+}
+
+.fct-log-group-chevron {
+    margin-left: auto;
+    color: var(--fct-text-secondary);
+    transition: transform 0.15s ease;
+}
+
+.fct-log-group-chevron.is-open {
+    transform: rotate(180deg);
+}
+
+.fct-log-group-hint {
+    font-size: 12px;
+    color: var(--fct-text-secondary);
+    margin: 6px 0 0;
+    line-height: 1.5;
+}
+
+.fct-log-group .fct-error-log {
+    margin-top: 10px;
+}
+
+.fct-log-message {
+    word-break: break-word;
+}
+
+.fct-nowrap {
+    white-space: nowrap;
+}
+
+.fct-log-sub {
+    font-size: 11px;
+    color: var(--fct-text-secondary);
+    margin-left: 4px;
+}
+
+.fct-log-more {
+    padding: 8px 12px;
+    border-top: 1px solid var(--fct-border);
+    background: var(--fct-bg);
+}
+
+.fct-table td a {
+    color: var(--fct-primary);
+    text-decoration: none;
+}
+
+.fct-table td a:hover {
+    text-decoration: underline;
+}
+
 /* ─── Error Log ──────────────────────────────────────────────────────────── */
 
 .fct-error-log {

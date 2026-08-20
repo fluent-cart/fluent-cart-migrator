@@ -8,6 +8,7 @@ class AdminMenu
     {
         add_action('fluent_cart/admin_submenu_added', [$this, 'addMigratorSubmenu']);
         add_action('admin_menu', [$this, 'registerStandalonePage'], 99);
+        add_action('load-admin_page_fluent-cart-migrator', [$this, 'setPageTitle']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
         add_action('in_admin_header', [$this, 'removeAdminNotices'], 999);
     }
@@ -34,6 +35,22 @@ class AdminMenu
             'fluent-cart-migrator',
             [$this, 'renderPage']
         );
+    }
+
+    /**
+     * The page is registered without a parent (hidden from the WP menu; the
+     * FluentCart submenu entry is injected manually above), so core's
+     * get_admin_page_title() never finds it and leaves the global $title null,
+     * which makes admin-header.php emit "strip_tags(): Passing null" on PHP 8.1+.
+     * The load-{hook} action fires before admin-header.php, so set it here.
+     */
+    public function setPageTitle()
+    {
+        global $title;
+
+        if (empty($title)) {
+            $title = __('FluentCart Migrator', 'fluent-cart-migrator');
+        }
     }
 
     public function renderPage()

@@ -15,6 +15,7 @@ use FluentCartMigrator\Classes\Dto\TransactionData;
 use FluentCartMigrator\Classes\Load\CustomerWriter;
 use FluentCartMigrator\Classes\Load\OrderWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
+use FluentCartMigrator\Classes\Support\MigrationLog;
 
 /**
  * WooCommerce order source: Extract + Transform only.
@@ -47,6 +48,13 @@ class OrderMigrator
 
         $ids     = $query->orders ?? [];
         $hasMore = $page < (int) ($query->max_num_pages ?? 1);
+
+        // Orders in a status WooCommerce no longer registers (e.g. a custom
+        // "delivered" status from a now-inactive plugin) are invisible to the
+        // query above. Record them once so the report explains the gap.
+        if ((int) $page === 1) {
+            $this->logUnsupportedStatusOrders();
+        }
 
         $writer    = new OrderWriter();
         $processed = 0;
@@ -95,12 +103,15 @@ class OrderMigrator
 
         $customer = CustomerWriter::findOrCreate($this->buildCustomer($order, $createdAt));
         if (is_wp_error($customer)) {
-            return $customer;
+            return $this->withOrderContext($customer, $order);
         }
 
         $items = $this->buildItems($order, $currency, $createdAt, $this->refundedPerItem($order, $currency));
         if (!$items) {
-            return new \WP_Error('woo_empty_order', 'Order #' . $wcOrderId . ' has no migratable line items.');
+            return $this->withOrderContext(
+                new \WP_Error('woo_empty_order', 'Order #' . $wcOrderId . ' has no migratable line items.'),
+                $order
+            );
         }
 
         // --- Totals (derived from items, reconciled to the WC order total) ---
@@ -245,10 +256,45 @@ class OrderMigrator
 
         $result = $writer->write($data);
         if (is_wp_error($result)) {
-            return $result;
+            return $this->withOrderContext($result, $order);
         }
 
         return $result['order_id'];
+    }
+
+    /**
+     * Attach the order facts the skip report shows (number, status, date,
+     * total, email, edit link) to a WP_Error so logFailed() doesn't have to
+     * reload the order.
+     */
+    private function withOrderContext(\WP_Error $error, $order)
+    {
+        $data = $error->get_error_data();
+        $data = is_array($data) ? $data : [];
+        $data['context'] = $this->orderContext($order);
+        $error->add_data($data);
+
+        return $error;
+    }
+
+    /**
+     * @param \WC_Order|\WC_Abstract_Order $order
+     * @return array<string,string>
+     */
+    private function orderContext($order)
+    {
+        $date = $order->get_date_created();
+
+        return [
+            'number'   => (string) $order->get_order_number(),
+            'status'   => (string) $order->get_status(),
+            'date'     => $date ? $date->date('Y-m-d') : '',
+            'total'    => (string) $order->get_total(),
+            'currency' => (string) $order->get_currency(),
+            'email'    => (string) $order->get_billing_email(),
+            'name'     => trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name()),
+            'url'      => method_exists($order, 'get_edit_order_url') ? (string) $order->get_edit_order_url() : '',
+        ];
     }
 
     /* -----------------------------------------------------------------
@@ -1197,21 +1243,65 @@ class OrderMigrator
         }));
     }
 
-    private function logFailed($orderId, $error)
+    /**
+     * Orders whose status is not registered with WooCommerce right now are
+     * never returned by wc_get_orders() with an explicit status list, so they
+     * would silently vanish from the migration. Log each one as skipped with
+     * the reason so the operator can see and fix it (re-activate the plugin
+     * that registered the status, then re-run the orders step).
+     */
+    private function logUnsupportedStatusOrders()
     {
-        $optionKey = '_fluent_cart_woocommerce_failed_logs';
-        $logs      = get_option($optionKey, []);
-        if (!is_array($logs)) {
-            $logs = [];
+        global $wpdb;
+
+        $ignore = array_merge($this->migratableStatuses(), ['wc-checkout-draft', 'trash', 'auto-draft', 'draft']);
+        $ignore = array_values(array_unique($ignore));
+        $in     = implode(',', array_fill(0, count($ignore), '%s'));
+
+        $hpos = class_exists('\\Automattic\\WooCommerce\\Utilities\\OrderUtil')
+            && method_exists('\\Automattic\\WooCommerce\\Utilities\\OrderUtil', 'custom_orders_table_usage_is_enabled')
+            && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+
+        if ($hpos) {
+            $sql = "SELECT id, status FROM {$wpdb->prefix}wc_orders WHERE type = 'shop_order' AND status NOT IN ($in)";
+        } else {
+            $sql = "SELECT ID AS id, post_status AS status FROM {$wpdb->posts} WHERE post_type = 'shop_order' AND post_status NOT IN ($in)";
         }
 
-        $logs[$orderId] = [
-            'message'    => $error->get_error_message(),
-            'error_type' => $error->get_error_code(),
-            'stage'      => 'order_migration',
-        ];
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders built above
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $ignore));
+        if (!$rows) {
+            return;
+        }
 
-        update_option($optionKey, $logs, false);
+        foreach ($rows as $row) {
+            $status = preg_replace('/^wc-/', '', (string) $row->status);
+            $this->logFailed((int) $row->id, new \WP_Error(
+                'woo_unsupported_status',
+                sprintf('Order #%d has status "%s", which is not registered in WooCommerce.', (int) $row->id, $status)
+            ));
+        }
+    }
+
+    private function logFailed($orderId, $error)
+    {
+        $data    = $error->get_error_data();
+        $context = is_array($data) && isset($data['context']) ? $data['context'] : null;
+
+        if ($context === null) {
+            $order   = wc_get_order($orderId);
+            $context = $order ? $this->orderContext($order) : [];
+        }
+
+        MigrationLog::record('_fluent_cart_woocommerce_failed_logs', (string) (int) $orderId, [
+            'type'       => 'order',
+            'id'         => (int) $orderId,
+            'code'       => $error->get_error_code(),
+            'error_type' => $error->get_error_code(), // back-compat key
+            'message'    => $error->get_error_message(),
+            'stage'      => 'order_migration',
+            'context'    => $context,
+        ]);
 
         if (defined('WP_CLI') && WP_CLI) {
             \WP_CLI::warning('Order #' . $orderId . ' failed: ' . $error->get_error_message());
