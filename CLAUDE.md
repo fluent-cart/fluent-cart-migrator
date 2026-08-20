@@ -17,6 +17,15 @@ Build entry point: `assets/js/migrator-app.js` (Vue 3 app). Output: `assets/buil
 
 There are no PHP tests, linting, or composer autoloading — classes are loaded via `require_once`.
 
+## Translations (i18n)
+
+Text domain: `fluent-cart-migrator`, loaded from `languages/` (`Domain Path: /languages`, `load_plugin_textdomain` on `init`).
+
+- **PHP**: wrap strings with `__()` / `esc_html__()` etc. and the `fluent-cart-migrator` domain.
+- **Vue**: import `__`, `_n`, `sprintf` from `assets/js/i18n.js` (they are also available in every template as globals). They delegate to `wp.i18n` at runtime — the bundle depends on `wp-i18n` and translations are registered via `wp_set_script_translations()` in `AdminMenu`. Keep those three function names unchanged: Vite is configured with `esbuild.minifyIdentifiers: false` so `wp i18n make-pot` can extract the calls from the built bundle (`.vue` files are not scanned directly).
+- `npm run pot` regenerates `languages/fluent-cart-migrator.pot` (run after `npm run build`; `npm run i18n` does both). It uses `--ignore-domain` because the bundled JS calls carry no domain argument.
+- Translators ship `languages/fluent-cart-migrator-{locale}.po/.mo` plus the JS JSON (`wp i18n make-json languages/` or Loco Translate); the JSON filename hash is `md5('assets/build/migrator-app.js')`.
+
 ## WP-CLI Commands
 
 ```bash

@@ -1,0 +1,239 @@
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: FluentCart Migrator\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-20 07:09+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: \n"
+"Language: \n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Loco https://localise.biz/\n"
+"X-Loco-Version: 2.8.5; wp-7.1; php-8.2.30\n"
+"X-Domain: fluent-cart-migrator"
+
+#: Classes/MigratorService.php:62
+msgid "(unknown version)"
+msgstr ""
+
+#: Classes/MigratorService.php:956
+msgid "All migrated data and migration state have been reset."
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:534
+msgid "All migrated data and WooCommerce migration state have been reset."
+msgstr ""
+
+#: Classes/WooCommerce/ProductMigrator.php:352
+msgid "Buy Now"
+msgstr ""
+
+#: fluent-cart-migrator.php:145
+msgid "Check Update"
+msgstr ""
+
+#: Classes/EDD3/MigratorHelper.php:1232
+msgid ""
+"Easy Digital Downloads plugin not found. Please install and activate Easy "
+"Digital Downloads and try again."
+msgstr ""
+
+#. %s: EDD version number
+#: Classes/MigratorService.php:62
+#, php-format
+msgid "EDD %s detected"
+msgstr ""
+
+#. %s: EDD version number
+#: Classes/MigratorService.php:49
+#, php-format
+msgid "EDD 3.x detected (v%s)"
+msgstr ""
+
+#: Classes/MigratorService.php:55
+msgid "EDD data found"
+msgstr ""
+
+#: Classes/MigratorService.php:56
+msgid ""
+"EDD is not currently active, but migration data (v3 tables) was detected. "
+"You can proceed."
+msgstr ""
+
+#: Classes/EDD3/MigratorCli.php:456
+msgid "EDD Taxes are not enabled. Skipping tax rate migration."
+msgstr ""
+
+#. Name of the plugin
+#: Classes/Admin/AdminMenu.php:31
+msgid "FluentCart Migrator"
+msgstr ""
+
+#: Classes/EDD3/MigratorHelper.php:1214
+msgid ""
+"FluentCart Pro is required to migrate EDD License data. Please install "
+"FluentCart Pro and try again."
+msgstr ""
+
+#. Author of the plugin
+msgid "FluentCart Team"
+msgstr ""
+
+#. Author URI of the plugin
+msgid "https://fluentcart.com"
+msgstr ""
+
+#. URI of the plugin
+msgid "https://github.com/fluent-cart/fluent-cart-migrator"
+msgstr ""
+
+#: Classes/EDD3/EddLicenseHandler.php:253
+#: Classes/EDD3/EddLicenseHandler.php:262
+#: Classes/EDD3/EddLicenseHandler.php:307
+#: Classes/EDD3/EddLicenseHandler.php:360
+#: Classes/EDD3/EddLicenseHandler.php:407
+msgid "Invalid License Key"
+msgstr ""
+
+#. %s: recount substep key
+#: Classes/Admin/RestApi.php:239
+#, php-format
+msgid "Invalid substep: %s"
+msgstr ""
+
+#: Classes/Admin/RestApi.php:264
+msgid "License verification is not supported for this source."
+msgstr ""
+
+#: views/admin-page.php:5
+msgid "Loading migrator..."
+msgstr ""
+
+#. Description of the plugin
+msgid "Migrate your data to FluentCart from other platforms."
+msgstr ""
+
+#: Classes/MigratorService.php:63
+msgid ""
+"Migration requires EDD 3.0 or later. Please upgrade EDD first, then return "
+"here."
+msgstr ""
+
+#. %s: minimum supported WooCommerce version
+#: Classes/WooCommerce/WooSourceMigrator.php:51
+#, php-format
+msgid ""
+"Migration requires WooCommerce %s or later. Please upgrade WooCommerce first,"
+" then return here."
+msgstr ""
+
+#. %s: migration source key
+#: Classes/Contracts/AbstractSourceMigrator.php:323
+#, php-format
+msgid "Migration state for %s has been reset."
+msgstr ""
+
+#: Classes/Admin/AdminMenu.php:19 Classes/Admin/AdminMenu.php:32
+msgid "Migrator"
+msgstr ""
+
+#: Classes/EDD3/MigratorHelper.php:1240
+msgid "No EDD products found. Nothing to migrate."
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:78
+msgid "No WooCommerce products found. Nothing to migrate."
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:595
+msgid ""
+"Re-activate FluentCart (or run its DB migration) to restore the schema "
+"before retrying."
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:593
+msgid "Reset dropped the FluentCart tables but failed to recreate them"
+msgstr ""
+
+#: Classes/MigratorService.php:965
+#: Classes/Contracts/AbstractSourceMigrator.php:311
+#: Classes/WooCommerce/WooSourceMigrator.php:494
+msgid ""
+"Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-"
+"config.php."
+msgstr ""
+
+#. %s: migration source key
+#: Classes/Contracts/AbstractSourceMigrator.php:333
+#, php-format
+msgid "This migration step is not implemented yet for %s."
+msgstr ""
+
+#: Classes/MigratorService.php:468
+msgid "Unknown substep"
+msgstr ""
+
+#. %s: migration source key
+#: Classes/Admin/RestApi.php:126
+#, php-format
+msgid "Unsupported migration source: %s"
+msgstr ""
+
+#. %s: WooCommerce version number
+#: Classes/WooCommerce/WooSourceMigrator.php:49
+#, php-format
+msgid "WooCommerce %s detected"
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:57
+msgid "WooCommerce detected"
+msgstr ""
+
+#. %s: WooCommerce version number
+#: Classes/WooCommerce/WooSourceMigrator.php:57
+#, php-format
+msgid "WooCommerce detected (v%s)"
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:87
+#: Classes/WooCommerce/WooSourceMigrator.php:140
+#: Classes/WooCommerce/WooSourceMigrator.php:231
+#: Classes/WooCommerce/WooSourceMigrator.php:280
+#: Classes/WooCommerce/WooSourceMigrator.php:311
+#: Classes/WooCommerce/WooSourceMigrator.php:431
+msgid "WooCommerce is not active."
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:43
+msgid ""
+"WooCommerce is not active. Please install and activate WooCommerce, then "
+"return here."
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:42
+msgid "WooCommerce not detected"
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:74
+msgid ""
+"WooCommerce plugin not found. Please install and activate WooCommerce and "
+"try again."
+msgstr ""
+
+#: Classes/WooCommerce/TaxRateMigrator.php:30
+msgid "WooCommerce taxes are not enabled. Skipping tax rate migration."
+msgstr ""
+
+#: Classes/MigratorService.php:50
+msgid ""
+"Your Easy Digital Downloads installation is compatible with the migration "
+"tool."
+msgstr ""
+
+#: Classes/WooCommerce/WooSourceMigrator.php:58
+msgid "Your WooCommerce installation is compatible with the migration tool."
+msgstr ""

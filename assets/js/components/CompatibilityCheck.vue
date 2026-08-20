@@ -1,7 +1,7 @@
 <template>
     <div class="fct-card">
         <div class="fct-card-header">
-            <h2>Compatibility Check</h2>
+            <h2>{{ __('Compatibility Check') }}</h2>
         </div>
 
         <div v-if="versionState === 'pass'" class="fct-compat-box fct-compat-box--pass">
@@ -38,17 +38,19 @@
         </div>
 
         <div class="fct-card-footer">
-            <button @click="$emit('go-back')" class="fct-btn fct-btn--secondary">Back</button>
+            <button @click="$emit('go-back')" class="fct-btn fct-btn--secondary">{{ __('Back') }}</button>
             <button
                 v-if="versionState !== 'blocked'"
                 @click="$emit('continue')"
                 class="fct-btn fct-btn--primary"
-            >Continue</button>
+            >{{ __('Continue') }}</button>
         </div>
     </div>
 </template>
 
 <script>
+import { __, sprintf } from '../i18n.js';
+
 export default {
     name: 'CompatibilityCheck',
     props: {
@@ -61,7 +63,7 @@ export default {
         compat: function () {
             var src = this.source;
             if (!src) {
-                return { state: 'unknown', title: 'Unknown source', message: '' };
+                return { state: 'unknown', title: __('Unknown source'), message: '' };
             }
             if (src.compatibility && src.compatibility.state) {
                 return src.compatibility;
@@ -77,21 +79,23 @@ export default {
             if (src.has_v3_tables && src.version) {
                 return {
                     state: 'pass',
-                    title: 'EDD 3.x detected (v' + src.version + ')',
-                    message: 'Your Easy Digital Downloads installation is compatible with the migration tool.'
+                    /* translators: %s: EDD version number */
+                    title: sprintf(__('EDD 3.x detected (v%s)'), src.version),
+                    message: __('Your Easy Digital Downloads installation is compatible with the migration tool.')
                 };
             }
             if (src.has_v3_tables && !src.version) {
                 return {
                     state: 'data_only',
-                    title: 'EDD data found',
-                    message: 'EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.'
+                    title: __('EDD data found'),
+                    message: __('EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.')
                 };
             }
             return {
                 state: 'blocked',
-                title: 'EDD ' + (src.version || '(unknown version)') + ' detected',
-                message: 'Migration requires <strong>EDD 3.0 or later</strong>. Please upgrade EDD first, then return here.'
+                /* translators: %s: EDD version number */
+                title: sprintf(__('EDD %s detected'), src.version || __('(unknown version)')),
+                message: __('Migration requires <strong>EDD 3.0 or later</strong>. Please upgrade EDD first, then return here.')
             };
         }
     }

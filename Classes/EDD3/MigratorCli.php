@@ -453,7 +453,7 @@ class MigratorCli
             return [
                 'success'   => true,
                 'skipped'   => true,
-                'message'   => 'EDD Taxes are not enabled. Skipping tax rate migration.',
+                'message'   => __('EDD Taxes are not enabled. Skipping tax rate migration.', 'fluent-cart-migrator'),
                 'countries' => [],
                 'mapped'    => 0,
             ];

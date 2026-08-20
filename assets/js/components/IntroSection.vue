@@ -12,8 +12,8 @@
                 </svg>
             </div>
             <div class="fct-intro-hero-content">
-                <h1>FluentCart Migrator</h1>
-                <p>Seamlessly migrate your eCommerce data to FluentCart. Transfer products, orders, customers, subscriptions, licenses, and more — all in a few clicks. <a href="https://docs.fluentcart.com/guide/migration/edd/" target="_blank" rel="noopener noreferrer">Read the documentation →</a></p>
+                <h1>{{ __('FluentCart Migrator') }}</h1>
+                <p>{{ __('Seamlessly migrate your eCommerce data to FluentCart. Transfer products, orders, customers, subscriptions, licenses, and more — all in a few clicks.') }} <a href="https://docs.fluentcart.com/guide/migration/edd/" target="_blank" rel="noopener noreferrer">{{ __('Read the documentation →') }}</a></p>
             </div>
         </div>
 
@@ -27,8 +27,8 @@
                     </svg>
                 </div>
                 <div>
-                    <h3>{{ sourceLabel }} Migration Completed</h3>
-                    <p v-if="migrationSummary.completed_at">Completed on {{ formattedDate }}</p>
+                    <h3>{{ sprintf(__('%s Migration Completed'), sourceLabel) }}</h3>
+                    <p v-if="migrationSummary.completed_at">{{ sprintf(__('Completed on %s'), formattedDate) }}</p>
                 </div>
             </div>
 
@@ -36,27 +36,27 @@
             <div v-if="summaryStats" class="fct-summary-stats-row">
                 <a v-if="summaryStats.products" :href="adminUrl + 'admin.php?page=fluent-cart#/products'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.products }}</span>
-                    <span class="fct-summary-stat-label">Products</span>
+                    <span class="fct-summary-stat-label">{{ __('Products') }}</span>
                 </a>
                 <a v-if="summaryStats.orders" :href="adminUrl + 'admin.php?page=fluent-cart#/orders'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.orders }}</span>
-                    <span class="fct-summary-stat-label">Orders</span>
+                    <span class="fct-summary-stat-label">{{ __('Orders') }}</span>
                 </a>
                 <a v-if="summaryStats.customers" :href="adminUrl + 'admin.php?page=fluent-cart#/customers'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.customers }}</span>
-                    <span class="fct-summary-stat-label">Customers</span>
+                    <span class="fct-summary-stat-label">{{ __('Customers') }}</span>
                 </a>
                 <a v-if="summaryStats.coupons" :href="adminUrl + 'admin.php?page=fluent-cart#/coupons'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.coupons }}</span>
-                    <span class="fct-summary-stat-label">Coupons</span>
+                    <span class="fct-summary-stat-label">{{ __('Coupons') }}</span>
                 </a>
                 <a v-if="summaryStats.subscriptions" :href="adminUrl + 'admin.php?page=fluent-cart#/subscriptions'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.subscriptions }}</span>
-                    <span class="fct-summary-stat-label">Subscriptions</span>
+                    <span class="fct-summary-stat-label">{{ __('Subscriptions') }}</span>
                 </a>
                 <a v-if="summaryStats.licenses" :href="adminUrl + 'admin.php?page=fluent-cart#/licenses'" class="fct-summary-stat-cell fct-summary-stat-link">
                     <span class="fct-summary-stat-value">{{ summaryStats.licenses }}</span>
-                    <span class="fct-summary-stat-label">Licenses</span>
+                    <span class="fct-summary-stat-label">{{ __('Licenses') }}</span>
                 </a>
             </div>
 
@@ -64,42 +64,42 @@
             <div v-if="summarySteps" class="fct-previous-summary-steps">
                 <span v-if="summarySteps.products && summarySteps.products.done" class="fct-step-tag fct-step-tag--done">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    Products
+                    {{ __('Products') }}
                 </span>
                 <span v-if="summarySteps.tax_rates && summarySteps.tax_rates.done" class="fct-step-tag fct-step-tag--done">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    Tax Rates
+                    {{ __('Tax Rates') }}
                 </span>
                 <span v-if="summarySteps.coupons && summarySteps.coupons.done" class="fct-step-tag fct-step-tag--done">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    Coupons
+                    {{ __('Coupons') }}
                 </span>
                 <span v-if="summarySteps.payments && summarySteps.payments.done" class="fct-step-tag fct-step-tag--done">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    Orders
+                    {{ __('Orders') }}
                     <button v-if="summarySteps.payments.errors" class="fct-step-tag-warn fct-step-tag-btn" @click.stop="toggleErrorLog">
-                        ({{ summarySteps.payments.errors }} failed)
+                        ({{ sprintf(_n('%s failed', '%s failed', summarySteps.payments.errors), summarySteps.payments.errors) }})
                     </button>
                 </span>
                 <span v-if="summarySteps.recount && summarySteps.recount.done" class="fct-step-tag fct-step-tag--done">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    Verified
+                    {{ __('Verified') }}
                 </span>
             </div>
 
             <!-- Failed orders log -->
             <div v-if="showErrorLog" class="fct-error-log-wrap">
                 <div v-if="loadingLogs" class="fct-error-log-loading">
-                    <span class="fct-spinner fct-spinner--sm"></span> Loading error log...
+                    <span class="fct-spinner fct-spinner--sm"></span> {{ __('Loading error log...') }}
                 </div>
                 <template v-else-if="errorLogEntries.length">
                     <div class="fct-error-log">
                         <table class="fct-table">
                             <thead>
                                 <tr>
-                                    <th>{{ isEdd ? 'EDD Payment ID' : 'Record ID' }}</th>
-                                    <th>Stage</th>
-                                    <th>Message</th>
+                                    <th>{{ isEdd ? __('EDD Payment ID') : __('Record ID') }}</th>
+                                    <th>{{ __('Stage') }}</th>
+                                    <th>{{ __('Message') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -112,7 +112,7 @@
                         </table>
                     </div>
                 </template>
-                <p v-else class="fct-error-log-empty">No error details available.</p>
+                <p v-else class="fct-error-log-empty">{{ __('No error details available.') }}</p>
             </div>
 
             <!-- Backward-compat notice (EDD only — the migrator routes legacy EDD endpoints) -->
@@ -122,19 +122,19 @@
                     <path d="M10 8v3m0 2.5v.5" stroke="#D97706" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
                 <div>
-                    <strong>Keep this plugin active</strong> — it provides backward compatibility for:
+                    <strong>{{ __('Keep this plugin active') }}</strong> — {{ __('it provides backward compatibility for:') }}
                     <ul style="margin: 6px 0 0; padding-left: 18px; list-style-type: disc;">
-                        <li v-if="migrationSummary.has_licenses"><strong>License API</strong> — activate, deactivate, and check-license endpoints still route here</li>
-                        <li><strong>PayPal IPN</strong> — renewal notifications for existing subscriptions</li>
-                        <li><strong>Stripe webhooks</strong> — charge ID resolution for legacy orders</li>
-                        <li><strong>Download &amp; renewal URLs</strong> — legacy EDD links won't resolve without it</li>
+                        <li v-if="migrationSummary.has_licenses"><strong>{{ __('License API') }}</strong> — {{ __('activate, deactivate, and check-license endpoints still route here') }}</li>
+                        <li><strong>{{ __('PayPal IPN') }}</strong> — {{ __('renewal notifications for existing subscriptions') }}</li>
+                        <li><strong>{{ __('Stripe webhooks') }}</strong> — {{ __('charge ID resolution for legacy orders') }}</li>
+                        <li><strong>{{ __('Download & renewal URLs') }}</strong> — {{ __("legacy EDD links won't resolve without it") }}</li>
                     </ul>
                 </div>
             </div>
 
             <div class="fct-previous-summary-actions">
                 <a :href="adminUrl + 'admin.php?page=fluent-cart#/'" class="fct-btn fct-btn--success">
-                    View FluentCart Dashboard
+                    {{ __('View FluentCart Dashboard') }}
                 </a>
             </div>
         </div>
@@ -142,8 +142,8 @@
         <!-- Source Selection -->
         <div class="fct-card">
             <div class="fct-card-header">
-                <h2>Select Migration Source</h2>
-                <p>Choose the platform you want to migrate data from.</p>
+                <h2>{{ __('Select Migration Source') }}</h2>
+                <p>{{ __('Choose the platform you want to migrate data from.') }}</p>
             </div>
 
             <!-- Loading skeleton -->
@@ -178,9 +178,9 @@
                         </svg>
                     </div>
                     <h3>{{ source.name }}</h3>
-                    <span v-if="source.coming_soon" class="fct-badge fct-badge--muted">Coming Soon</span>
-                    <span v-else-if="source.detected" class="fct-badge fct-badge--success">Detected</span>
-                    <span v-else class="fct-badge fct-badge--muted">Not Found</span>
+                    <span v-if="source.coming_soon" class="fct-badge fct-badge--muted">{{ __('Coming Soon') }}</span>
+                    <span v-else-if="source.detected" class="fct-badge fct-badge--success">{{ __('Detected') }}</span>
+                    <span v-else class="fct-badge fct-badge--muted">{{ __('Not Found') }}</span>
                 </div>
             </div>
         </div>

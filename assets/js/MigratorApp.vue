@@ -80,6 +80,7 @@
 
 <script>
 import { apiRequest, setApiSource } from './api.js';
+import { __ } from './i18n.js';
 import IntroSection from './components/IntroSection.vue';
 import CompatibilityCheck from './components/CompatibilityCheck.vue';
 import MigrationOverview from './components/MigrationOverview.vue';
@@ -124,7 +125,7 @@ export default {
                 title: '',
                 message: '',
                 items: [],
-                confirmText: 'Confirm',
+                confirmText: __('Confirm'),
                 action: null
             }
         };
@@ -132,9 +133,9 @@ export default {
     computed: {
         visibleSteps: function () {
             return [
-                { key: 'compatibility', text: 'Compatibility' },
-                { key: 'overview', text: 'Overview' },
-                { key: 'running', text: 'Migrating' }
+                { key: 'compatibility', text: __('Compatibility') },
+                { key: 'overview', text: __('Overview') },
+                { key: 'running', text: __('Migrating') }
             ];
         },
         activeStepIndex: function () {
@@ -179,7 +180,7 @@ export default {
                     await new Promise(function (r) { setTimeout(r, 1000); });
                     return self.loadSources(retries - 1);
                 }
-                this.error = 'Failed to load sources: ' + e.message;
+                this.error = __('Failed to load sources:') + ' ' + e.message;
             }
         },
 
@@ -194,7 +195,7 @@ export default {
                 this.stats = results[0];
                 this.migrationStatus = results[1];
             } catch (e) {
-                this.error = 'Failed to load stats: ' + e.message;
+                this.error = __('Failed to load stats:') + ' ' + e.message;
             } finally {
                 this.loading = false;
             }
@@ -274,16 +275,16 @@ export default {
 
         // Reset
         onResetRequest: function () {
-            this.confirmModal.title = 'Reset Migration';
-            this.confirmModal.message = 'This will permanently delete all migrated data from FluentCart, including:';
+            this.confirmModal.title = __('Reset Migration');
+            this.confirmModal.message = __('This will permanently delete all migrated data from FluentCart, including:');
             this.confirmModal.items = [
-                'Products and variations',
-                'Orders and transactions',
-                'Customers and subscriptions',
-                'Coupons',
-                'Migration progress'
+                __('Products and variations'),
+                __('Orders and transactions'),
+                __('Customers and subscriptions'),
+                __('Coupons'),
+                __('Migration progress')
             ];
-            this.confirmModal.confirmText = 'Yes, Reset Everything';
+            this.confirmModal.confirmText = __('Yes, Reset Everything');
             this.confirmModal.action = 'reset';
             this.confirmModal.show = true;
         },
@@ -303,7 +304,7 @@ export default {
                 this.migrationSummary = null;
                 this.currentStep = 'intro';
             } catch (e) {
-                this.error = 'Reset failed: ' + e.message;
+                this.error = __('Reset failed:') + ' ' + e.message;
             } finally {
                 this.loading = false;
             }

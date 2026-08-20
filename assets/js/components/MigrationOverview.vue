@@ -3,8 +3,8 @@
         <!-- Stats card -->
         <div class="fct-card">
             <div class="fct-card-header">
-                <h2>Pre-Migration Overview</h2>
-                <p>Here is a summary of the data that will be migrated from {{ sourceName }}.</p>
+                <h2>{{ __('Pre-Migration Overview') }}</h2>
+                <p>{{ sprintf(__('Here is a summary of the data that will be migrated from %s.'), sourceName) }}</p>
             </div>
 
             <!-- Skeleton while loading -->
@@ -18,48 +18,48 @@
                         <path d="M10 6v5m0 2.5v.5" stroke="#4F46E5" stroke-width="1.5" stroke-linecap="round"/>
                     </svg>
                     <div>
-                        <strong>Previous migration detected.</strong> Some steps may already be completed. You can re-run individual steps below.
-                        <button v-if="isDevMode" @click="$emit('reset')" class="fct-link-danger">Reset Migration</button>
+                        <strong>{{ __('Previous migration detected.') }}</strong> {{ __('Some steps may already be completed. You can re-run individual steps below.') }}
+                        <button v-if="isDevMode" @click="$emit('reset')" class="fct-link-danger">{{ __('Reset Migration') }}</button>
                     </div>
                 </div>
 
                 <div class="fct-stats-grid">
                     <div class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.products_count }}</span>
-                        <span class="fct-stat-label">Products</span>
+                        <span class="fct-stat-label">{{ __('Products') }}</span>
                     </div>
                     <div class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.orders_count }}</span>
-                        <span class="fct-stat-label">Orders</span>
+                        <span class="fct-stat-label">{{ __('Orders') }}</span>
                     </div>
                     <div class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.customers_count }}</span>
-                        <span class="fct-stat-label">Customers</span>
+                        <span class="fct-stat-label">{{ __('Customers') }}</span>
                         <span v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-stat-meta">
-                            {{ stats.customers_breakdown.missing }} without orders
+                            {{ sprintf(__('%s without orders'), stats.customers_breakdown.missing) }}
                         </span>
                     </div>
                     <div v-if="stats.coupons_count" class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.coupons_count }}</span>
-                        <span class="fct-stat-label">Coupons</span>
+                        <span class="fct-stat-label">{{ __('Coupons') }}</span>
                     </div>
                     <div v-if="stats.has_subscriptions" class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.subscriptions_count }}</span>
-                        <span class="fct-stat-label">Subscriptions</span>
+                        <span class="fct-stat-label">{{ __('Subscriptions') }}</span>
                     </div>
                     <div v-if="stats.has_licenses" class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.licenses_count }}</span>
-                        <span class="fct-stat-label">Licenses</span>
+                        <span class="fct-stat-label">{{ __('Licenses') }}</span>
                     </div>
                     <div class="fct-stat-card">
                         <span class="fct-stat-value">{{ stats.transactions_count }}</span>
-                        <span class="fct-stat-label">Transactions</span>
+                        <span class="fct-stat-label">{{ __('Transactions') }}</span>
                     </div>
                 </div>
 
                 <div class="fct-stats-meta">
-                    <p><strong>Payment Gateways:</strong> {{ stats.gateways.join(', ') || 'None' }}</p>
-                    <p><strong>Order Statuses:</strong> {{ stats.statuses.join(', ') || 'None' }}</p>
+                    <p><strong>{{ __('Payment Gateways:') }}</strong> {{ stats.gateways.join(', ') || __('None') }}</p>
+                    <p><strong>{{ __('Order Statuses:') }}</strong> {{ stats.statuses.join(', ') || __('None') }}</p>
                 </div>
             </template>
         </div>
@@ -67,8 +67,8 @@
         <!-- Config card -->
         <div v-if="stats && !loading" class="fct-card">
             <div class="fct-card-header">
-                <h2>Migration Steps</h2>
-                <p>Select which steps to run. Completed steps will be skipped automatically.</p>
+                <h2>{{ __('Migration Steps') }}</h2>
+                <p>{{ __('Select which steps to run. Completed steps will be skipped automatically.') }}</p>
             </div>
 
             <div class="fct-config-group">
@@ -76,54 +76,54 @@
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.products">
                         <span class="fct-check-label">
-                            Products
-                            <span v-if="isStepDone('products')" class="fct-badge fct-badge--success">Completed</span>
+                            {{ __('Products') }}
+                            <span v-if="isStepDone('products')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.tax_rates">
                         <span class="fct-check-label">
-                            Tax Rates
-                            <span v-if="isStepDone('tax_rates')" class="fct-badge fct-badge--success">Completed</span>
+                            {{ __('Tax Rates') }}
+                            <span v-if="isStepDone('tax_rates')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.coupons">
                         <span class="fct-check-label">
-                            Coupons
-                            <span v-if="isStepDone('coupons')" class="fct-badge fct-badge--success">Completed</span>
+                            {{ __('Coupons') }}
+                            <span v-if="isStepDone('coupons')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.payments">
                         <span class="fct-check-label">
-                            Orders, Payments, Customers
-                            <span v-if="stats.has_subscriptions">, Subscriptions</span>
-                            <span v-if="stats.has_licenses">, Licenses</span>
-                            <span v-if="isStepDone('payments')" class="fct-badge fct-badge--success">Completed</span>
+                            {{ __('Orders, Payments, Customers') }}
+                            <span v-if="stats.has_subscriptions">, {{ __('Subscriptions') }}</span>
+                            <span v-if="stats.has_licenses">, {{ __('Licenses') }}</span>
+                            <span v-if="isStepDone('payments')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
                     <label v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-check">
                         <input type="checkbox" v-model="localSteps.missing_customers">
                         <span class="fct-check-label">
-                            Missing Customers ({{ stats.customers_breakdown.missing }} without orders)
-                            <span v-if="isStepDone('missing_customers')" class="fct-badge fct-badge--success">Completed</span>
+                            {{ __('Missing Customers') }} ({{ sprintf(__('%s without orders'), stats.customers_breakdown.missing) }})
+                            <span v-if="isStepDone('missing_customers')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.recount">
                         <span class="fct-check-label">
-                            Recount &amp; Verify
-                            <span v-if="isStepDone('recount')" class="fct-badge fct-badge--success">Completed</span>
+                            {{ __('Recount & Verify') }}
+                            <span v-if="isStepDone('recount')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
                 </div>
             </div>
 
             <div class="fct-card-footer">
-                <button @click="$emit('go-back')" class="fct-btn fct-btn--secondary">Back</button>
+                <button @click="$emit('go-back')" class="fct-btn fct-btn--secondary">{{ __('Back') }}</button>
                 <button @click="onStart" class="fct-btn fct-btn--primary">
-                    {{ hasExistingMigration ? 'Resume Migration' : 'Start Migration' }}
+                    {{ hasExistingMigration ? __('Resume Migration') : __('Start Migration') }}
                 </button>
             </div>
         </div>
@@ -131,16 +131,16 @@
         <!-- CLI hint (sources with a WP-CLI command: EDD, WooCommerce) -->
         <div v-if="stats && !loading && cliCommand" class="fct-card fct-cli-hint">
             <div class="fct-card-header">
-                <h2>WP-CLI (Recommended for Large Stores)</h2>
-                <p>For stores with thousands of orders, running via WP-CLI is faster and avoids browser timeouts.</p>
+                <h2>{{ __('WP-CLI (Recommended for Large Stores)') }}</h2>
+                <p>{{ __('For stores with thousands of orders, running via WP-CLI is faster and avoids browser timeouts.') }}</p>
             </div>
             <div class="fct-cli-commands">
                 <div class="fct-cli-row">
-                    <span class="fct-cli-label">Full migration</span>
+                    <span class="fct-cli-label">{{ __('Full migration') }}</span>
                     <code class="fct-cli-code">{{ cliCommand }} --all</code>
                 </div>
                 <div class="fct-cli-row">
-                    <span class="fct-cli-label">Step by step</span>
+                    <span class="fct-cli-label">{{ __('Step by step') }}</span>
                     <code class="fct-cli-code">{{ cliCommand }} --products</code>
                 </div>
                 <div class="fct-cli-row">
@@ -160,7 +160,7 @@
                     <code class="fct-cli-code">{{ cliCommand }} --recount</code>
                 </div>
                 <div class="fct-cli-row">
-                    <span class="fct-cli-label">Check stats</span>
+                    <span class="fct-cli-label">{{ __('Check stats') }}</span>
                     <code class="fct-cli-code">{{ cliCommand }} --stats</code>
                 </div>
             </div>
@@ -169,6 +169,8 @@
 </template>
 
 <script>
+import { __ } from '../i18n.js';
+
 export default {
     name: 'MigrationOverview',
     props: {
@@ -193,7 +195,7 @@ export default {
     },
     computed: {
         sourceName: function () {
-            return (this.source && this.source.name) || 'your store';
+            return (this.source && this.source.name) || __('your store');
         },
         sourceKey: function () {
             return (this.source && this.source.key) || '';

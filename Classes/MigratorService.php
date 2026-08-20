@@ -45,20 +45,22 @@ class MigratorService implements SourceMigratorInterface
         if ($hasV3Tables && $version) {
             $compatibility = [
                 'state'   => 'pass',
-                'title'   => sprintf('EDD 3.x detected (v%s)', $version),
-                'message' => 'Your Easy Digital Downloads installation is compatible with the migration tool.',
+                /* translators: %s: EDD version number */
+                'title'   => sprintf(__('EDD 3.x detected (v%s)', 'fluent-cart-migrator'), $version),
+                'message' => __('Your Easy Digital Downloads installation is compatible with the migration tool.', 'fluent-cart-migrator'),
             ];
         } elseif ($hasV3Tables) {
             $compatibility = [
                 'state'   => 'data_only',
-                'title'   => 'EDD data found',
-                'message' => 'EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.',
+                'title'   => __('EDD data found', 'fluent-cart-migrator'),
+                'message' => __('EDD is not currently active, but migration data (v3 tables) was detected. You can proceed.', 'fluent-cart-migrator'),
             ];
         } else {
             $compatibility = [
                 'state'   => 'blocked',
-                'title'   => sprintf('EDD %s detected', $version ?: '(unknown version)'),
-                'message' => 'Migration requires EDD 3.0 or later. Please upgrade EDD first, then return here.',
+                /* translators: %s: EDD version number */
+                'title'   => sprintf(__('EDD %s detected', 'fluent-cart-migrator'), $version ?: __('(unknown version)', 'fluent-cart-migrator')),
+                'message' => __('Migration requires EDD 3.0 or later. Please upgrade EDD first, then return here.', 'fluent-cart-migrator'),
             ];
         }
 
@@ -463,7 +465,7 @@ class MigratorService implements SourceMigratorInterface
                 $this->buildAndSaveSummary();
                 break;
             default:
-                return ['success' => false, 'message' => 'Unknown substep'];
+                return ['success' => false, 'message' => __('Unknown substep', 'fluent-cart-migrator')];
         }
 
         return $result;
@@ -951,7 +953,7 @@ class MigratorService implements SourceMigratorInterface
 
         return [
             'success' => true,
-            'message' => 'All migrated data and migration state have been reset.',
+            'message' => __('All migrated data and migration state have been reset.', 'fluent-cart-migrator'),
         ];
     }
 
@@ -960,7 +962,7 @@ class MigratorService implements SourceMigratorInterface
         if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
             return new \WP_Error(
                 'dev_mode_required',
-                'Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.',
+                __('Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.', 'fluent-cart-migrator'),
                 ['status' => 403]
             );
         }

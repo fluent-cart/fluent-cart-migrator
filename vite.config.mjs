@@ -3,6 +3,11 @@ import vue from '@vitejs/plugin-vue';
 
 export default defineConfig({
     plugins: [vue()],
+    // Keep identifier names (so `__`, `_n`, `sprintf` survive minification and
+    // `wp i18n make-pot` can extract translatable strings from the built bundle).
+    esbuild: {
+        minifyIdentifiers: false
+    },
     build: {
         outDir: 'assets/build',
         cssCodeSplit: false,

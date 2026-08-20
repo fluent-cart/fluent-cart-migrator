@@ -308,7 +308,7 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
         if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
             return new \WP_Error(
                 'dev_mode_required',
-                'Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.',
+                __('Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.', 'fluent-cart-migrator'),
                 ['status' => 403]
             );
         }
@@ -319,7 +319,8 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
 
         return [
             'success' => true,
-            'message' => 'Migration state for ' . $this->key() . ' has been reset.',
+            /* translators: %s: migration source key */
+            'message' => sprintf(__('Migration state for %s has been reset.', 'fluent-cart-migrator'), $this->key()),
         ];
     }
 
@@ -328,7 +329,8 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
         return [
             'success' => false,
             'step'    => $step,
-            'message' => 'This migration step is not implemented yet for ' . $this->key() . '.',
+            /* translators: %s: migration source key */
+            'message' => sprintf(__('This migration step is not implemented yet for %s.', 'fluent-cart-migrator'), $this->key()),
         ];
     }
 }

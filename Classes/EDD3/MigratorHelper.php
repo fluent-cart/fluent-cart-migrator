@@ -1211,7 +1211,7 @@ class MigratorHelper
         if (defined('EDD_SL_PLUGIN_DIR')) {
             // we have to check if we have fluent-cart-pro installed
             if (!defined('FLUENTCART_PRO_PLUGIN_VERSION')) {
-                return new \WP_Error('fluentcart_pro_required', 'FluentCart Pro is required to migrate EDD License data. Please install FluentCart Pro and try again.');
+                return new \WP_Error('fluentcart_pro_required', __('FluentCart Pro is required to migrate EDD License data. Please install FluentCart Pro and try again.', 'fluent-cart-migrator'));
             }
 
             if (!ModuleSettings::isActive('license')) {
@@ -1229,7 +1229,7 @@ class MigratorHelper
         }
 
         if (!defined('EDD_PLUGIN_FILE')) {
-            return new \WP_Error('edd_not_found', 'Easy Digital Downloads plugin not found. Please install and activate Easy Digital Downloads and try again.');
+            return new \WP_Error('edd_not_found', __('Easy Digital Downloads plugin not found. Please install and activate Easy Digital Downloads and try again.', 'fluent-cart-migrator'));
         }
 
         $productCount = fluentCart('db')->table('posts')
@@ -1237,7 +1237,7 @@ class MigratorHelper
             ->count();
 
         if (!$productCount) {
-            return new \WP_Error('no_edd_products', 'No EDD products found. Nothing to migrate.');
+            return new \WP_Error('no_edd_products', __('No EDD products found. Nothing to migrate.', 'fluent-cart-migrator'));
         }
         
         return true;

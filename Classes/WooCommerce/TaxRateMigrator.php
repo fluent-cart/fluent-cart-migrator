@@ -27,7 +27,7 @@ class TaxRateMigrator
             return [
                 'success'   => true,
                 'skipped'   => true,
-                'message'   => 'WooCommerce taxes are not enabled. Skipping tax rate migration.',
+                'message'   => __('WooCommerce taxes are not enabled. Skipping tax rate migration.', 'fluent-cart-migrator'),
                 'countries' => [],
                 'mapped'    => 0,
             ];

@@ -3,15 +3,16 @@
 /*
 Plugin Name: FluentCart Migrator
 Description: Migrate your data to FluentCart from other platforms.
-Version: 1.0.2
+Version: 1.0.3-beta
 Author: FluentCart Team
 Author URI: https://fluentcart.com
 Plugin URI: https://github.com/fluent-cart/fluent-cart-migrator
 License: GPLv2 or later
 Text Domain: fluent-cart-migrator
+Domain Path: /languages
 */
 
-define('FLUENTCART_MIGRATOR_VERSION', '1.0.2');
+define('FLUENTCART_MIGRATOR_VERSION', '1.0.3-beta');
 define('FLUENTCART_MIGRATOR_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('FLUENTCART_MIGRATOR_URL', plugin_dir_url(__FILE__));// Enable development mode for detailed logging
 
@@ -86,6 +87,14 @@ class FluentCartMigrator
         }, 10, 2);
     }
 }
+
+add_action('init', function () {
+    load_plugin_textdomain(
+        'fluent-cart-migrator',
+        false,
+        dirname(plugin_basename(__FILE__)) . '/languages'
+    );
+});
 
 add_action('plugins_loaded', function () {
     if (defined('WP_CLI') && WP_CLI) {

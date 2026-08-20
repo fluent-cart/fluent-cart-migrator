@@ -1,8 +1,8 @@
 <template>
     <div class="fct-card">
         <div class="fct-card-header">
-            <h2>Migration in Progress</h2>
-            <p class="fct-duration">Elapsed: {{ formattedDuration }}</p>
+            <h2>{{ __('Migration in Progress') }}</h2>
+            <p class="fct-duration">{{ sprintf(__('Elapsed: %s'), formattedDuration) }}</p>
         </div>
 
         <div class="fct-runner-steps">
@@ -15,9 +15,9 @@
                     <span v-else class="fct-runner-pending"></span>
                 </span>
                 <div class="fct-runner-detail">
-                    <strong>Products</strong>
+                    <strong>{{ __('Products') }}</strong>
                     <span v-if="progress.products.status === 'completed'" class="fct-runner-meta">
-                        {{ progress.products.migrated }} migrated<span v-if="progress.products.failed">, {{ progress.products.failed }} failed</span>
+                        {{ sprintf(__('%s migrated'), progress.products.migrated) }}<span v-if="progress.products.failed">, {{ sprintf(_n('%s failed', '%s failed', progress.products.failed), progress.products.failed) }}</span>
                     </span>
                 </div>
             </div>
@@ -31,8 +31,8 @@
                     <span v-else class="fct-runner-pending"></span>
                 </span>
                 <div class="fct-runner-detail">
-                    <strong>Tax Rates</strong>
-                    <span v-if="progress.tax_rates.status === 'completed'" class="fct-runner-meta">Done</span>
+                    <strong>{{ __('Tax Rates') }}</strong>
+                    <span v-if="progress.tax_rates.status === 'completed'" class="fct-runner-meta">{{ __('Done') }}</span>
                 </div>
             </div>
 
@@ -45,9 +45,9 @@
                     <span v-else class="fct-runner-pending"></span>
                 </span>
                 <div class="fct-runner-detail">
-                    <strong>Coupons</strong>
+                    <strong>{{ __('Coupons') }}</strong>
                     <span v-if="progress.coupons.status === 'completed'" class="fct-runner-meta">
-                        {{ progress.coupons.migrated }} migrated
+                        {{ sprintf(__('%s migrated'), progress.coupons.migrated) }}
                     </span>
                 </div>
             </div>
@@ -61,11 +61,11 @@
                     <span v-else class="fct-runner-pending"></span>
                 </span>
                 <div class="fct-runner-detail">
-                    <strong>Orders &amp; Payments</strong>
+                    <strong>{{ __('Orders & Payments') }}</strong>
                     <span v-if="progress.payments.status === 'running' || progress.payments.status === 'completed'" class="fct-runner-meta">
-                        {{ progress.payments.processed }} orders processed
+                        {{ sprintf(_n('%s order processed', '%s orders processed', progress.payments.processed), progress.payments.processed) }}
                         <span v-if="progress.payments.errorsCount" class="fct-text-danger">
-                            ({{ progress.payments.errorsCount }} errors)
+                            ({{ sprintf(_n('%s error', '%s errors', progress.payments.errorsCount), progress.payments.errorsCount) }})
                         </span>
                     </span>
                     <div v-if="showPaymentProgress" class="fct-progress">
@@ -73,8 +73,8 @@
                             <div class="fct-progress-fill" :class="{ 'is-done': progress.payments.status === 'completed' }" :style="{ width: paymentsPercent + '%' }"></div>
                         </div>
                         <span class="fct-progress-text">
-                            {{ progress.payments.processed }} of ~{{ totalOrders }} orders
-                            <span v-if="etaText"> &middot; ~{{ etaText }} remaining</span>
+                            {{ sprintf(__('%1$s of ~%2$s orders'), progress.payments.processed, totalOrders) }}
+                            <span v-if="etaText"> &middot; {{ sprintf(__('~%s remaining'), etaText) }}</span>
                         </span>
                     </div>
                 </div>
@@ -89,12 +89,12 @@
                     <span v-else class="fct-runner-pending"></span>
                 </span>
                 <div class="fct-runner-detail">
-                    <strong>Missing Customers</strong>
+                    <strong>{{ __('Missing Customers') }}</strong>
                     <span v-if="progress.missing_customers.status === 'completed'" class="fct-runner-meta">
-                        {{ progress.missing_customers.migrated }} migrated
+                        {{ sprintf(__('%s migrated'), progress.missing_customers.migrated) }}
                     </span>
                     <span v-else-if="stats && stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-runner-meta">
-                        {{ stats.customers_breakdown.missing }} to migrate
+                        {{ sprintf(__('%s to migrate'), stats.customers_breakdown.missing) }}
                     </span>
                 </div>
             </div>
@@ -108,7 +108,7 @@
                     <span v-else class="fct-runner-pending"></span>
                 </span>
                 <div class="fct-runner-detail">
-                    <strong>Recount &amp; Verify</strong>
+                    <strong>{{ __('Recount & Verify') }}</strong>
                     <div v-if="progress.recount.status === 'running' || progress.recount.status === 'completed'" class="fct-recount-tags">
                         <span
                             v-for="(st, name) in progress.recount.substeps"
@@ -127,10 +127,10 @@
 
         <div class="fct-card-footer">
             <button v-if="!paused" @click="pause" class="fct-btn fct-btn--secondary" :disabled="!running">
-                Pause
+                {{ __('Pause') }}
             </button>
             <button v-else @click="resume" class="fct-btn fct-btn--primary">
-                Resume
+                {{ __('Resume') }}
             </button>
         </div>
     </div>
@@ -138,6 +138,7 @@
 
 <script>
 import { apiRequest } from '../api.js';
+import { __, sprintf } from '../i18n.js';
 
 export default {
     name: 'MigrationRunner',
@@ -171,11 +172,11 @@ export default {
             now: Date.now(),
             timer: null,
             substepLabels: {
-                fix_reactivations: 'Reactivations',
-                fix_subs_uuid: 'Subscriptions UUID',
-                coupons: 'Coupons',
-                customers: 'Customers',
-                subscriptions: 'Subscriptions'
+                fix_reactivations: __('Reactivations'),
+                fix_subs_uuid: __('Subscriptions UUID'),
+                coupons: __('Coupons'),
+                customers: __('Customers'),
+                subscriptions: __('Subscriptions')
             }
         };
     },
@@ -217,11 +218,14 @@ export default {
             if (remaining <= 0) return '';
             var msPerOrder = elapsed / this.progress.payments.processed;
             var secs = Math.round((msPerOrder * remaining) / 1000);
-            if (secs < 60) return secs + 's';
-            if (secs < 3600) return Math.round(secs / 60) + ' min';
+            /* translators: %s: number of seconds */
+            if (secs < 60) return sprintf(__('%ss'), secs);
+            /* translators: %s: number of minutes */
+            if (secs < 3600) return sprintf(__('%s min'), Math.round(secs / 60));
             var h = Math.floor(secs / 3600);
             var m = Math.round((secs % 3600) / 60);
-            return h + 'h ' + m + 'm';
+            /* translators: 1: hours, 2: minutes */
+            return sprintf(__('%1$sh %2$sm'), h, m);
         }
     },
     mounted: function () {

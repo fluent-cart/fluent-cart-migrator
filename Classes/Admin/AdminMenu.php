@@ -68,9 +68,17 @@ class AdminMenu
         wp_enqueue_script(
             'fct-migrator-app',
             FLUENTCART_MIGRATOR_URL . 'assets/build/migrator-app.js',
-            [],
+            ['wp-i18n'],
             FLUENTCART_MIGRATOR_VERSION,
             true
+        );
+
+        // JS translations: languages/fluent-cart-migrator-{locale}-{md5('assets/build/migrator-app.js')}.json
+        // (generated with `wp i18n make-json languages/` or Loco Translate).
+        wp_set_script_translations(
+            'fct-migrator-app',
+            'fluent-cart-migrator',
+            FLUENTCART_MIGRATOR_PLUGIN_PATH . 'languages'
         );
 
         wp_localize_script('fct-migrator-app', 'fctMigrator', [

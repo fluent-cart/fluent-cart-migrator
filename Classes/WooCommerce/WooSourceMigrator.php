@@ -39,20 +39,23 @@ class WooSourceMigrator extends AbstractSourceMigrator
         if (!$active) {
             $compatibility = [
                 'state'   => 'blocked',
-                'title'   => 'WooCommerce not detected',
-                'message' => 'WooCommerce is not active. Please install and activate WooCommerce, then return here.',
+                'title'   => __('WooCommerce not detected', 'fluent-cart-migrator'),
+                'message' => __('WooCommerce is not active. Please install and activate WooCommerce, then return here.', 'fluent-cart-migrator'),
             ];
         } elseif ($version && version_compare($version, self::MIN_VERSION, '<')) {
             $compatibility = [
                 'state'   => 'blocked',
-                'title'   => sprintf('WooCommerce %s detected', $version),
-                'message' => sprintf('Migration requires WooCommerce %s or later. Please upgrade WooCommerce first, then return here.', self::MIN_VERSION),
+                /* translators: %s: WooCommerce version number */
+                'title'   => sprintf(__('WooCommerce %s detected', 'fluent-cart-migrator'), $version),
+                /* translators: %s: minimum supported WooCommerce version */
+                'message' => sprintf(__('Migration requires WooCommerce %s or later. Please upgrade WooCommerce first, then return here.', 'fluent-cart-migrator'), self::MIN_VERSION),
             ];
         } else {
             $compatibility = [
                 'state'   => 'pass',
-                'title'   => $version ? sprintf('WooCommerce detected (v%s)', $version) : 'WooCommerce detected',
-                'message' => 'Your WooCommerce installation is compatible with the migration tool.',
+                /* translators: %s: WooCommerce version number */
+                'title'   => $version ? sprintf(__('WooCommerce detected (v%s)', 'fluent-cart-migrator'), $version) : __('WooCommerce detected', 'fluent-cart-migrator'),
+                'message' => __('Your WooCommerce installation is compatible with the migration tool.', 'fluent-cart-migrator'),
             ];
         }
 
@@ -68,11 +71,11 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function canMigrate()
     {
         if (!class_exists('WooCommerce')) {
-            return new \WP_Error('woocommerce_not_found', 'WooCommerce plugin not found. Please install and activate WooCommerce and try again.');
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce plugin not found. Please install and activate WooCommerce and try again.', 'fluent-cart-migrator'));
         }
 
         if (!$this->countProducts()) {
-            return new \WP_Error('no_woo_products', 'No WooCommerce products found. Nothing to migrate.');
+            return new \WP_Error('no_woo_products', __('No WooCommerce products found. Nothing to migrate.', 'fluent-cart-migrator'));
         }
 
         return true;
@@ -81,7 +84,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function getStats()
     {
         if (!class_exists('WooCommerce')) {
-            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce is not active.', 'fluent-cart-migrator'));
         }
 
         $allOrderStatuses = array_keys(wc_get_order_statuses()); // ['wc-pending', ...]
@@ -134,7 +137,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function migrateProducts($page = null, $perPage = 20, $maxSeconds = 25)
     {
         if (!class_exists('WooCommerce')) {
-            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce is not active.', 'fluent-cart-migrator'));
         }
 
         if ($this->isStepDone('products')) {
@@ -225,7 +228,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function migrateCoupons()
     {
         if (!class_exists('WooCommerce')) {
-            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce is not active.', 'fluent-cart-migrator'));
         }
 
         if ($this->isStepDone('coupons')) {
@@ -274,7 +277,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function migrateTaxRates()
     {
         if (!class_exists('WooCommerce')) {
-            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce is not active.', 'fluent-cart-migrator'));
         }
 
         if ($this->isStepDone('tax_rates')) {
@@ -305,7 +308,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function migrateMissingCustomers()
     {
         if (!class_exists('WooCommerce')) {
-            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce is not active.', 'fluent-cart-migrator'));
         }
 
         $migrated = 0;
@@ -425,7 +428,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function migratePayments($page = 1, $perPage = 100, $maxSeconds = 25)
     {
         if (!class_exists('WooCommerce')) {
-            return new \WP_Error('woocommerce_not_found', 'WooCommerce is not active.');
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce is not active.', 'fluent-cart-migrator'));
         }
 
         $result = parent::migratePayments($page, $perPage, $maxSeconds);
@@ -488,7 +491,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
         if (!defined('FLUENT_CART_DEV_MODE') || !FLUENT_CART_DEV_MODE) {
             return new \WP_Error(
                 'dev_mode_required',
-                'Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.',
+                __('Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php.', 'fluent-cart-migrator'),
                 ['status' => 403]
             );
         }
@@ -528,7 +531,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
 
         return [
             'success' => true,
-            'message' => 'All migrated data and WooCommerce migration state have been reset.',
+            'message' => __('All migrated data and WooCommerce migration state have been reset.', 'fluent-cart-migrator'),
         ];
     }
 
@@ -587,9 +590,9 @@ class WooSourceMigrator extends AbstractSourceMigrator
         if (!$this->coreFluentCartTablesExist()) {
             return new \WP_Error(
                 'fct_schema_recreate_failed',
-                'Reset dropped the FluentCart tables but failed to recreate them'
+                __('Reset dropped the FluentCart tables but failed to recreate them', 'fluent-cart-migrator')
                 . ($error ? ': ' . $error->getMessage() : '.')
-                . ' Re-activate FluentCart (or run its DB migration) to restore the schema before retrying.',
+                . ' ' . __('Re-activate FluentCart (or run its DB migration) to restore the schema before retrying.', 'fluent-cart-migrator'),
                 ['status' => 500]
             );
         }

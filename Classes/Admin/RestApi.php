@@ -122,7 +122,8 @@ class RestApi
 
         $manager = new SourceManager();
         if (!$manager->has($source)) {
-            return new \WP_Error('invalid_source', 'Unsupported migration source: ' . $source, ['status' => 400]);
+            /* translators: %s: migration source key */
+            return new \WP_Error('invalid_source', sprintf(__('Unsupported migration source: %s', 'fluent-cart-migrator'), $source), ['status' => 400]);
         }
 
         return $manager->resolve($source);
@@ -234,7 +235,8 @@ class RestApi
 
         $substep = $request->get_param('substep');
         if (!in_array($substep, $migrator->getRecountSubsteps(), true)) {
-            return new \WP_Error('invalid_substep', 'Invalid substep: ' . $substep, ['status' => 400]);
+            /* translators: %s: recount substep key */
+            return new \WP_Error('invalid_substep', sprintf(__('Invalid substep: %s', 'fluent-cart-migrator'), $substep), ['status' => 400]);
         }
 
         return rest_ensure_response($migrator->recountStats($substep));
@@ -259,7 +261,7 @@ class RestApi
 
         // License verification is EDD-specific; not all sources implement it.
         if (!method_exists($migrator, 'verifyLicenses')) {
-            return new \WP_Error('not_supported', 'License verification is not supported for this source.', ['status' => 400]);
+            return new \WP_Error('not_supported', __('License verification is not supported for this source.', 'fluent-cart-migrator'), ['status' => 400]);
         }
 
         return rest_ensure_response($migrator->verifyLicenses());
