@@ -132,6 +132,20 @@
                 </div>
             </div>
 
+            <!-- WooCommerce: only the Stripe charge-id fallback needs the plugin -->
+            <div v-else-if="isWoo" class="fct-notice fct-notice--warning">
+                <svg class="fct-notice-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M10 2L1.5 17h17L10 2z" stroke="#D97706" stroke-width="1.5" fill="#FFFBEB"/>
+                    <path d="M10 8v3m0 2.5v.5" stroke="#D97706" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <div>
+                    <strong>{{ __('Keep this plugin active') }}</strong> — {{ __('it provides backward compatibility for:') }}
+                    <ul style="margin: 6px 0 0; padding-left: 18px; list-style-type: disc;">
+                        <li><strong>{{ __('Stripe webhooks') }}</strong> — {{ __('charge ID resolution for migrated orders') }}</li>
+                    </ul>
+                </div>
+            </div>
+
             <div class="fct-previous-summary-actions">
                 <a :href="adminUrl + 'admin.php?page=fluent-cart#/'" class="fct-btn fct-btn--success">
                     {{ __('View FluentCart Dashboard') }}
@@ -240,6 +254,9 @@ export default {
         },
         isEdd: function () {
             return this.summarySource === 'edd';
+        },
+        isWoo: function () {
+            return this.summarySource === 'woocommerce';
         },
         sourceLabel: function () {
             var labels = { edd: 'EDD', woocommerce: 'WooCommerce', surecart: 'SureCart' };
