@@ -11,6 +11,8 @@ FluentCart Migrator is a WordPress plugin that migrates eCommerce data from Easy
 ```bash
 npm run dev    # Vite watch mode (outputs to assets/build/)
 npm run build  # Production build
+npm run zip    # Pack builds/fluent-cart-migrator.zip from the whitelist in dev/zip.sh (needs a prior build)
+npm run build:zip  # Build + zip
 ```
 
 Build entry point: `assets/js/migrator-app.js` (Vue 3 app). Output: `assets/build/migrator-app.{js,css}`.

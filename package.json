@@ -4,6 +4,9 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
+    "build:zip": "npm run build && npm run zip",
+    "zip": "bash dev/zip.sh",
+    "pack": "npm run zip",
     "pot": "wp i18n make-pot . languages/fluent-cart-migrator.pot --domain=fluent-cart-migrator --ignore-domain --exclude=assets/js,node_modules,vendor --headers='{\"Report-Msgid-Bugs-To\":\"https://github.com/fluent-cart/fluent-cart-migrator/issues\"}'",
     "i18n": "npm run build && npm run pot"
   },
