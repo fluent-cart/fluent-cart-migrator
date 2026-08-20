@@ -163,7 +163,7 @@ class OrderMigrator
         $data->status              = MigratorHelper::orderStatus($order->get_status());
         $data->parentId            = (int) $order->get_parent_id();
         $data->receiptNumber       = $wcOrderId;
-        $data->invoiceNo           = (string) $order->get_order_number();
+        $data->invoiceNo           = $this->invoiceNo($order, $wcOrderId);
         $data->fulfillmentType     = $this->orderFulfillmentType($items);
         $data->shippingStatus      = $this->shippingStatus($order, $data->fulfillmentType);
         $data->type                = $orderType;
@@ -1144,6 +1144,23 @@ class OrderMigrator
     {
         $types = array_values(array_unique(array_map(function ($i) { return $i->fulfillmentType; }, $items)));
         return count($types) === 1 ? $types[0] : 'physical';
+    }
+
+    /**
+     * A bare Woo order number gets the store's invoice prefix so migrated
+     * orders read like native ones ("INV-123"). When a sequential-numbers
+     * plugin already formatted the number (differs from the raw id), keep it
+     * verbatim — that is the number customers hold on their receipts.
+     */
+    private function invoiceNo($order, $wcOrderId)
+    {
+        $number = (string) $order->get_order_number();
+
+        if ($number !== (string) $wcOrderId) {
+            return $number;
+        }
+
+        return \FluentCart\App\Services\OrderService::getInvoicePrefix() . $number;
     }
 
     private function resolveOrderType($order)
