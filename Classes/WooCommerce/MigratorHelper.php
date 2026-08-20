@@ -156,12 +156,16 @@ class MigratorHelper
     /**
      * Map a WooCommerce Subscriptions status to a FluentCart subscription status.
      */
-    public static function subscriptionStatus($wcStatus, $endDate = '')
+    public static function subscriptionStatus($wcStatus, $endDate = '', $trialEndDate = '')
     {
         $maps = [
             'active'         => Status::SUBSCRIPTION_ACTIVE,
             'on-hold'        => Status::SUBSCRIPTION_PAUSED,
             'pending'        => Status::SUBSCRIPTION_PENDING,
+            // Canceled-with-future-dates is FluentCart's own "paid through the
+            // period" shape (renewal engine skips canceled), so pending-cancel
+            // keeps its remaining paid period via expire_at, not via 'expiring'
+            // — the store-managed due scan would re-bill an 'expiring' sub.
             'pending-cancel' => Status::SUBSCRIPTION_CANCELED,
             'cancelled'      => Status::SUBSCRIPTION_CANCELED,
             'expired'        => Status::SUBSCRIPTION_EXPIRED,
@@ -178,6 +182,13 @@ class MigratorHelper
             return Status::SUBSCRIPTION_EXPIRED;
         }
 
+        // WC has no 'trialing' status — an in-trial subscription is 'active' with
+        // a future trial_end. FluentCart's renewal readiness routes trialing subs
+        // down a dedicated branch, so the distinction must survive migration.
+        if ($status === Status::SUBSCRIPTION_ACTIVE && $trialEndDate && strtotime($trialEndDate) && strtotime($trialEndDate) > time()) {
+            return Status::SUBSCRIPTION_TRIALING;
+        }
+
         return $status;
     }
 
@@ -185,7 +196,12 @@ class MigratorHelper
      * Map a WooCommerce Subscriptions billing period (+ interval multiplier) to a
      * FluentCart repeat_interval slug. FluentCart supports daily/weekly/monthly/
      * quarterly/half_yearly/yearly, so common month multiples collapse to the
-     * named slug; anything else falls back to the base period.
+     * named slug and everything else collapses to its base period.
+     *
+     * The slug alone cannot express "every 2 weeks" — for subscription rows the
+     * true cadence (interval count + calendar anchor) is written to
+     * config.billing_schedule, which FluentCart's renewal engine reads via
+     * SubscriptionHelper::getBillingSchedule() and applies over this slug.
      */
     public static function repeatInterval($period, $interval = 1)
     {
@@ -208,7 +224,11 @@ class MigratorHelper
             'year'  => 'yearly',
         ];
 
-        return $maps[$period] ?? 'monthly';
+        if (!isset($maps[$period])) {
+            return 'monthly';
+        }
+
+        return $maps[$period];
     }
 
     /**

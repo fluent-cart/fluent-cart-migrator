@@ -686,11 +686,13 @@ class OrderMigrator
                 'collectionMethod'     => $collection['method'],
                 'expireAt'             => $this->nullableDate($wcSub->get_date('end')),
                 'trialEndsAt'          => $this->nullableDate($wcSub->get_date('trial_end')),
-                'canceledAt'           => $wcSub->get_status() === 'cancelled' ? $this->nullableDate($wcSub->get_date('cancelled')) : null,
+                'canceledAt'           => in_array($wcSub->get_status(), ['cancelled', 'pending-cancel'], true)
+                    ? ($this->nullableDate($wcSub->get_date('cancelled')) ?: gmdate('Y-m-d H:i:s'))
+                    : null,
                 'nextBillingDate'      => $this->nullableDate($wcSub->get_date('next_payment')),
                 'vendorSubscriptionId' => (string) $wcSub->get_id(),
                 'vendorCustomerId'     => $collection['customerId'] ?: null,
-                'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status(), $wcSub->get_date('end')),
+                'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status(), $wcSub->get_date('end'), $wcSub->get_date('trial_end')),
                 'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
                 'createdAt'            => $createdAt,
                 'updatedAt'            => current_time('mysql'),
@@ -699,6 +701,7 @@ class OrderMigrator
                 'config'               => [
                     'wc_subscription_id' => $wcSub->get_id(),
                     'billing_interval'   => (int) $wcSub->get_billing_interval(),
+                    'billing_schedule'   => $this->subscriptionSchedule($wcSub, $subProduct),
                     'currency'           => $currency,
                     'switched'           => (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) ? 'yes' : 'no',
                     'migration_source'   => 'woocommerce',
@@ -707,6 +710,65 @@ class OrderMigrator
         }
 
         return $out;
+    }
+
+    /**
+     * Snapshot the WooCommerce billing schedule as config.billing_schedule —
+     * FluentCart's renewal engine (SubscriptionHelper::getBillingSchedule)
+     * reads it over the billing_interval slug, so period×interval combos with
+     * no native slug (every 2 weeks) and calendar-synced billing days survive
+     * migration without any migrator hook at renewal time.
+     *
+     * The anchor is derived from the subscription's own next payment date —
+     * that is the schedule WCS actually runs, synced or not. Product-level
+     * sync meta (day of week / day of month / {day, month} for annual) wins
+     * when present: WCS stores month-day 28 to mean "last day of the month",
+     * kept here as anchor day 31 so short-month clamping reproduces it.
+     */
+    private function subscriptionSchedule($wcSub, $subProduct)
+    {
+        $period   = (string) $wcSub->get_billing_period();
+        $interval = max(1, (int) $wcSub->get_billing_interval());
+        $anchor   = [];
+
+        $anchorDate = $this->nullableDate($wcSub->get_date('next_payment'))
+            ?: $this->nullableDate($wcSub->get_date('trial_end'));
+
+        if ($anchorDate && ($ts = strtotime($anchorDate . ' UTC'))) {
+            if ($period === 'week') {
+                $anchor['weekday'] = (int) gmdate('N', $ts);
+            } elseif ($period === 'month') {
+                $anchor['day'] = (int) gmdate('j', $ts);
+            } elseif ($period === 'year') {
+                $anchor['day']   = (int) gmdate('j', $ts);
+                $anchor['month'] = (int) gmdate('n', $ts);
+            }
+        }
+
+        $sync = ($subProduct && class_exists('WC_Subscriptions_Synchroniser'))
+            ? \WC_Subscriptions_Synchroniser::get_products_payment_day($subProduct)
+            : 0;
+
+        if ($sync) {
+            if ($period === 'week' && (int) $sync >= 1 && (int) $sync <= 7) {
+                $anchor['weekday'] = (int) $sync;
+            } elseif ($period === 'month' && (int) $sync > 0) {
+                $anchor['day'] = ((int) $sync >= 28) ? 31 : (int) $sync;
+            } elseif ($period === 'year' && is_array($sync)) {
+                if (!empty($sync['day'])) {
+                    $anchor['day'] = ((int) $sync['day'] >= 28) ? 31 : (int) $sync['day'];
+                }
+                if (!empty($sync['month'])) {
+                    $anchor['month'] = (int) $sync['month'];
+                }
+            }
+        }
+
+        return [
+            'period'   => $period,
+            'interval' => $interval,
+            'anchor'   => $anchor,
+        ];
     }
 
     /**
