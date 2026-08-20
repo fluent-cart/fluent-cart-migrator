@@ -2,7 +2,7 @@
 Contributors: wpmanageninja, techjewel
 Tags: ecommerce, migration, easy-digital-downloads, edd, fluentcart
 Requires at least: 5.9
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.4
 Stable tag: 1.0.2
 License: GPLv2 or later
@@ -136,6 +136,9 @@ Yes. Use the `fluentcart_migrator_edd3_to_cents` filter to apply a conversion ra
 Yes. Reach out to the FluentCart support team for assistance with large migrations. For issues or feature requests, open an issue on the GitHub repository.
 
 == Changelog ==
+= 1.0.3-beta (Jun 24, 2026) =
+- Adds Woocommerce migrator for order, product, customer, subscriptions and renewal managements
+
 = 1.0.2 (Jun 24, 2026) =
 - Adds Missing customers migration step
 - Adds Fallback for classic Paddle subscriptions, shared EddSubscriptionMeta helper, and guard for missing edd_subscriptionmeta table
