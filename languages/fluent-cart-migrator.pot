@@ -2,14 +2,14 @@
 # This file is distributed under the GPLv2 or later.
 msgid ""
 msgstr ""
-"Project-Id-Version: FluentCart Migrator 1.0.3-beta\n"
+"Project-Id-Version: FluentCart Migrator 1.1.0-beta\n"
 "Report-Msgid-Bugs-To: https://github.com/fluent-cart/fluent-cart-migrator/issues\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-08-20T12:24:47+00:00\n"
+"POT-Creation-Date: 2026-08-21T10:36:24+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 
@@ -46,19 +46,41 @@ msgstr ""
 msgid "Migrator"
 msgstr ""
 
+#. translators: 1: PHP error message, 2: file path, 3: line number
+#: Classes/Admin/RestApi.php:148
+#, php-format
+msgid "PHP fatal error: %1$s in %2$s on line %3$d"
+msgstr ""
+
+#: Classes/Admin/RestApi.php:154
+msgid "The migration request was terminated early by the server or by another plugin (exit/die) before the migrator could respond. Check your PHP error log, try deactivating other plugins on the staging site, or run the migration via WP-CLI."
+msgstr ""
+
+#. translators: %s: list of WordPress hook names
+#: Classes/Admin/RestApi.php:160
+#, php-format
+msgid "(terminated while running hook: %s)"
+msgstr ""
+
+#. translators: 1: exception message, 2: file path, 3: line number
+#: Classes/Admin/RestApi.php:184
+#, php-format
+msgid "%1$s (in %2$s on line %3$d)"
+msgstr ""
+
 #. translators: %s: migration source key
-#: Classes/Admin/RestApi.php:133
+#: Classes/Admin/RestApi.php:215
 #, php-format
 msgid "Unsupported migration source: %s"
 msgstr ""
 
 #. translators: %s: recount substep key
-#: Classes/Admin/RestApi.php:246
+#: Classes/Admin/RestApi.php:336
 #, php-format
 msgid "Invalid substep: %s"
 msgstr ""
 
-#: Classes/Admin/RestApi.php:304
+#: Classes/Admin/RestApi.php:396
 msgid "License verification is not supported for this source."
 msgstr ""
 
@@ -293,6 +315,20 @@ msgstr ""
 
 #: views/admin-page.php:5
 msgid "Loading migrator..."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Server error:"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "Unexpected server response (HTTP %s): %s"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "The server returned an empty response (HTTP %s). This usually means PHP stopped before replying — a fatal error, memory limit, timeout, or another plugin calling exit(). Check the PHP error log (enable WP_DEBUG_LOG), try deactivating other plugins on the staging site, or run the migration via WP-CLI."
 msgstr ""
 
 #: assets/build/migrator-app.js:20

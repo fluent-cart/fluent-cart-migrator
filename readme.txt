@@ -136,8 +136,9 @@ Yes. Use the `fluentcart_migrator_edd3_to_cents` filter to apply a conversion ra
 Yes. Reach out to the FluentCart support team for assistance with large migrations. For issues or feature requests, open an issue on the GitHub repository.
 
 == Changelog ==
-= 1.0.3-beta (Aug 20, 2026) =
-- Adds Woocommerce migrator for order, product, customer, subscriptions and renewal managements
+= 1.1.0-beta (Aug 20, 2026) =
+- Adds Woocommerce migrator for order, product, customer, coupon, subscriptions, and renewal managements
+- Fixes blank "JSON.parse: unexpected end of data" failures: migration requests now return a readable error (real PHP exception/fatal message, or the hook where another plugin called exit/die) instead of an empty response
 
 = 1.0.2 (Jun 24, 2026) =
 - Adds Missing customers migration step
