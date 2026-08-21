@@ -29,6 +29,10 @@
                         <span v-if="runProgress.products.failed" class="fct-text-danger">, {{ sprintf(_n('%s failed', '%s failed', runProgress.products.failed), runProgress.products.failed) }}</span>
                     </span>
                 </div>
+                <div v-if="stepsToRun.taxonomies" class="fct-summary-row">
+                    <span class="fct-summary-row-label">{{ __('Product Taxonomies') }}</span>
+                    <span class="fct-summary-row-value">{{ sprintf(__('%s updated'), runProgress.taxonomies ? runProgress.taxonomies.updated : 0) }}</span>
+                </div>
                 <div v-if="stepsToRun.tax_rates" class="fct-summary-row">
                     <span class="fct-summary-row-label">{{ __('Tax Rates') }}</span>
                     <span class="fct-summary-row-value">{{ __('Completed') }}</span>

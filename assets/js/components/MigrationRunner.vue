@@ -22,6 +22,23 @@
                 </div>
             </div>
 
+            <!-- Product Taxonomies -->
+            <div v-if="stepsToRun.taxonomies" class="fct-runner-row" :class="statusClass(progress.taxonomies.status)">
+                <span class="fct-runner-icon">
+                    <svg v-if="progress.taxonomies.status === 'completed'" width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" fill="#ECFDF5"/><path d="M6 10l3 3 5-5" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span v-else-if="progress.taxonomies.status === 'running'" class="fct-spinner"></span>
+                    <svg v-else-if="progress.taxonomies.status === 'error'" width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" fill="#FEF2F2"/><path d="M7 7l6 6m0-6l-6 6" stroke="#DC2626" stroke-width="2" stroke-linecap="round"/></svg>
+                    <span v-else class="fct-runner-pending"></span>
+                </span>
+                <div class="fct-runner-detail">
+                    <strong>{{ __('Product Taxonomies') }}</strong>
+                    <span v-if="progress.taxonomies.status === 'completed'" class="fct-runner-meta">
+                        <template v-if="progress.taxonomies.message">{{ progress.taxonomies.message }}</template>
+                        <template v-else>{{ sprintf(_n('%s product updated', '%s products updated', progress.taxonomies.updated), progress.taxonomies.updated) }}</template>
+                    </span>
+                </div>
+            </div>
+
             <!-- Tax Rates -->
             <div v-if="stepsToRun.tax_rates" class="fct-runner-row" :class="statusClass(progress.tax_rates.status)">
                 <span class="fct-runner-icon">
@@ -176,6 +193,7 @@ export default {
     data: function () {
         var defaultProgress = {
             products: { status: 'pending', total: 0, migrated: 0, failed: 0, errors: [] },
+            taxonomies: { status: 'pending', updated: 0, message: '' },
             tax_rates: { status: 'pending' },
             coupons: { status: 'pending', total: 0, migrated: 0 },
             payments: { status: 'pending', processed: 0, hasMore: true, errorsCount: 0, logCounts: null },
@@ -187,7 +205,11 @@ export default {
         };
 
         return {
-            progress: this.initialProgress ? JSON.parse(JSON.stringify(this.initialProgress)) : defaultProgress,
+            // Merge over the defaults so a run resumed from an older saved
+            // shape still has an entry for every step.
+            progress: this.initialProgress
+                ? Object.assign({}, defaultProgress, JSON.parse(JSON.stringify(this.initialProgress)))
+                : defaultProgress,
             running: false,
             paused: false,
             showLog: false,
@@ -305,7 +327,7 @@ export default {
             });
         },
         runPipeline: async function () {
-            var steps = ['products', 'tax_rates', 'coupons', 'payments', 'missing_customers', 'recount'];
+            var steps = ['products', 'taxonomies', 'tax_rates', 'coupons', 'payments', 'missing_customers', 'recount'];
 
             for (var i = 0; i < steps.length; i++) {
                 var step = steps[i];
@@ -318,6 +340,8 @@ export default {
                 try {
                     if (step === 'products') {
                         await this.runProducts();
+                    } else if (step === 'taxonomies') {
+                        await this.runTaxonomies();
                     } else if (step === 'tax_rates') {
                         await this.runTaxRates();
                     } else if (step === 'coupons') {
@@ -363,6 +387,20 @@ export default {
                     } else {
                         throw e;
                     }
+                }
+            }
+        },
+        runTaxonomies: async function () {
+            var hasMore = true;
+
+            while (hasMore && !this.paused) {
+                // Server paginates + time-boxes and resumes from its own saved
+                // page, exactly like products and payments.
+                var result = await apiRequest('POST', 'migrate/taxonomies');
+                hasMore = result.has_more;
+                this.progress.taxonomies.updated += (result.updated || 0);
+                if (result.message) {
+                    this.progress.taxonomies.message = result.message;
                 }
             }
         },

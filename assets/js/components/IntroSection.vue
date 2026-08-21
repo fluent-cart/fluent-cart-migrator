@@ -66,6 +66,10 @@
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ __('Products') }}
                 </span>
+                <span v-if="summarySteps.taxonomies && summarySteps.taxonomies.done" class="fct-step-tag fct-step-tag--done">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    {{ __('Taxonomies') }}
+                </span>
                 <span v-if="summarySteps.tax_rates && summarySteps.tax_rates.done" class="fct-step-tag fct-step-tag--done">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ __('Tax Rates') }}

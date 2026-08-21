@@ -1,17 +1,29 @@
 # Migrating EDD `download_tag` Terms to FluentCart
 
-This guide registers a new **Product Tags** taxonomy (`product-tags`) on the
-`fluent-products` post type and copies every `download_tag` term from EDD into
-it, re-attaching the tags to the matching FluentCart product.
+FluentCart ships **Categories** and **Brands** only — there is no tag taxonomy
+out of the box. To migrate EDD's `download_tag` terms you therefore need to do
+two things: register a taxonomy for them, and point the migration at it.
 
-It uses the bidirectional mapping that **FluentCart Migrator** already creates
-during product migration:
-
-- `_fcart_migrated_id` postmeta on each EDD `download` post stores the new
-  `fluent-products` post ID.
-
-So this script is safe to run **after** the standard product migration step has
-finished.
+> **The copying is now built in.** Since the taxonomy mapping feature, the
+> migrator's **Overview → Taxonomy Mapping** card lists every taxonomy found on
+> your EDD downloads next to every taxonomy registered on `fluent-products`.
+> Once `product-tags` exists (step 1 below), pick it opposite `download_tag`
+> and the products step copies the terms and re-attaches them — no snippet
+> needed. The same is available on the CLI:
+>
+> ```bash
+> # show what can be mapped
+> wp fluent_cart_migrator migrate_from_edd --taxonomy_map
+> # set the mapping
+> wp fluent_cart_migrator migrate_from_edd --taxonomy_map --set=download_category:product-categories,download_tag:product-tags
+> # apply it (also runs as part of --all)
+> wp fluent_cart_migrator migrate_from_edd --taxonomies
+> ```
+>
+> This works on an already-finished migration too: **Product Taxonomies** is a
+> normal migration step, and saving a changed mapping re-opens it, so the next
+> run applies the tags to the products already in FluentCart. Step 2 below is
+> kept only as a manual alternative.
 
 ---
 
@@ -64,9 +76,10 @@ rewrite cache.
 
 ---
 
-## 2. Copy `download_tag` terms to `product-tags`
+## 2. (Optional) Backfill tags after the migration has already run
 
-The function below:
+Only needed if you migrated before mapping `download_tag`, and you would rather
+not re-run the products step. The function below:
 
 1. Iterates every published EDD `download`.
 2. Reads the EDD download's `download_tag` terms.
@@ -287,5 +300,6 @@ Or visit any product in **WP Admin → FluentCart → Products** — the new
 
 - The standard FluentCart Migrator "Migrate Products" step must have completed
   successfully (so `_fcart_migrated_id` postmeta exists on EDD downloads).
-- EDD must still be installed (the `download_tag` taxonomy must be registered)
-  while you run this script. After the script finishes, EDD can be deactivated.
+- EDD must be active while you migrate (or run the step 2 script) — that is
+  where the `download_tag` taxonomy and its terms come from. Once the terms are
+  in FluentCart, EDD can be deactivated.

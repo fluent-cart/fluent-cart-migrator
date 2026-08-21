@@ -30,8 +30,18 @@ class ProductData
     public $stockAvailability = 'in-stock';
     public $isDownloadable = 0;
 
-    /** @var int[] resolved fct term ids (source resolves via CategoryWriter::sync) */
+    /** @var int[] resolved fct term ids for the built-in category taxonomy */
     public $categories = [];
+
+    /**
+     * Resolved fct term ids grouped by destination taxonomy, as produced by
+     * Support\TaxonomyResolver from the admin's taxonomy mapping. Any
+     * FluentCart product taxonomy may appear here (categories, brands, or one
+     * registered by another plugin); $categories above is merged into it.
+     *
+     * @var array<string,int[]>
+     */
+    public $taxonomies = [];
 
     /** @var ProductVariationData[] */
     public $variations = [];

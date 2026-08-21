@@ -45,6 +45,12 @@ interface SourceMigratorInterface
 
     public function migrateCoupons();
 
+    /**
+     * Apply the admin's taxonomy mapping to the migrated catalog. Resumable:
+     * the caller re-invokes while the result reports has_more.
+     */
+    public function migrateTaxonomies();
+
     public function migrateTaxRates();
 
     /**

@@ -64,6 +64,13 @@
             </template>
         </div>
 
+        <!-- Taxonomy mapping -->
+        <TaxonomyMapper
+            v-if="stats && !loading"
+            :source="source"
+            @change="onTaxonomyMapChange"
+        />
+
         <!-- Config card -->
         <div v-if="stats && !loading" class="fct-card">
             <div class="fct-card-header">
@@ -78,6 +85,13 @@
                         <span class="fct-check-label">
                             {{ __('Products') }}
                             <span v-if="isStepDone('products')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
+                        </span>
+                    </label>
+                    <label class="fct-check">
+                        <input type="checkbox" v-model="localSteps.taxonomies">
+                        <span class="fct-check-label">
+                            {{ __('Product Taxonomies') }}
+                            <span v-if="isStepDone('taxonomies')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
                     <label class="fct-check">
@@ -170,9 +184,13 @@
 
 <script>
 import { __ } from '../i18n.js';
+import TaxonomyMapper from './TaxonomyMapper.vue';
 
 export default {
     name: 'MigrationOverview',
+    components: {
+        TaxonomyMapper: TaxonomyMapper
+    },
     props: {
         source: { type: Object, default: null },
         stats: { type: Object, default: null },
@@ -183,8 +201,11 @@ export default {
     emits: ['start', 'go-back', 'reset'],
     data: function () {
         return {
+            // source→FluentCart taxonomy pairs, saved when the migration starts
+            taxonomyMap: [],
             localSteps: {
                 products: true,
+                taxonomies: true,
                 tax_rates: true,
                 coupons: true,
                 payments: true,
@@ -212,6 +233,9 @@ export default {
         }
     },
     methods: {
+        onTaxonomyMapChange: function (pairs) {
+            this.taxonomyMap = pairs;
+        },
         isStepDone: function (step) {
             var m = this.migrationStatus && this.migrationStatus.migration;
             if (!m) return false;
@@ -219,7 +243,8 @@ export default {
         },
         onStart: function () {
             this.$emit('start', {
-                stepsToRun: JSON.parse(JSON.stringify(this.localSteps))
+                stepsToRun: JSON.parse(JSON.stringify(this.localSteps)),
+                taxonomyMap: JSON.parse(JSON.stringify(this.taxonomyMap))
             });
         }
     }

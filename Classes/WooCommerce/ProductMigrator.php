@@ -6,9 +6,9 @@ use FluentCartMigrator\Classes\Dto\ProductData;
 use FluentCartMigrator\Classes\Dto\ProductDownloadData;
 use FluentCartMigrator\Classes\Dto\ProductVariationData;
 use FluentCartMigrator\Classes\Load\AttributeWriter;
-use FluentCartMigrator\Classes\Load\CategoryWriter;
 use FluentCartMigrator\Classes\Load\ProductWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
+use FluentCartMigrator\Classes\Support\TaxonomyResolver;
 
 /**
  * WooCommerce product source: Extract + Transform only.
@@ -16,8 +16,9 @@ use FluentCartMigrator\Classes\Support\BatchRuntime;
  * Reads through the WooCommerce CRUD API (wc_get_product / WC_Product), maps
  * each product to a normalized ProductData DTO, and hands it to the shared
  * ProductWriter, which owns the fct product/details/variations/downloads
- * inserts, SKU de-duplication and the id-mapping postmeta. Category trees are
- * synced once via CategoryWriter.
+ * inserts, SKU de-duplication and the id-mapping postmeta. Product taxonomies
+ * (categories, brands, tags, ...) follow the admin's taxonomy mapping and are
+ * synced through TaxonomyResolver.
  */
 class ProductMigrator
 {
@@ -30,8 +31,8 @@ class ProductMigrator
      */
     const MAX_COMBINATIONS = 500;
 
-    /** @var array<int,int> WC term id => FC term id, built once per run */
-    private $categoryMap = [];
+    /** @var TaxonomyResolver|null source→FluentCart taxonomy mapping, built once per run */
+    private $taxonomies = null;
 
     /** @var array<string,string>|null taxonomy => WC attribute_type, lazy-built */
     private $attributeTypeMap = null;
@@ -41,7 +42,7 @@ class ProductMigrator
      */
     public function migrate($willUpdate = true)
     {
-        $this->categoryMap = CategoryWriter::sync($this->sourceCategories());
+        $this->taxonomyResolver()->prepare();
 
         $productIds = wc_get_products([
             'limit'   => -1,
@@ -87,11 +88,9 @@ class ProductMigrator
      */
     public function migratePage($page, $perPage = 20)
     {
-        // Categories are cheap + idempotent; ensure the map exists before the
-        // first product references it (kept across pages on this instance).
-        if (!$this->categoryMap) {
-            $this->categoryMap = CategoryWriter::sync($this->sourceCategories());
-        }
+        // Term trees are cheap + idempotent; ensure they exist before the first
+        // product references them (kept across pages on this instance).
+        $this->taxonomyResolver()->prepare();
 
         $query = wc_get_products([
             'limit'    => $perPage,
@@ -342,7 +341,7 @@ class ProductMigrator
         $data->manageStock       = $anyManaged ? 1 : 0;
         $data->stockAvailability = $isExternal ? 'out-of-stock' : MigratorHelper::stockStatus($product->get_stock_status());
         $data->isDownloadable    = $product->is_downloadable() ? 1 : 0;
-        $data->categories        = $this->resolveCategories($product);
+        $data->taxonomies        = $this->taxonomyResolver()->resolveForObject($product->get_id());
         $data->variations        = $variations;
         $data->attributeConfig   = $attributeConfig;
         if ($isExternal) {
@@ -820,50 +819,19 @@ class ProductMigrator
     }
 
     /* -----------------------------------------------------------------
-     | Categories
+     | Taxonomies
      * ----------------------------------------------------------------- */
 
     /**
-     * Flatten WooCommerce product_cat terms into the CategoryWriter input shape.
-     *
-     * @return array[]
+     * The source→FluentCart taxonomy mapping for this run, created once so the
+     * synced term trees are reused across products and pages.
      */
-    private function sourceCategories()
+    private function taxonomyResolver()
     {
-        if (!taxonomy_exists('product_cat')) {
-            return [];
+        if ($this->taxonomies === null) {
+            $this->taxonomies = new TaxonomyResolver('woocommerce');
         }
 
-        $terms = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
-        if (is_wp_error($terms) || !$terms) {
-            return [];
-        }
-
-        $out = [];
-        foreach ($terms as $term) {
-            $out[] = [
-                'source_id'        => (int) $term->term_id,
-                'name'             => $term->name,
-                'slug'             => $term->slug,
-                'description'      => $term->description,
-                'parent_source_id' => (int) $term->parent,
-            ];
-        }
-
-        return $out;
-    }
-
-    /**
-     * @return int[] resolved fct term ids for the product's categories
-     */
-    private function resolveCategories($product)
-    {
-        $ids = [];
-        foreach ($product->get_category_ids() as $wcTermId) {
-            if (isset($this->categoryMap[(int) $wcTermId])) {
-                $ids[] = (int) $this->categoryMap[(int) $wcTermId];
-            }
-        }
-        return $ids;
+        return $this->taxonomies;
     }
 }

@@ -9,6 +9,7 @@ use FluentCart\App\Models\Subscription;
 use FluentCart\Database\DBMigrator;
 use FluentCart\Framework\Support\Arr;
 use FluentCartMigrator\Classes\EDD3\PaddleBackfill;
+use FluentCartMigrator\Classes\Support\TaxonomyMapCli;
 use FluentCartMigrator\Classes\MigratorService;
 
 class Commands
@@ -50,6 +51,11 @@ class Commands
             return;
         }
 
+        if (Arr::get($assoc_args, 'taxonomy_map')) {
+            TaxonomyMapCli::run('edd', $assoc_args);
+            return;
+        }
+
         if (Arr::get($assoc_args, 'verify_license')) {
             $result = $this->getMigratorService()->verifyLicenses(function ($type, $message) {
                 \WP_CLI::line($message);
@@ -88,6 +94,7 @@ class Commands
         if (Arr::get($assoc_args, 'all')) {
             $assoc_args = [
                 'products'          => true,
+                'taxonomies'        => true,
                 'tax_rates'         => true,
                 'coupons'           => true,
                 'payments'          => true,
@@ -113,6 +120,12 @@ class Commands
             } else {
                 \WP_CLI::line('Products Migration already done. Skipping...');
             }
+        }
+
+        if (Arr::get($assoc_args, 'taxonomies')) {
+            \WP_CLI::line('Applying taxonomy mapping');
+            TaxonomyMapCli::migrate($service);
+            \WP_CLI::line('---------------------------------------');
         }
 
         if (Arr::get($assoc_args, 'tax_rates')) {

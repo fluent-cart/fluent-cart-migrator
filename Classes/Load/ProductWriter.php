@@ -63,9 +63,7 @@ class ProductWriter
             update_post_meta($postId, $fctKey, $product->sourceId);
         }
 
-        if ($product->categories && taxonomy_exists(CategoryWriter::TAXONOMY)) {
-            wp_set_object_terms($postId, array_map('intval', $product->categories), CategoryWriter::TAXONOMY, false);
-        }
+        $this->assignTaxonomies($postId, $product);
 
         if ($product->thumbnailId) {
             set_post_thumbnail($postId, $product->thumbnailId);
@@ -88,6 +86,35 @@ class ProductWriter
         }
 
         return (int) $postId;
+    }
+
+    /**
+     * Attach the resolved terms to the product, one wp_set_object_terms() call
+     * per destination taxonomy. Which taxonomies show up here is entirely up to
+     * the admin's taxonomy mapping (see Support\TaxonomyMap); $categories is
+     * the legacy single-taxonomy input and is merged in.
+     *
+     * Terms are replaced (not appended) so a re-run mirrors the source, and an
+     * empty list is skipped rather than clearing terms added in FluentCart.
+     */
+    protected function assignTaxonomies($postId, ProductData $product)
+    {
+        $taxonomies = is_array($product->taxonomies) ? $product->taxonomies : [];
+
+        if ($product->categories) {
+            $existing = $taxonomies[CategoryWriter::TAXONOMY] ?? [];
+            $taxonomies[CategoryWriter::TAXONOMY] = array_merge($existing, $product->categories);
+        }
+
+        foreach ($taxonomies as $taxonomy => $termIds) {
+            $termIds = array_values(array_unique(array_filter(array_map('intval', (array) $termIds))));
+
+            if (!$termIds || !taxonomy_exists($taxonomy)) {
+                continue;
+            }
+
+            wp_set_object_terms($postId, $termIds, $taxonomy, false);
+        }
     }
 
     /**

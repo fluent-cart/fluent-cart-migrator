@@ -9,6 +9,7 @@ use FluentCart\App\Models\ProductDetail;
 use FluentCart\App\Models\ProductVariation;
 use FluentCart\App\Models\TaxClass;
 use FluentCart\Framework\Support\Arr;
+use FluentCartMigrator\Classes\Support\TaxonomyResolver;
 
 class MigratorCli
 {
@@ -17,7 +18,8 @@ class MigratorCli
 
     private $defaultCurrency = '';
 
-    private $categoryMap = null;
+    /** @var TaxonomyResolver|null source→FluentCart taxonomy mapping */
+    private $taxonomies = null;
 
     public function __construct()
     {
@@ -88,7 +90,7 @@ class MigratorCli
 
         update_option('_fcart_migrated_bundled_products', []);
 
-        $this->prepareCategoryMap();
+        $this->taxonomyResolver()->prepare();
 
         $products = fluentCart('db')->table('posts')
             ->where('post_type', 'download')
@@ -115,100 +117,22 @@ class MigratorCli
         return $results;
     }
 
-    private function prepareCategoryMap()
+    /* -----------------------------------------------------------------
+     | Taxonomies
+     * ----------------------------------------------------------------- */
+
+    /**
+     * The source→FluentCart taxonomy mapping for this run (EDD categories/tags
+     * into whichever FluentCart taxonomies the admin picked), created once so
+     * the synced term trees are reused across products.
+     */
+    private function taxonomyResolver()
     {
-        $this->categoryMap = [];
-
-        if (!taxonomy_exists('download_category') || !taxonomy_exists('product-categories')) {
-            return;
+        if ($this->taxonomies === null) {
+            $this->taxonomies = new TaxonomyResolver('edd');
         }
 
-        $eddTerms = get_terms([
-            'taxonomy'   => 'download_category',
-            'hide_empty' => false,
-        ]);
-
-        if (is_wp_error($eddTerms) || empty($eddTerms)) {
-            return;
-        }
-
-        $remaining = [];
-        foreach ($eddTerms as $term) {
-            $remaining[(int)$term->term_id] = $term;
-        }
-
-        // Walk parents-first: keep looping while we can resolve at least one parent.
-        $guard = 0;
-        while ($remaining && $guard++ < 50) {
-            $progressed = false;
-
-            foreach ($remaining as $eddId => $term) {
-                $parentEddId = (int)$term->parent;
-
-                if ($parentEddId && !isset($this->categoryMap[$parentEddId])) {
-                    continue; // wait for parent
-                }
-
-                $parentFctId = $parentEddId ? (int)$this->categoryMap[$parentEddId] : 0;
-
-                $existing = get_term_by('slug', $term->slug, 'product-categories');
-                if ($existing) {
-                    $this->categoryMap[$eddId] = (int)$existing->term_id;
-                    unset($remaining[$eddId]);
-                    $progressed = true;
-                    continue;
-                }
-
-                $created = wp_insert_term($term->name, 'product-categories', [
-                    'slug'        => $term->slug,
-                    'description' => $term->description,
-                    'parent'      => $parentFctId,
-                ]);
-
-                if (is_wp_error($created)) {
-                    $fallback = get_term_by('slug', $term->slug, 'product-categories');
-                    if ($fallback) {
-                        $this->categoryMap[$eddId] = (int)$fallback->term_id;
-                    }
-                } else {
-                    $this->categoryMap[$eddId] = (int)$created['term_id'];
-                }
-
-                unset($remaining[$eddId]);
-                $progressed = true;
-            }
-
-            if (!$progressed) {
-                break; // orphaned terms with missing parent — skip
-            }
-        }
-    }
-
-    private function assignProductCategories($eddProductId, $fctProductId)
-    {
-        if ($this->categoryMap === null) {
-            $this->prepareCategoryMap();
-        }
-
-        if (empty($this->categoryMap) || !taxonomy_exists('product-categories')) {
-            return;
-        }
-
-        $eddTerms = wp_get_object_terms($eddProductId, 'download_category', ['fields' => 'ids']);
-        if (is_wp_error($eddTerms) || empty($eddTerms)) {
-            return;
-        }
-
-        $fctTermIds = [];
-        foreach ($eddTerms as $eddTermId) {
-            if (isset($this->categoryMap[(int)$eddTermId])) {
-                $fctTermIds[] = (int)$this->categoryMap[(int)$eddTermId];
-            }
-        }
-
-        if ($fctTermIds) {
-            wp_set_object_terms($fctProductId, $fctTermIds, 'product-categories', false);
-        }
+        return $this->taxonomies;
     }
 
     public function migratePayments($page = 1, $perPage = 1000)
@@ -656,7 +580,7 @@ class MigratorCli
         update_post_meta($createdPostId, '_edd_migrated_from', $product->ID);
         update_post_meta($product->ID, '_fcart_migrated_id', $createdPostId);
 
-        $this->assignProductCategories((int)$product->ID, (int)$createdPostId);
+        $this->taxonomyResolver()->assignToProduct((int)$product->ID, (int)$createdPostId);
 
         // Migrate featured image
         $thumbnailId = get_post_thumbnail_id($product->ID);

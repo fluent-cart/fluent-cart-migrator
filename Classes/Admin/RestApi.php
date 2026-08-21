@@ -5,6 +5,7 @@ namespace FluentCartMigrator\Classes\Admin;
 use FluentCartMigrator\Classes\MigratorService;
 use FluentCartMigrator\Classes\SourceManager;
 use FluentCartMigrator\Classes\Support\MigrationLog;
+use FluentCartMigrator\Classes\Support\TaxonomyMap;
 
 class RestApi
 {
@@ -38,6 +39,24 @@ class RestApi
         register_rest_route($this->namespace, '/can-migrate', [
             'methods'             => 'GET',
             'callback'            => [$this, 'canMigrate'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/taxonomies', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'getTaxonomies'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/taxonomies/map', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'saveTaxonomyMap'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/migrate/taxonomies', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'migrateTaxonomies'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
@@ -136,6 +155,14 @@ class RestApi
         return $manager->resolve($source);
     }
 
+    /**
+     * The request's source key (defaults to 'edd', like resolveMigrator()).
+     */
+    private function requestSource(\WP_REST_Request $request)
+    {
+        return sanitize_key($request->get_param('source') ?: 'edd');
+    }
+
     public function getSources()
     {
         $service = new MigratorService();
@@ -175,6 +202,75 @@ class RestApi
         }
 
         return rest_ensure_response(['can_migrate' => true]);
+    }
+
+    /**
+     * Everything the taxonomy mapper UI needs: the FluentCart product
+     * taxonomies available as destinations, the taxonomies this source has,
+     * and the currently effective mapping (saved, or the suggested defaults).
+     */
+    public function getTaxonomies(\WP_REST_Request $request)
+    {
+        $source = $this->requestSource($request);
+
+        if (!TaxonomyMap::supports($source)) {
+            /* translators: %s: migration source key */
+            return new \WP_Error('invalid_source', sprintf(__('Unsupported migration source: %s', 'fluent-cart-migrator'), $source), ['status' => 400]);
+        }
+
+        return rest_ensure_response([
+            'source'       => $source,
+            'destinations' => TaxonomyMap::destinations(),
+            'sources'      => TaxonomyMap::sources($source),
+            'map'          => TaxonomyMap::get($source),
+            'defaults'     => TaxonomyMap::defaults($source),
+            'customized'   => TaxonomyMap::isCustomized($source),
+        ]);
+    }
+
+    /**
+     * Persist the mapping for a source. Rows with an empty side are dropped —
+     * that is how the UI expresses "do not migrate this taxonomy".
+     */
+    public function saveTaxonomyMap(\WP_REST_Request $request)
+    {
+        $source = $this->requestSource($request);
+
+        if (!TaxonomyMap::supports($source)) {
+            /* translators: %s: migration source key */
+            return new \WP_Error('invalid_source', sprintf(__('Unsupported migration source: %s', 'fluent-cart-migrator'), $source), ['status' => 400]);
+        }
+
+        $map = $request->get_param('map');
+        if (!is_array($map)) {
+            return new \WP_Error('invalid_map', __('A taxonomy map is required.', 'fluent-cart-migrator'), ['status' => 400]);
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'source'  => $source,
+            'map'     => TaxonomyMap::save($source, $map),
+        ]);
+    }
+
+    /**
+     * Apply the taxonomy mapping to the migrated catalog. Resumable like the
+     * products/payments steps: the front-end re-calls while `has_more` is true
+     * and the server resumes from its own saved page.
+     */
+    public function migrateTaxonomies(\WP_REST_Request $request)
+    {
+        $migrator = $this->resolveMigrator($request);
+        if (is_wp_error($migrator)) {
+            return $migrator;
+        }
+
+        $result = $migrator->migrateTaxonomies();
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        return rest_ensure_response($result);
     }
 
     public function migrateProducts(\WP_REST_Request $request)

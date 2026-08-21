@@ -10,6 +10,8 @@ use FluentCart\App\Models\OrderTransaction;
 use FluentCart\App\Models\Subscription;
 use FluentCart\Database\DBMigrator;
 use FluentCartMigrator\Classes\Contracts\SourceMigratorInterface;
+use FluentCartMigrator\Classes\Support\TaxonomyApplier;
+use FluentCartMigrator\Classes\Support\TaxonomyMap;
 use FluentCartMigrator\Classes\Edd3\MigratorCli;
 use FluentCartMigrator\Classes\Edd3\MigratorHelper;
 
@@ -270,6 +272,11 @@ class MigratorService implements SourceMigratorInterface
             $migrationSteps = [];
         }
         $migrationSteps['products'] = 'yes';
+        // Each product written above already got its mapped terms, so the
+        // taxonomies step has nothing left to do — mark it done and skip a
+        // redundant walk of the catalog. Editing the mapping re-opens it
+        // (TaxonomyMap::save()).
+        $migrationSteps[TaxonomyMap::STEP] = 'yes';
         update_option('__fluent_cart_edd3_migration_steps', $migrationSteps);
 
         return [
@@ -281,6 +288,15 @@ class MigratorService implements SourceMigratorInterface
             'errors'          => $errors,
             'migration_state' => $migrationSteps,
         ];
+    }
+
+    /**
+     * Apply the taxonomy mapping to the migrated catalog. Same contract as the
+     * other steps: skipped once complete, resumable, time-boxed.
+     */
+    public function migrateTaxonomies($page = null, $perPage = 100, $maxSeconds = 20)
+    {
+        return TaxonomyApplier::step($this->key(), $page, $perPage, $maxSeconds);
     }
 
     public function migrateTaxRates()
@@ -888,8 +904,9 @@ class MigratorService implements SourceMigratorInterface
             'completed_at' => current_time('mysql'),
             'has_licenses' => false,
             'steps'        => [
-                'products'  => ['done' => ($migrationSteps['products'] ?? '') === 'yes'],
-                'tax_rates' => ['done' => ($migrationSteps['tax_rates'] ?? '') === 'yes'],
+                'products'   => ['done' => ($migrationSteps['products'] ?? '') === 'yes'],
+                'taxonomies' => ['done' => ($migrationSteps['taxonomies'] ?? '') === 'yes'],
+                'tax_rates'  => ['done' => ($migrationSteps['tax_rates'] ?? '') === 'yes'],
                 'coupons'   => ['done' => ($migrationSteps['coupons'] ?? '') === 'yes'],
                 'payments'  => [
                     'done'   => ($migrationSteps['payments'] ?? '') === 'yes',

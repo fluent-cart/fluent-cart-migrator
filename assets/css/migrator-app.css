@@ -1367,3 +1367,185 @@
 .fct-complete > .fct-card + .fct-card {
     margin-top: 0;
 }
+
+/* ─── Taxonomy mapping ───────────────────────────────────────────────────── */
+
+.fct-tax-head,
+.fct-tax-row {
+    display: grid;
+    grid-template-columns: 1fr 24px 1fr 28px;
+    align-items: center;
+    gap: 8px;
+}
+
+.fct-tax-head {
+    margin-bottom: 6px;
+}
+
+.fct-tax-col {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fct-text-secondary);
+}
+
+.fct-tax-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fct-tax-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.fct-tax-row-note {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--fct-text-secondary);
+}
+
+.fct-tax-row-note.is-warn {
+    color: var(--fct-warning);
+}
+
+.fct-tax-row.is-ignored .fct-tax-select {
+    color: var(--fct-text-secondary);
+    background: #F9FAFB;
+}
+
+.fct-tax-select {
+    width: 100%;
+    max-width: none;
+    min-height: 32px;
+    padding: 4px 8px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--fct-text);
+    background: var(--fct-card);
+    border: 1px solid var(--fct-border);
+    border-radius: 6px;
+    box-shadow: none;
+    text-overflow: ellipsis;
+}
+
+.fct-tax-select:focus {
+    border-color: var(--fct-primary);
+    box-shadow: 0 0 0 1px var(--fct-primary);
+    outline: none;
+}
+
+.fct-tax-arrow {
+    text-align: center;
+    font-size: 14px;
+    color: var(--fct-text-secondary);
+}
+
+.fct-tax-remove {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--fct-text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.fct-tax-remove:hover {
+    color: var(--fct-danger);
+    border-color: var(--fct-border);
+    background: var(--fct-danger-light);
+}
+
+.fct-tax-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.fct-tax-summary {
+    font-size: 12px;
+    color: var(--fct-text-secondary);
+}
+
+.fct-btn--link {
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--fct-primary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.fct-btn--link:hover {
+    color: #4338CA;
+    text-decoration: underline;
+}
+
+.fct-tax-note {
+    margin: 14px 0 0;
+}
+
+.fct-tax-note p {
+    margin: 0 0 8px;
+}
+
+.fct-tax-note p:last-child {
+    margin-bottom: 0;
+}
+
+.fct-tax-apply {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+@media (max-width: 600px) {
+
+    .fct-tax-head {
+        display: none;
+    }
+
+    .fct-tax-row {
+        grid-template-columns: 1fr 28px;
+        grid-template-areas:
+            "source remove"
+            "arrow  arrow"
+            "dest   dest";
+    }
+
+    .fct-tax-row .fct-tax-select:first-of-type {
+        grid-area: dest;
+    }
+
+    .fct-tax-row .fct-tax-select:last-of-type {
+        grid-area: source;
+    }
+
+    .fct-tax-row .fct-tax-arrow {
+        grid-area: arrow;
+        transform: rotate(90deg);
+    }
+
+    .fct-tax-row .fct-tax-remove {
+        grid-area: remove;
+    }
+}
+
+.fct-tax-hint {
+    margin: 12px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fct-text-secondary);
+}

@@ -4,19 +4,25 @@ namespace FluentCartMigrator\Classes\WooCommerce;
 
 use FluentCartMigrator\Classes\Dto\CouponData;
 use FluentCartMigrator\Classes\Load\CouponWriter;
+use FluentCartMigrator\Classes\Support\TaxonomyResolver;
 
 /**
  * WooCommerce coupon source: Extract + Transform.
  *
  * Reads shop_coupon posts via WC_Coupon and maps each to a normalized
  * CouponData (FluentCart type/amount/conditions), then hands it to the shared
- * CouponWriter. Product/category restrictions are mapped to the migrated
- * FluentCart product ids / taxonomy terms.
+ * CouponWriter. Product restrictions are mapped to the migrated FluentCart
+ * product ids; category restrictions follow the admin's taxonomy mapping, so
+ * they land on whichever FluentCart taxonomy product_cat was mapped to (and are
+ * dropped when product_cat is not migrated at all).
  */
 class CouponMigrator
 {
-    /** @var array<int,int> WC product_cat term id => FC product-categories term id */
+    /** @var array<int,int> WC product_cat term id => FluentCart term id */
     private $categoryMap = [];
+
+    /** @var TaxonomyResolver|null lazy: the source→FluentCart taxonomy mapping */
+    private $taxonomies = null;
 
     /**
      * @return array<string,int|\WP_Error> couponCode => fctCouponId|WP_Error
@@ -132,7 +138,7 @@ class CouponMigrator
     }
 
     /**
-     * Map WC product_cat term ids → FluentCart product-categories term ids (by slug).
+     * Map WC product_cat term ids → FluentCart term ids, through the mapping.
      */
     private function mapCategories($wcTermIds)
     {
@@ -152,14 +158,13 @@ class CouponMigrator
             return $this->categoryMap[$wcTermId];
         }
 
-        $id   = 0;
-        $term = get_term($wcTermId, 'product_cat');
-        if ($term && !is_wp_error($term)) {
-            $fct = get_term_by('slug', $term->slug, 'product-categories');
-            if ($fct) {
-                $id = (int) $fct->term_id;
-            }
+        if ($this->taxonomies === null) {
+            $this->taxonomies = new TaxonomyResolver('woocommerce');
         }
+
+        // Resolving through the resolver also creates the term if the products
+        // step has not run yet, so the restriction survives either order.
+        $id = $this->taxonomies->mapTermId('product_cat', $wcTermId);
 
         $this->categoryMap[$wcTermId] = $id;
         return $id;
