@@ -203,6 +203,12 @@ export default {
         return {
             // source→FluentCart taxonomy pairs, saved when the migration starts
             taxonomyMap: [],
+            // TaxonomyMapper only emits `change` after its GET /taxonomies
+            // succeeds, so this stays false while the mapper is still loading
+            // or failed to load — and the app must NOT save the (empty) map
+            // then: a saved empty map means "migrate no taxonomies", which
+            // would silently override the server-side defaults.
+            taxonomyMapLoaded: false,
             localSteps: {
                 products: true,
                 taxonomies: true,
@@ -235,6 +241,7 @@ export default {
     methods: {
         onTaxonomyMapChange: function (pairs) {
             this.taxonomyMap = pairs;
+            this.taxonomyMapLoaded = true;
         },
         isStepDone: function (step) {
             var m = this.migrationStatus && this.migrationStatus.migration;
@@ -244,7 +251,8 @@ export default {
         onStart: function () {
             this.$emit('start', {
                 stepsToRun: JSON.parse(JSON.stringify(this.localSteps)),
-                taxonomyMap: JSON.parse(JSON.stringify(this.taxonomyMap))
+                taxonomyMap: JSON.parse(JSON.stringify(this.taxonomyMap)),
+                taxonomyMapLoaded: this.taxonomyMapLoaded
             });
         }
     }

@@ -236,11 +236,17 @@ export default {
 
             // Persist the taxonomy mapping first — the products step (and any
             // later WP-CLI run) reads it from the server, not from this payload.
-            try {
-                await apiRequest('POST', 'taxonomies/map', { map: config.taxonomyMap || [] });
-            } catch (e) {
-                this.error = __('Failed to save the taxonomy mapping:') + ' ' + e.message;
-                return;
+            // Only when the mapper actually loaded: saving before then would
+            // store an empty map (= "migrate no taxonomies") the admin never
+            // chose; skipping the save leaves the server on its stored mapping
+            // or the suggested defaults.
+            if (config.taxonomyMapLoaded) {
+                try {
+                    await apiRequest('POST', 'taxonomies/map', { map: config.taxonomyMap || [] });
+                } catch (e) {
+                    this.error = __('Failed to save the taxonomy mapping:') + ' ' + e.message;
+                    return;
+                }
             }
 
             this.stepsToRun = config.stepsToRun;
