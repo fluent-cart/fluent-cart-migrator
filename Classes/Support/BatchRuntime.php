@@ -23,10 +23,21 @@ class BatchRuntime
             $wpdb->queries = [];
         }
 
-        if (is_object($wp_object_cache)) {
+        // WP 6.0+ asks the (possibly persistent) object-cache drop-in to drop
+        // only its in-memory runtime cache. Fall back to clearing the known
+        // properties directly; a drop-in may declare them private without a
+        // __set() shim, so never let that abort the batch.
+        if (function_exists('wp_cache_flush_runtime') && (!function_exists('wp_cache_supports') || wp_cache_supports('flush_runtime'))) {
+            wp_cache_flush_runtime();
+        } elseif (is_object($wp_object_cache)) {
             foreach (['cache', 'group_ops', 'stats', 'memcache_debug'] as $prop) {
-                if (property_exists($wp_object_cache, $prop)) {
+                if (!property_exists($wp_object_cache, $prop)) {
+                    continue;
+                }
+                try {
                     $wp_object_cache->$prop = [];
+                } catch (\Throwable $e) {
+                    // not writable from here — skip
                 }
             }
         }

@@ -134,6 +134,88 @@ class RestApi
     }
 
     /**
+     * Run a migration step with a safety net so the browser always receives a
+     * readable JSON error instead of a blank response:
+     *
+     *  - An uncaught exception/Error is turned into a WP_Error carrying the real
+     *    message (WordPress's fatal handler would only say "critical error").
+     *  - If the request is terminated early — third-party code calling exit()/die()
+     *    from a save_post / term / option hook fired by the migration, or a fatal
+     *    error while WP's fatal handler is disabled — PHP would send HTTP 200 with
+     *    an empty body, which the UI reports as "JSON.parse: unexpected end of
+     *    data". A shutdown guard detects that and writes a JSON error (with the
+     *    hook stack at the time of termination) so the cause is visible.
+     *
+     * @param callable $fn returns the step result (array|WP_Error)
+     * @return \WP_REST_Response|\WP_Error
+     */
+    private function guarded(callable $fn)
+    {
+        $finished = false;
+
+        register_shutdown_function(function () use (&$finished) {
+            if ($finished || headers_sent()) {
+                return; // normal completion, or something already responded
+            }
+
+            $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR];
+            $lastError  = error_get_last();
+
+            if ($lastError && in_array((int) $lastError['type'], $fatalTypes, true)) {
+                $message = sprintf(
+                    /* translators: 1: PHP error message, 2: file path, 3: line number */
+                    __('PHP fatal error: %1$s in %2$s on line %3$d', 'fluent-cart-migrator'),
+                    $lastError['message'],
+                    $lastError['file'],
+                    $lastError['line']
+                );
+            } else {
+                $message = __('The migration request was terminated early by the server or by another plugin (exit/die) before the migrator could respond. Check your PHP error log, try deactivating other plugins on the staging site, or run the migration via WP-CLI.', 'fluent-cart-migrator');
+                $hooks   = !empty($GLOBALS['wp_current_filter']) && is_array($GLOBALS['wp_current_filter'])
+                    ? array_values(array_filter($GLOBALS['wp_current_filter'], 'is_string'))
+                    : [];
+                if ($hooks) {
+                    /* translators: %s: list of WordPress hook names */
+                    $message .= ' ' . sprintf(__('(terminated while running hook: %s)', 'fluent-cart-migrator'), implode(' > ', $hooks));
+                }
+            }
+
+            if (function_exists('error_log')) {
+                error_log('[FluentCart Migrator] ' . wp_strip_all_tags($message));
+            }
+
+            status_header(500);
+            header('Content-Type: application/json; charset=' . get_option('blog_charset'));
+            echo wp_json_encode([
+                'code'    => 'fct_migrator_terminated',
+                'message' => $message,
+                'data'    => ['status' => 500],
+            ]);
+        });
+
+        try {
+            $result = $fn();
+        } catch (\Throwable $e) {
+            $finished = true;
+
+            $message = sprintf(
+                /* translators: 1: exception message, 2: file path, 3: line number */
+                __('%1$s (in %2$s on line %3$d)', 'fluent-cart-migrator'),
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine()
+            );
+            error_log('[FluentCart Migrator] ' . $message);
+
+            return new \WP_Error('fct_migrator_exception', $message, ['status' => 500]);
+        }
+
+        $finished = true;
+
+        return is_wp_error($result) ? $result : rest_ensure_response($result);
+    }
+
+    /**
      * Resolve the migrator for the request's source (defaults to 'edd' for
      * backward compatibility with the existing front-end calls).
      *
@@ -265,12 +347,9 @@ class RestApi
             return $migrator;
         }
 
-        $result = $migrator->migrateTaxonomies();
-        if (is_wp_error($result)) {
-            return $result;
-        }
-
-        return rest_ensure_response($result);
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->migrateTaxonomies();
+        });
     }
 
     public function migrateProducts(\WP_REST_Request $request)
@@ -280,7 +359,9 @@ class RestApi
             return $migrator;
         }
 
-        return rest_ensure_response($migrator->migrateProducts());
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->migrateProducts();
+        });
     }
 
     public function migrateTaxRates(\WP_REST_Request $request)
@@ -290,7 +371,9 @@ class RestApi
             return $migrator;
         }
 
-        return rest_ensure_response($migrator->migrateTaxRates());
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->migrateTaxRates();
+        });
     }
 
     public function migrateCoupons(\WP_REST_Request $request)
@@ -300,7 +383,9 @@ class RestApi
             return $migrator;
         }
 
-        return rest_ensure_response($migrator->migrateCoupons());
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->migrateCoupons();
+        });
     }
 
     public function migratePayments(\WP_REST_Request $request)
@@ -313,10 +398,10 @@ class RestApi
         // Smaller pages keep peak memory bounded on large stores; the migrator
         // also memory-boxes the batch and the front-end loops until has_more is
         // false, so this only affects how often we hand back to the browser.
-        $page   = $migrator->getPaymentResumePage();
-        $result = $migrator->migratePayments($page, 50, 25);
-
-        return rest_ensure_response($result);
+        return $this->guarded(function () use ($migrator) {
+            $page = $migrator->getPaymentResumePage();
+            return $migrator->migratePayments($page, 50, 25);
+        });
     }
 
     public function migrateMissingCustomers(\WP_REST_Request $request)
@@ -326,7 +411,9 @@ class RestApi
             return $migrator;
         }
 
-        return rest_ensure_response($migrator->migrateMissingCustomers());
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->migrateMissingCustomers();
+        });
     }
 
     public function recountStats(\WP_REST_Request $request)
@@ -342,7 +429,9 @@ class RestApi
             return new \WP_Error('invalid_substep', sprintf(__('Invalid substep: %s', 'fluent-cart-migrator'), $substep), ['status' => 400]);
         }
 
-        return rest_ensure_response($migrator->recountStats($substep));
+        return $this->guarded(function () use ($migrator, $substep) {
+            return $migrator->recountStats($substep);
+        });
     }
 
     public function getLogs(\WP_REST_Request $request)
@@ -400,7 +489,9 @@ class RestApi
             return new \WP_Error('not_supported', __('License verification is not supported for this source.', 'fluent-cart-migrator'), ['status' => 400]);
         }
 
-        return rest_ensure_response($migrator->verifyLicenses());
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->verifyLicenses();
+        });
     }
 
     public function resetMigration(\WP_REST_Request $request)
@@ -410,12 +501,9 @@ class RestApi
             return $migrator;
         }
 
-        $result = $migrator->reset();
-        if (is_wp_error($result)) {
-            return $result;
-        }
-
-        return rest_ensure_response($result);
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->reset();
+        });
     }
 
     public function getMigrationSummary(\WP_REST_Request $request)
