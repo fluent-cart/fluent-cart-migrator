@@ -9,6 +9,7 @@ use FluentCartMigrator\Classes\Dto\CustomerData;
 use FluentCartMigrator\Classes\Load\CustomerWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
 use FluentCartMigrator\Classes\Support\MigrationLog;
+use FluentCartMigrator\Classes\Support\TaxonomyMap;
 
 /**
  * WooCommerce migration source.
@@ -190,7 +191,12 @@ class WooSourceMigrator extends AbstractSourceMigrator
         // must all exist first) and mark the step complete.
         if (!$hasMore) {
             $migrator->syncBundles();
-            $state = $this->markStep('products');
+            $this->markStep('products');
+            // Every product written in this pass already got its mapped terms,
+            // so the taxonomies step has nothing left to do — mark it done and
+            // skip a redundant walk of the catalog. Editing the mapping
+            // re-opens it (TaxonomyMap::save()).
+            $state = $this->markStep(TaxonomyMap::STEP);
         } else {
             $state = $this->getState();
         }

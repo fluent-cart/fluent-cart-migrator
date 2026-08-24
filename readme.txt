@@ -138,6 +138,7 @@ Yes. Reach out to the FluentCart support team for assistance with large migratio
 == Changelog ==
 = 1.1.0-beta (Aug 20, 2026) =
 - Adds Woocommerce migrator for order, product, customer, coupon, subscriptions, and renewal managements
+- Adds Taxonomy mapping: pick which source taxonomy (categories, tags, brands, custom) migrates into which FluentCart taxonomy, plus a Product Taxonomies migration step that applies the mapping (UI, --taxonomies and --taxonomy_map WP-CLI flags)
 - Fixes blank "JSON.parse: unexpected end of data" failures: migration requests now return a readable error (real PHP exception/fatal message, or the hook where another plugin called exit/die) instead of an empty response
 
 = 1.0.2 (Jun 24, 2026) =

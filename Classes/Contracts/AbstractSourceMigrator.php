@@ -5,6 +5,8 @@ namespace FluentCartMigrator\Classes\Contracts;
 use FluentCartMigrator\Classes\Load\CustomerWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
 use FluentCartMigrator\Classes\Support\MigrationLog;
+use FluentCartMigrator\Classes\Support\TaxonomyApplier;
+use FluentCartMigrator\Classes\Support\TaxonomyMap;
 
 /**
  * Base class for new migration sources (WooCommerce, SureCart, ...).
@@ -159,6 +161,19 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
     public function migrateTaxRates()
     {
         return $this->notImplemented('tax_rates');
+    }
+
+    /**
+     * Source-agnostic: the mapping and the id-mapping postmeta are all the step
+     * needs, so every source that registers itself in TaxonomyMap gets it.
+     */
+    public function migrateTaxonomies($page = null, $perPage = 100, $maxSeconds = 20)
+    {
+        if (!TaxonomyMap::supports($this->key())) {
+            return $this->notImplemented(TaxonomyMap::STEP);
+        }
+
+        return TaxonomyApplier::step($this->key(), $page, $perPage, $maxSeconds);
     }
 
     public function getPaymentResumePage()
@@ -331,6 +346,7 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
             'completed_at' => current_time('mysql'),
             'steps'        => [
                 'products'          => $done('products'),
+                'taxonomies'        => $done('taxonomies'),
                 'tax_rates'         => $done('tax_rates'),
                 'coupons'           => $done('coupons'),
                 'payments'          => [

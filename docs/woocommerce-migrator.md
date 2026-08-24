@@ -55,8 +55,15 @@ subscriptions via the CRUD API (HPOS-safe) and lists gateways + order statuses.
   `StoreSettingsMigrator` (WC store address / country-state / currency /
   currency position / decimal separator → FluentCart `StoreSettings`; only fills
   empty keys).
-- Categories: `CategoryWriter::sync()` maps `product_cat` → FluentCart
-  `product-categories` **parents-first** (`wcTermId → fctTermId`).
+- Taxonomies: `Support\TaxonomyResolver` copies every mapped source taxonomy
+  (`product_cat`, `product_tag`, brand taxonomies, …) into the FluentCart
+  taxonomy the admin paired it with, **parents-first**, and fills
+  `ProductData->taxonomies` (`destinationTaxonomy → fctTermIds`). The pairs live
+  in `__fluent_cart_migrator_taxonomy_map_woocommerce`; see the Taxonomy Mapping
+  section in `CLAUDE.md`. `pa_*` attribute taxonomies are excluded — they
+  migrate as advanced variations instead. Because every product written here
+  gets its terms, a completed products run also marks the separate
+  `taxonomies` step done; editing the mapping re-opens that step.
 - Each product → `Dto\ProductData` (+ `ProductVariationData[]`, each with
   `ProductDownloadData[]`). `ProductWriter` upserts the `fluent-products` CPT post,
   `fct_product_variations` (SKU via `Support\Sku::unique()`), `fct_product_details`,
@@ -142,7 +149,8 @@ rates** rather than writing null. Run tax-rates before payments so orders link.
 - type: `percent`/`percent_product` → `percentage`, `fixed_*` → `fixed`, pure
   free-shipping → `free_shipping`; amount in cents (fixed) or raw percent.
 - `conditions`: usage limits, min/max purchase amount, product & category
-  include/exclude (mapped to migrated FluentCart ids/terms).
+  include/exclude (products via the id-mapping postmeta, categories through the
+  taxonomy mapping — dropped when `product_cat` is not mapped).
 - `individual_use` → `stackable = 'no'`; status `publish` → `active`.
 
 Once coupons exist, the order step back-links `applied_coupons.coupon_id` via
@@ -314,9 +322,10 @@ Classes/
                                          #  ProductVariationData, ProductDownloadData
   Load/
     OrderWriter.php / ProductWriter.php / CustomerWriter.php
-    CategoryWriter.php / CouponWriter.php / AttributeWriter.php
+    TaxonomyWriter.php / CategoryWriter.php / CouponWriter.php / AttributeWriter.php
   Support/
     Money.php / Sku.php / OrderValidator.php / OrderDeleter.php / BatchRuntime.php
+    TaxonomyMap.php / TaxonomyResolver.php / TaxonomyApplier.php / TaxonomyMapCli.php
   WooCommerce/
     WooSourceMigrator.php   # detect/stats/steps, migrateOrdersPage hook, reset, IP mask
     OrderMigrator.php       # WC order  → OrderData

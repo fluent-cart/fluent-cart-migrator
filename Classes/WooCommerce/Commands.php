@@ -3,12 +3,14 @@
 namespace FluentCartMigrator\Classes\WooCommerce;
 
 use FluentCartMigrator\Classes\SourceManager;
+use FluentCartMigrator\Classes\Support\TaxonomyMapCli;
 
 /**
  * WP-CLI for the WooCommerce source.
  *
  *   wp fluent_cart_migrator migrate_from_woo [--all] [--products] [--tax_rates]
- *       [--coupons] [--payments] [--missing-customers] [--recount] [--stats]
+ *       [--taxonomies] [--coupons] [--payments] [--missing-customers]
+ *       [--recount] [--stats] [--taxonomy_map [--set=<src:dest,...>]]
  *       [--log [--verbose] [--export=<file.csv>]] [--reset]
  *
  * Separate from the production EDD command in Classes/Commands.php — registered
@@ -35,6 +37,11 @@ class Commands
 
         if (!empty($assoc_args['stats'])) {
             $this->printStats($src);
+            return;
+        }
+
+        if (!empty($assoc_args['taxonomy_map'])) {
+            TaxonomyMapCli::run('woocommerce', $assoc_args);
             return;
         }
 
@@ -71,6 +78,11 @@ class Commands
                 \WP_CLI::line('  page ' . $page . ': migrated ' . ($result['migrated'] ?? 0) . (!empty($result['skipped']) ? ' [already done]' : ''));
             } while (!empty($result['has_more']));
             \WP_CLI::line('Products migrated: ' . $migrated . ($failed ? ' (' . $failed . ' failed)' : ''));
+        }
+
+        if ($all || !empty($assoc_args['taxonomies'])) {
+            \WP_CLI::line('Applying taxonomy mapping...');
+            TaxonomyMapCli::migrate($src);
         }
 
         if ($all || !empty($assoc_args['tax_rates'])) {

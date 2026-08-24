@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-08-21T10:36:24+00:00\n"
+"POT-Creation-Date: 2026-08-24T06:16:39+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 
@@ -47,57 +47,65 @@ msgid "Migrator"
 msgstr ""
 
 #. translators: 1: PHP error message, 2: file path, 3: line number
-#: Classes/Admin/RestApi.php:148
+#: Classes/Admin/RestApi.php:167
 #, php-format
 msgid "PHP fatal error: %1$s in %2$s on line %3$d"
 msgstr ""
 
-#: Classes/Admin/RestApi.php:154
+#: Classes/Admin/RestApi.php:173
 msgid "The migration request was terminated early by the server or by another plugin (exit/die) before the migrator could respond. Check your PHP error log, try deactivating other plugins on the staging site, or run the migration via WP-CLI."
 msgstr ""
 
 #. translators: %s: list of WordPress hook names
-#: Classes/Admin/RestApi.php:160
+#: Classes/Admin/RestApi.php:179
 #, php-format
 msgid "(terminated while running hook: %s)"
 msgstr ""
 
 #. translators: 1: exception message, 2: file path, 3: line number
-#: Classes/Admin/RestApi.php:184
+#: Classes/Admin/RestApi.php:203
 #, php-format
 msgid "%1$s (in %2$s on line %3$d)"
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Admin/RestApi.php:215
+#: Classes/Admin/RestApi.php:234
+#: Classes/Admin/RestApi.php:300
+#: Classes/Admin/RestApi.php:323
+#: Classes/Support/TaxonomyApplier.php:37
+#: Classes/Support/TaxonomyApplier.php:105
 #, php-format
 msgid "Unsupported migration source: %s"
 msgstr ""
 
+#: Classes/Admin/RestApi.php:328
+msgid "A taxonomy map is required."
+msgstr ""
+
 #. translators: %s: recount substep key
-#: Classes/Admin/RestApi.php:336
+#: Classes/Admin/RestApi.php:429
 #, php-format
 msgid "Invalid substep: %s"
 msgstr ""
 
-#: Classes/Admin/RestApi.php:396
+#: Classes/Admin/RestApi.php:489
 msgid "License verification is not supported for this source."
 msgstr ""
 
-#: Classes/Contracts/AbstractSourceMigrator.php:379
-#: Classes/MigratorService.php:965
-#: Classes/WooCommerce/WooSourceMigrator.php:602
+#: Classes/Contracts/AbstractSourceMigrator.php:395
+#: Classes/MigratorService.php:982
+#: Classes/WooCommerce/WooSourceMigrator.php:608
 msgid "Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:391
+#: Classes/Contracts/AbstractSourceMigrator.php:407
 #, php-format
 msgid "Migration state for %s has been reset."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:401
+#: Classes/Contracts/AbstractSourceMigrator.php:417
 #, php-format
 msgid "This migration step is not implemented yet for %s."
 msgstr ""
@@ -110,7 +118,7 @@ msgstr ""
 msgid "Invalid License Key"
 msgstr ""
 
-#: Classes/EDD3/MigratorCli.php:456
+#: Classes/EDD3/MigratorCli.php:380
 msgid "EDD Taxes are not enabled. Skipping tax rate migration."
 msgstr ""
 
@@ -127,49 +135,49 @@ msgid "No EDD products found. Nothing to migrate."
 msgstr ""
 
 #. translators: %s: EDD version number
-#: Classes/MigratorService.php:49
+#: Classes/MigratorService.php:51
 #: assets/build/migrator-app.js:20
 #, php-format,js-format
 msgid "EDD 3.x detected (v%s)"
 msgstr ""
 
-#: Classes/MigratorService.php:50
+#: Classes/MigratorService.php:52
 #: assets/build/migrator-app.js:20
 msgid "Your Easy Digital Downloads installation is compatible with the migration tool."
 msgstr ""
 
-#: Classes/MigratorService.php:55
+#: Classes/MigratorService.php:57
 #: assets/build/migrator-app.js:20
 msgid "EDD data found"
 msgstr ""
 
-#: Classes/MigratorService.php:56
+#: Classes/MigratorService.php:58
 #: assets/build/migrator-app.js:20
 msgid "EDD is not currently active, but migration data (v3 tables) was detected. You can proceed."
 msgstr ""
 
 #. translators: %s: EDD version number
-#: Classes/MigratorService.php:62
+#: Classes/MigratorService.php:64
 #: assets/build/migrator-app.js:20
 #, php-format,js-format
 msgid "EDD %s detected"
 msgstr ""
 
 #. translators: %s: EDD version number
-#: Classes/MigratorService.php:62
+#: Classes/MigratorService.php:64
 #: assets/build/migrator-app.js:20
 msgid "(unknown version)"
 msgstr ""
 
-#: Classes/MigratorService.php:63
+#: Classes/MigratorService.php:65
 msgid "Migration requires EDD 3.0 or later. Please upgrade EDD first, then return here."
 msgstr ""
 
-#: Classes/MigratorService.php:468
+#: Classes/MigratorService.php:484
 msgid "Unknown substep"
 msgstr ""
 
-#: Classes/MigratorService.php:956
+#: Classes/MigratorService.php:973
 msgid "All migrated data and migration state have been reset."
 msgstr ""
 
@@ -237,7 +245,15 @@ msgstr ""
 msgid "The record could not be migrated. See the details for the exact message."
 msgstr ""
 
-#: Classes/WooCommerce/ProductMigrator.php:352
+#: Classes/Support/TaxonomyApplier.php:53
+msgid "Already applied."
+msgstr ""
+
+#: Classes/Support/TaxonomyApplier.php:119
+msgid "No taxonomies are mapped, so there is nothing to apply."
+msgstr ""
+
+#: Classes/WooCommerce/ProductMigrator.php:351
 msgid "Buy Now"
 msgstr ""
 
@@ -245,67 +261,67 @@ msgstr ""
 msgid "WooCommerce taxes are not enabled. Skipping tax rate migration."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:43
+#: Classes/WooCommerce/WooSourceMigrator.php:44
 msgid "WooCommerce not detected"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:44
+#: Classes/WooCommerce/WooSourceMigrator.php:45
 msgid "WooCommerce is not active. Please install and activate WooCommerce, then return here."
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:50
+#: Classes/WooCommerce/WooSourceMigrator.php:51
 #, php-format
 msgid "WooCommerce %s detected"
 msgstr ""
 
 #. translators: %s: minimum supported WooCommerce version
-#: Classes/WooCommerce/WooSourceMigrator.php:52
+#: Classes/WooCommerce/WooSourceMigrator.php:53
 #, php-format
 msgid "Migration requires WooCommerce %s or later. Please upgrade WooCommerce first, then return here."
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:58
+#: Classes/WooCommerce/WooSourceMigrator.php:59
 #, php-format
 msgid "WooCommerce detected (v%s)"
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:58
+#: Classes/WooCommerce/WooSourceMigrator.php:59
 msgid "WooCommerce detected"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:59
+#: Classes/WooCommerce/WooSourceMigrator.php:60
 msgid "Your WooCommerce installation is compatible with the migration tool."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:75
+#: Classes/WooCommerce/WooSourceMigrator.php:76
 msgid "WooCommerce plugin not found. Please install and activate WooCommerce and try again."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:79
+#: Classes/WooCommerce/WooSourceMigrator.php:80
 msgid "No WooCommerce products found. Nothing to migrate."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:88
-#: Classes/WooCommerce/WooSourceMigrator.php:141
-#: Classes/WooCommerce/WooSourceMigrator.php:232
-#: Classes/WooCommerce/WooSourceMigrator.php:281
-#: Classes/WooCommerce/WooSourceMigrator.php:312
-#: Classes/WooCommerce/WooSourceMigrator.php:539
+#: Classes/WooCommerce/WooSourceMigrator.php:89
+#: Classes/WooCommerce/WooSourceMigrator.php:142
+#: Classes/WooCommerce/WooSourceMigrator.php:238
+#: Classes/WooCommerce/WooSourceMigrator.php:287
+#: Classes/WooCommerce/WooSourceMigrator.php:318
+#: Classes/WooCommerce/WooSourceMigrator.php:545
 msgid "WooCommerce is not active."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:642
+#: Classes/WooCommerce/WooSourceMigrator.php:648
 msgid "All migrated data and WooCommerce migration state have been reset."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:701
+#: Classes/WooCommerce/WooSourceMigrator.php:707
 msgid "Reset dropped the FluentCart tables but failed to recreate them"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:703
+#: Classes/WooCommerce/WooSourceMigrator.php:709
 msgid "Re-activate FluentCart (or run its DB migration) to restore the schema before retrying."
 msgstr ""
 
@@ -512,6 +528,10 @@ msgid "Licenses"
 msgstr ""
 
 #: assets/build/migrator-app.js:20
+msgid "Taxonomies"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
 msgid "Tax Rates"
 msgstr ""
 
@@ -608,6 +628,79 @@ msgid "Continue"
 msgstr ""
 
 #: assets/build/migrator-app.js:20
+msgid "the source store"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Duplicate of an earlier row — ignored."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "Merged with the other rows pointing at %s."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s taxonomy will be migrated."
+msgid_plural "%s taxonomies will be migrated."
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+msgid "No taxonomies will be migrated."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Failed to load taxonomies:"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Taxonomy Mapping"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "Every FluentCart product taxonomy is listed below — pick the %s taxonomy that feeds it. Rows with an empty side are ignored."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "FluentCart"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "— Not migrated —"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "— Ignore —"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s term"
+msgid_plural "%s terms"
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:20
+msgid "Remove row"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Add mapping"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Saved changes are applied by the “Product Taxonomies” step below — editing the mapping re-opens that step even if it already ran."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "No product taxonomies were found in your %s data, so there is nothing to map."
+msgstr ""
+
+#: assets/build/migrator-app.js:20
 msgid "your store"
 msgstr ""
 
@@ -663,6 +756,10 @@ msgstr ""
 
 #: assets/build/migrator-app.js:20
 msgid "Completed"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Product Taxonomies"
 msgstr ""
 
 #: assets/build/migrator-app.js:20
@@ -741,6 +838,13 @@ msgstr ""
 #, js-format
 msgid "%s migrated"
 msgstr ""
+
+#: assets/build/migrator-app.js:20
+#, js-format
+msgid "%s product updated"
+msgid_plural "%s products updated"
+msgstr[0] ""
+msgstr[1] ""
 
 #: assets/build/migrator-app.js:20
 msgid "Done"
@@ -825,6 +929,10 @@ msgstr ""
 
 #: assets/build/migrator-app.js:20
 msgid "Failed to load stats:"
+msgstr ""
+
+#: assets/build/migrator-app.js:20
+msgid "Failed to save the taxonomy mapping:"
 msgstr ""
 
 #: assets/build/migrator-app.js:20
