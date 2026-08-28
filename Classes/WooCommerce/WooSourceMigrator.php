@@ -768,6 +768,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
 
             case 'subscriptions':
                 $result = $recounter->recountSubscriptions();
+                $result['offsets_seeded'] = $this->seedBillCountOffsets();
                 // Final substep — mark the step done and refresh the summary.
                 $this->markStep('recount');
                 $this->buildAndSaveSummary();
@@ -776,6 +777,87 @@ class WooSourceMigrator extends AbstractSourceMigrator
             default:
                 return $this->notImplemented('recount:' . $substep);
         }
+    }
+
+    /**
+     * FluentCart recomputes bill_count on every renewal by counting succeeded
+     * charge transactions (Subscription::calculateBillCount), so any WooCommerce
+     * payment whose order didn't migrate (unregistered status, failed order)
+     * would silently vanish from the count on the first renewal. Seed
+     * billed_cycles_offset — a meta that formula already adds — with the gap
+     * between WooCommerce's own completed-payment tally (stamped on the
+     * subscription as wc_completed_payment_count during the orders step) and
+     * the migrated succeeded charge transactions, then align bill_count.
+     *
+     * Idempotent: the offset is recomputed from the same two numbers each run.
+     *
+     * @return int subscriptions that received a non-zero offset
+     */
+    private function seedBillCountOffsets()
+    {
+        $db      = fluentCart('db');
+        $page    = 1;
+        $perPage = 100;
+        $seeded  = 0;
+
+        do {
+            $rows = $db->table('fct_subscription_meta')
+                ->where('meta_key', 'wc_completed_payment_count')
+                ->orderBy('subscription_id', 'ASC')
+                ->limit($perPage)
+                ->offset(($page - 1) * $perPage)
+                ->get();
+
+            foreach ($rows as $row) {
+                $subscription = \FluentCart\App\Models\Subscription::find($row->subscription_id);
+                if (!$subscription) {
+                    continue;
+                }
+
+                $wcCount = (int) $row->meta_value;
+                $txCount = (int) $db->table('fct_order_transactions')
+                    ->where('subscription_id', $subscription->id)
+                    ->where('transaction_type', 'charge')
+                    ->where('status', 'succeeded')
+                    ->where('total', '>', 0)
+                    ->count();
+
+                $offset = max(0, $wcCount - $txCount);
+                if ($offset > 0) {
+                    $subscription->updateMeta('billed_cycles_offset', $offset);
+                    $seeded++;
+                } elseif ($subscription->getMeta('billed_cycles_offset')) {
+                    // A previous run seeded an offset the migrated transactions
+                    // now cover — clear it so the count isn't inflated.
+                    $subscription->deleteMeta('billed_cycles_offset');
+                }
+
+                $billCount = $txCount + $offset;
+                $hasChanges = false;
+
+                if ($subscription->bill_count != $billCount) {
+                    $subscription->bill_count = $billCount;
+                    $hasChanges = true;
+                }
+
+                if ($subscription->bill_times > 0
+                    && $subscription->bill_count >= $subscription->bill_times
+                    && $subscription->status !== 'completed'
+                ) {
+                    $subscription->status = 'completed';
+                    $hasChanges = true;
+                }
+
+                if ($hasChanges) {
+                    unset($subscription->preventsLazyLoading);
+                    $subscription->save();
+                }
+            }
+
+            $page++;
+        } while (count($rows) === $perPage);
+
+        return $seeded;
     }
 
     /* -----------------------------------------------------------------

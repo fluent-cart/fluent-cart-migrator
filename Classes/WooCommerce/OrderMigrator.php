@@ -670,92 +670,164 @@ class OrderMigrator
         }
 
         $subscriptions = wcs_get_subscriptions_for_order($orderId, ['order_type' => ['parent']]);
-        $out           = [];
+        if (!$subscriptions) {
+            return [];
+        }
 
-        foreach ($subscriptions as $wcSub) {
-            /** @var \WC_Subscription $wcSub */
-            $productId = 0;
-            $variation = 0;
-            $itemName  = '';
-            foreach ($wcSub->get_items() as $subItem) {
-                $productId = (int) $subItem->get_product_id();
-                $variation = (int) $subItem->get_variation_id();
-                $itemName  = $subItem->get_name();
-                break;
-            }
+        // FluentCart supports a single subscription per order (checkout enforces
+        // it), so migrate the first (oldest) WC subscription and report the rest
+        // in the migration log instead of writing orphan rows no transaction
+        // would ever attach to.
+        ksort($subscriptions);
+        $extras = array_slice($subscriptions, 1, null, true);
 
-            $map       = $this->mapProduct($productId, $variation);
-            $signupFee = method_exists($wcSub, 'get_sign_up_fee')
-                ? MigratorHelper::toCents($wcSub->get_sign_up_fee(), $currency)
-                : 0;
+        /** @var \WC_Subscription $wcSub */
+        $wcSub = reset($subscriptions);
 
-            // WC get_total() is tax-inclusive; split it so recurring_amount is
-            // ex-tax, recurring_tax_total is the tax, recurring_total the gross
-            // (recurring_amount + recurring_tax_total) — matches EDD semantics.
-            $recurringTotal = MigratorHelper::toCents($wcSub->get_total(), $currency);
-            $recurringTax   = method_exists($wcSub, 'get_total_tax')
-                ? MigratorHelper::toCents($wcSub->get_total_tax(), $currency)
-                : 0;
-            $recurringAmount = max(0, $recurringTotal - $recurringTax);
+        $migrationNotes = [];
+        foreach ($extras as $extraSub) {
+            $this->logSkippedSubscription($extraSub, $order, 'woo_extra_subscription', sprintf(
+                'WooCommerce subscription #%d on order #%d was not migrated — FluentCart supports one subscription per order. Subscription #%d was migrated instead.',
+                $extraSub->get_id(),
+                $orderId,
+                $wcSub->get_id()
+            ));
 
-            // bill_times / trial_days live on the (variation) product; without
-            // bill_times the recount can never auto-complete a fixed-term sub.
-            $subProduct = wc_get_product($variation ?: $productId);
-            $billTimes  = ($subProduct && class_exists('WC_Subscriptions_Product'))
-                ? (int) \WC_Subscriptions_Product::get_length($subProduct)
-                : 0;
-            $trialDays  = ($subProduct && class_exists('WC_Subscriptions_Product'))
-                ? (int) \WC_Subscriptions_Product::get_trial_length($subProduct)
-                : 0;
-
-            // Renewals are handled by FluentCart's store-managed invoice engine
-            // (WooCommerce Subscriptions has no gateway subscription object to
-            // hand off). The collection method decides how each renewal is paid:
-            //   - system : a reusable gateway token is on file and FluentCart's
-            //              gateway can auto-charge it (Stripe pm_ + customer).
-            //   - manual : no auto-chargeable token — FluentCart issues the
-            //              renewal invoice and the customer pays it.
-            $collection = $this->resolveSubscriptionCollection($wcSub);
-
-            $out[] = SubscriptionData::make([
-                'productId'            => $map['post_id'],
-                'itemName'             => $itemName,
-                'variationId'          => $map['variation_id'] ?: 0,
-                'billingInterval'      => MigratorHelper::repeatInterval($wcSub->get_billing_period(), $wcSub->get_billing_interval()),
-                'signupFee'            => max(0, $signupFee),
-                'initialTaxTotal'      => MigratorHelper::toCents($order->get_total_tax(), $currency),
-                'recurringAmount'      => $recurringAmount,
-                'recurringTaxTotal'    => $recurringTax,
-                'recurringTotal'       => $recurringTotal,
-                'billTimes'            => $billTimes,
-                'trialDays'            => $trialDays,
-                'collectionMethod'     => $collection['method'],
-                'expireAt'             => $this->nullableDate($wcSub->get_date('end')),
-                'trialEndsAt'          => $this->nullableDate($wcSub->get_date('trial_end')),
-                'canceledAt'           => in_array($wcSub->get_status(), ['cancelled', 'pending-cancel'], true)
-                    ? ($this->nullableDate($wcSub->get_date('cancelled')) ?: gmdate('Y-m-d H:i:s'))
-                    : null,
-                'nextBillingDate'      => $this->nullableDate($wcSub->get_date('next_payment')),
-                'vendorSubscriptionId' => (string) $wcSub->get_id(),
-                'vendorCustomerId'     => $collection['customerId'] ?: null,
-                'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status(), $wcSub->get_date('end'), $wcSub->get_date('trial_end')),
-                'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
-                'createdAt'            => $createdAt,
-                'updatedAt'            => current_time('mysql'),
-                'activities'           => $this->buildSubscriptionNotes($wcSub->get_id(), $createdAt),
-                'meta'                 => $collection['meta'],
-                'config'               => [
-                    'wc_subscription_id' => $wcSub->get_id(),
-                    'billing_interval'   => (int) $wcSub->get_billing_interval(),
-                    'billing_schedule'   => $this->subscriptionSchedule($wcSub, $subProduct),
-                    'currency'           => $currency,
-                    'switched'           => (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) ? 'yes' : 'no',
-                    'migration_source'   => 'woocommerce',
-                ],
+            $migrationNotes[] = ActivityData::make([
+                'status'    => 'warning',
+                'title'     => 'Subscription not migrated',
+                'content'   => sprintf(
+                    'WooCommerce subscription #%d from the same order was not migrated — FluentCart supports one subscription per order. See the migration report.',
+                    $extraSub->get_id()
+                ),
+                'createdAt' => current_time('mysql'),
+                'updatedAt' => current_time('mysql'),
             ]);
         }
 
-        return $out;
+        $subItems  = array_values($wcSub->get_items());
+        $firstItem = $subItems ? $subItems[0] : null;
+        $productId = $firstItem ? (int) $firstItem->get_product_id() : 0;
+        $variation = $firstItem ? (int) $firstItem->get_variation_id() : 0;
+        $itemName  = $firstItem ? $firstItem->get_name() : '';
+
+        // Extra recurring products beyond the first are kept as subscription
+        // meta — recurring_total still covers them, but the subscription row
+        // (and renewal invoices core generates from it) can only carry one
+        // product line, so preserve the breakdown for support/future use.
+        $extraRecurringItems = [];
+        if (count($subItems) > 1) {
+            foreach (array_slice($subItems, 1) as $subItem) {
+                $extraRecurringItems[] = [
+                    'name'         => $subItem->get_name(),
+                    'product_id'   => (int) $subItem->get_product_id(),
+                    'variation_id' => (int) $subItem->get_variation_id(),
+                    'quantity'     => (int) $subItem->get_quantity(),
+                    'line_total'   => MigratorHelper::toCents(
+                        (float) $subItem->get_total() + (float) $subItem->get_total_tax(),
+                        $currency
+                    ),
+                ];
+            }
+
+            $this->logSkippedSubscription($wcSub, $order, 'woo_subscription_extra_items', sprintf(
+                'WooCommerce subscription #%d has %d products; migrated with "%s" and the full recurring total. Not carried over: %s.',
+                $wcSub->get_id(),
+                count($subItems),
+                $itemName,
+                implode(', ', array_column($extraRecurringItems, 'name'))
+            ));
+        }
+
+        $map       = $this->mapProduct($productId, $variation);
+        $signupFee = method_exists($wcSub, 'get_sign_up_fee')
+            ? MigratorHelper::toCents($wcSub->get_sign_up_fee(), $currency)
+            : 0;
+
+        // WC get_total() is tax-inclusive; split it so recurring_amount is
+        // ex-tax, recurring_tax_total is the tax, recurring_total the gross
+        // (recurring_amount + recurring_tax_total) — matches EDD semantics.
+        $recurringTotal = MigratorHelper::toCents($wcSub->get_total(), $currency);
+        $recurringTax   = method_exists($wcSub, 'get_total_tax')
+            ? MigratorHelper::toCents($wcSub->get_total_tax(), $currency)
+            : 0;
+        $recurringAmount = max(0, $recurringTotal - $recurringTax);
+
+        // bill_times / trial_days live on the (variation) product; without
+        // bill_times the recount can never auto-complete a fixed-term sub.
+        $subProduct = wc_get_product($variation ?: $productId);
+        $billTimes  = ($subProduct && class_exists('WC_Subscriptions_Product'))
+            ? (int) \WC_Subscriptions_Product::get_length($subProduct)
+            : 0;
+        $trialDays  = ($subProduct && class_exists('WC_Subscriptions_Product'))
+            ? (int) \WC_Subscriptions_Product::get_trial_length($subProduct)
+            : 0;
+
+        // Renewals are handled by FluentCart's store-managed invoice engine
+        // (WooCommerce Subscriptions has no gateway subscription object to
+        // hand off). The collection method decides how each renewal is paid:
+        //   - system : a reusable gateway token is on file and FluentCart's
+        //              gateway can auto-charge it (Stripe pm_ + customer).
+        //   - manual : no auto-chargeable token — FluentCart issues the
+        //              renewal invoice and the customer pays it.
+        $collection = $this->resolveSubscriptionCollection($wcSub);
+
+        // WooCommerce's own completed-payment tally (parent + renewals).
+        // The recount pass compares it against the migrated succeeded charge
+        // transactions and seeds billed_cycles_offset with the gap, so
+        // FluentCart's bill_count recompute (calculateBillCount) can never
+        // reset history that predates the migration.
+        $paymentCount = 0;
+        if (method_exists($wcSub, 'get_payment_count')) {
+            $paymentCount = (int) $wcSub->get_payment_count();
+        } elseif (method_exists($wcSub, 'get_completed_payment_count')) {
+            $paymentCount = (int) $wcSub->get_completed_payment_count();
+        }
+
+        $meta = $collection['meta'];
+        if ($paymentCount > 0) {
+            $meta['wc_completed_payment_count'] = $paymentCount;
+        }
+        if ($extraRecurringItems) {
+            $meta['wc_extra_recurring_items'] = $extraRecurringItems;
+        }
+
+        return [SubscriptionData::make([
+            'productId'            => $map['post_id'],
+            'itemName'             => $itemName,
+            'variationId'          => $map['variation_id'] ?: 0,
+            'billingInterval'      => MigratorHelper::repeatInterval($wcSub->get_billing_period(), $wcSub->get_billing_interval()),
+            'signupFee'            => max(0, $signupFee),
+            'initialTaxTotal'      => MigratorHelper::toCents($order->get_total_tax(), $currency),
+            'recurringAmount'      => $recurringAmount,
+            'recurringTaxTotal'    => $recurringTax,
+            'recurringTotal'       => $recurringTotal,
+            'billTimes'            => $billTimes,
+            'trialDays'            => $trialDays,
+            'collectionMethod'     => $collection['method'],
+            'expireAt'             => $this->nullableDate($wcSub->get_date('end')),
+            'trialEndsAt'          => $this->nullableDate($wcSub->get_date('trial_end')),
+            'canceledAt'           => in_array($wcSub->get_status(), ['cancelled', 'pending-cancel'], true)
+                ? ($this->nullableDate($wcSub->get_date('cancelled')) ?: gmdate('Y-m-d H:i:s'))
+                : null,
+            'nextBillingDate'      => $this->nullableDate($wcSub->get_date('next_payment')),
+            'vendorSubscriptionId' => (string) $wcSub->get_id(),
+            'vendorCustomerId'     => $collection['customerId'] ?: null,
+            'status'               => MigratorHelper::subscriptionStatus($wcSub->get_status(), $wcSub->get_date('end'), $wcSub->get_date('trial_end')),
+            'currentPaymentMethod' => MigratorHelper::gatewaySlug($order->get_payment_method()),
+            'createdAt'            => $createdAt,
+            'updatedAt'            => current_time('mysql'),
+            'activities'           => array_merge($this->buildSubscriptionNotes($wcSub->get_id(), $createdAt), $migrationNotes),
+            'meta'                 => $meta,
+            'config'               => [
+                'wc_subscription_id' => $wcSub->get_id(),
+                'billing_interval'   => (int) $wcSub->get_billing_interval(),
+                'billing_schedule'   => $this->subscriptionSchedule($wcSub, $subProduct),
+                'currency'           => $currency,
+                'switched'           => (function_exists('wcs_order_contains_switch') && wcs_order_contains_switch($order)) ? 'yes' : 'no',
+                'migration_source'   => 'woocommerce',
+            ],
+        ])];
     }
 
     /**
@@ -1074,7 +1146,10 @@ class OrderMigrator
                     continue;
                 }
                 $fctSub = $db->table('fct_subscriptions')->where('parent_order_id', $parentId)->first();
-                if ($fctSub) {
+                // The vendor id must match: a multi-subscription parent order
+                // migrates only its first WC subscription, and a renewal of one
+                // of the skipped ones must not attach to (and inflate) it.
+                if ($fctSub && (string) $fctSub->vendor_subscription_id === (string) $wcSub->get_id()) {
                     return ['id' => (int) $fctSub->id, 'parent_order_id' => $parentId];
                 }
             }
@@ -1280,6 +1355,32 @@ class OrderMigrator
                 'woo_unsupported_status',
                 sprintf('Order #%d has status "%s", which is not registered in WooCommerce.', (int) $row->id, $status)
             ));
+        }
+    }
+
+    /**
+     * Report a WC subscription (or part of one) the migration had to drop.
+     * Keyed by the source subscription id so re-running the orders step
+     * replaces rather than duplicates the entry.
+     */
+    private function logSkippedSubscription($wcSub, $order, $code, $message)
+    {
+        $context = $this->orderContext($order);
+        $context['number'] = (string) $wcSub->get_id();
+        $context['status'] = (string) $wcSub->get_status();
+        $context['total']  = (string) $wcSub->get_total();
+
+        MigrationLog::record('_fluent_cart_woocommerce_failed_logs', MigrationLog::key('subscription', $wcSub->get_id()), [
+            'type'    => 'subscription',
+            'id'      => (int) $wcSub->get_id(),
+            'code'    => $code,
+            'message' => $message,
+            'stage'   => 'order_migration',
+            'context' => $context,
+        ]);
+
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::warning('Subscription #' . $wcSub->get_id() . ' skipped: ' . $message);
         }
     }
 
