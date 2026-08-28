@@ -45,6 +45,16 @@ class MigrationLog
                 __('Unregistered order status', 'fluent-cart-migrator'),
                 __('The order uses a status that is not currently registered in WooCommerce (usually added by a plugin that is no longer active). Re-activate that plugin and run the orders step again to migrate these orders.', 'fluent-cart-migrator'),
             ],
+            'woo_extra_subscription' => [
+                self::SKIPPED,
+                __('Additional subscription not migrated', 'fluent-cart-migrator'),
+                __('The order created more than one WooCommerce subscription, but FluentCart supports a single subscription per order. The first subscription was migrated; recreate this one manually in FluentCart and cancel it in WooCommerce.', 'fluent-cart-migrator'),
+            ],
+            'woo_subscription_extra_items' => [
+                self::SKIPPED,
+                __('Subscription products dropped', 'fluent-cart-migrator'),
+                __('The WooCommerce subscription contains more than one product, but a FluentCart subscription bills a single product. It was migrated with its first product and the full recurring total; the extra product lines were not carried over.', 'fluent-cart-migrator'),
+            ],
             'customer_user_no_email' => [
                 self::SKIPPED,
                 __('User has no email address', 'fluent-cart-migrator'),
