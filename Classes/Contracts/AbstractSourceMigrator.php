@@ -366,6 +366,15 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
 
         try {
             $stats = $this->getStats();
+
+            // Sources return a WP_Error when their plugin is deactivated —
+            // array-accessing that raises an Error, which the \Exception catch
+            // below never saw, so the whole summary write died instead of
+            // leaving stats empty as intended.
+            if (is_wp_error($stats) || !is_array($stats)) {
+                $stats = [];
+            }
+
             $summary['stats'] = [
                 'products'      => $stats['products_count'] ?? 0,
                 'orders'        => $stats['orders_count'] ?? 0,
@@ -373,7 +382,7 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
                 'subscriptions' => $stats['subscriptions_count'] ?? 0,
                 'coupons'       => $stats['coupons_count'] ?? 0,
             ];
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Source tables may be gone; leave stats empty.
         }
 
