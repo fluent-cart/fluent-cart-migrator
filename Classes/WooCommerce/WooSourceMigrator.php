@@ -7,6 +7,7 @@ use FluentCart\Database\DBMigrator;
 use FluentCartMigrator\Classes\Contracts\AbstractSourceMigrator;
 use FluentCartMigrator\Classes\Dto\CustomerData;
 use FluentCartMigrator\Classes\Load\CustomerWriter;
+use FluentCartMigrator\Classes\Load\ReviewWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
 use FluentCartMigrator\Classes\Support\MigrationLog;
 use FluentCartMigrator\Classes\Support\TaxonomyMap;
@@ -103,6 +104,8 @@ class WooSourceMigrator extends AbstractSourceMigrator
         $hasSubscriptions   = function_exists('wcs_get_subscriptions') || class_exists('WC_Subscriptions');
         $subscriptionsCount = $hasSubscriptions ? $this->countOrders('shop_subscription', 'any') : 0;
 
+        $reviewAvailability = $this->getReviewAvailability();
+
         $statuses = array_map(function ($status) {
             return str_replace('wc-', '', $status);
         }, $allOrderStatuses);
@@ -124,6 +127,21 @@ class WooSourceMigrator extends AbstractSourceMigrator
             'types'               => ['shop_order'],
             'has_subscriptions'   => $hasSubscriptions,
             'has_licenses'        => false,
+
+            // Reviews. `reviews_available` drives the blocked state on the
+            // step; `multiple_replies_allowed` drives the dropped-replies
+            // notice, which is only meaningful when there are replies to drop.
+            'reviews_count'            => ReviewMigrator::countReviews(),
+            'reviews_replies_count'    => ReviewMigrator::countReplies(),
+            'multiple_replies_allowed' => ReviewMigrator::multipleRepliesAllowed(),
+            // Separates "needs Pro" from "has Pro, threading switched off" —
+            // the two need different advice in the dropped-replies notice.
+            'pro_active'               => defined('FLUENTCART_PRO_PLUGIN_VERSION'),
+            'reviews_available'        => $reviewAvailability['available'],
+            'reviews_unavailable'      => [
+                'reason'  => $reviewAvailability['reason'],
+                'message' => $reviewAvailability['message'],
+            ],
         ];
     }
 
@@ -593,6 +611,201 @@ class WooSourceMigrator extends AbstractSourceMigrator
     public function migrateOrdersPage($page, $perPage)
     {
         return (new OrderMigrator())->migratePage($page, $perPage);
+    }
+
+    /**
+     * Migrate WooCommerce product reviews, in two resumable phases.
+     *
+     * Phase `import` walks wp_comments by a monotonic comment_ID cursor; phase
+     * `aggregate` then rebuilds the cached rating summary for every product
+     * that gained reviews. The aggregate phase is part of this step rather than
+     * left to `recount`, because a run interrupted between the two would leave
+     * every product card showing zero stars while the rows already exist.
+     *
+     * Both phases share the step's time-box and memory-box, so the caller just
+     * re-posts while has_more is true.
+     */
+    public function migrateReviews($perPage = 200, $maxSeconds = 25)
+    {
+        if (!class_exists('WooCommerce')) {
+            return new \WP_Error('woocommerce_not_found', __('WooCommerce is not active.', 'fluent-cart-migrator'));
+        }
+
+        // Blocks this step only. Deliberately not part of canMigrate(): a
+        // FluentCart too old for reviews must not stop products, orders and
+        // coupons from migrating.
+        $unavailable = ReviewWriter::unavailableError();
+        if ($unavailable) {
+            return $unavailable;
+        }
+
+        if ($this->isStepDone('reviews')) {
+            return [
+                'success'         => true,
+                'step'            => 'reviews',
+                'phase'           => 'done',
+                'processed'       => 0,
+                'has_more'        => false,
+                'errors_in_batch' => count($this->getFailedLogs()),
+                'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+                'skipped'         => true,
+                'migration_state' => $this->getState(),
+            ];
+        }
+
+        $state = $this->getState();
+        $phase = ($state['review_phase'] ?? 'import') === 'aggregate' ? 'aggregate' : 'import';
+
+        if ($phase === 'import') {
+            return $this->importReviews($perPage, $maxSeconds);
+        }
+
+        return $this->aggregateReviewRatings($maxSeconds);
+    }
+
+    /**
+     * Phase 1 — read wp_comments forward from the saved cursor.
+     */
+    private function importReviews($perPage, $maxSeconds)
+    {
+        $migrator  = new ReviewMigrator();
+        $startedAt = time();
+        $processed = 0;
+        $skipped   = 0;
+        $hasMore   = true;
+        // The migrator's skipped-reply counter accumulates across the pages of
+        // this request, so the latest batch value is the running total — adding
+        // the batches together would count the earlier pages twice.
+
+        $state  = $this->getState();
+        $lastId = (int) ($state['last_review_id'] ?? 0);
+
+        while ($hasMore) {
+            $batch = $migrator->migratePage($lastId, $perPage);
+
+            $processed += (int) $batch['processed'];
+            $lastId     = (int) $batch['last_id'];
+            $hasMore    = !empty($batch['has_more']);
+            $skipped    = (int) $batch['skipped_replies'];
+
+            foreach ($batch['errors'] as $error) {
+                $this->logFailed(
+                    MigrationLog::key('review', $error['id']),
+                    $error['message'],
+                    [
+                        'type'    => 'review',
+                        'id'      => $error['id'],
+                        'code'    => $error['code'],
+                        'stage'   => 'reviews',
+                        'context' => $error['context'],
+                    ]
+                );
+            }
+
+            $state                    = $this->getState();
+            $state['last_review_id']  = $lastId;
+            $this->saveState($state);
+
+            BatchRuntime::freeMemory();
+
+            if (!$hasMore) {
+                break;
+            }
+
+            if ($maxSeconds > 0 && (time() - $startedAt) >= $maxSeconds) {
+                break;
+            }
+
+            if (BatchRuntime::memoryNearLimit()) {
+                break;
+            }
+        }
+
+        // Import finished — hand over to the aggregate phase rather than
+        // marking the whole step done.
+        if (!$hasMore) {
+            $state                            = $this->getState();
+            $state['review_phase']            = 'aggregate';
+            $state['last_aggregate_post_id']  = 0;
+            $state['skipped_replies']         = (int) ($state['skipped_replies'] ?? 0) + $skipped;
+            $this->saveState($state);
+            $hasMore = true;
+        }
+
+        return [
+            'success'         => true,
+            'step'            => 'reviews',
+            'phase'           => 'import',
+            'processed'       => $processed,
+            'skipped_replies' => (int) (($this->getState()['skipped_replies'] ?? 0)),
+            'has_more'        => $hasMore,
+            'errors_in_batch' => count($this->getFailedLogs()),
+            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+            'migration_state' => $this->getState(),
+        ];
+    }
+
+    /**
+     * Phase 2 — rebuild the cached rating summary per product.
+     *
+     * Chunked because recalculateProductRatings() runs grouped queries plus one
+     * write per product: calling it per imported row would recalculate a
+     * 400-review product 400 times. Idempotent — the aggregate is a pure
+     * function of the rows, so a replayed chunk changes nothing.
+     */
+    private function aggregateReviewRatings($maxSeconds)
+    {
+        $startedAt = time();
+        $processed = 0;
+        $hasMore   = true;
+
+        $state  = $this->getState();
+        $lastId = (int) ($state['last_aggregate_post_id'] ?? 0);
+
+        while ($hasMore) {
+            $productIds = ReviewWriter::productIdsAfter($lastId, 200);
+
+            if (!$productIds) {
+                $hasMore = false;
+                break;
+            }
+
+            \FluentCart\Api\Resource\ProductReviewResource::recalculateProductRatings($productIds);
+
+            $processed += count($productIds);
+            $lastId     = (int) end($productIds);
+
+            $state                           = $this->getState();
+            $state['last_aggregate_post_id'] = $lastId;
+            $this->saveState($state);
+
+            BatchRuntime::freeMemory();
+
+            if ($maxSeconds > 0 && (time() - $startedAt) >= $maxSeconds) {
+                break;
+            }
+
+            if (BatchRuntime::memoryNearLimit()) {
+                break;
+            }
+        }
+
+        if (!$hasMore) {
+            $this->markStep('reviews');
+            $this->buildAndSaveSummary();
+        }
+
+        return [
+            'success'         => true,
+            'step'            => 'reviews',
+            'phase'           => 'aggregate',
+            'processed'       => $processed,
+            'skipped_replies' => (int) (($this->getState()['skipped_replies'] ?? 0)),
+            'has_more'        => $hasMore,
+            'errors_in_batch' => count($this->getFailedLogs()),
+            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+            'migration_state' => $this->getState(),
+        ];
     }
 
     /**

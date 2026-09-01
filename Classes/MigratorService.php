@@ -103,6 +103,31 @@ class MigratorService implements SourceMigratorInterface
         return $page;
     }
 
+    /**
+     * EDD has no product reviews, so this source implements the contract
+     * without doing anything. It must still be declared: MigratorService
+     * implements SourceMigratorInterface directly rather than extending
+     * AbstractSourceMigrator, so a method added to the interface is a fatal
+     * here, not an inherited default.
+     */
+    public function migrateReviews($perPage = 200, $maxSeconds = 25)
+    {
+        return [
+            'success' => false,
+            'step'    => 'reviews',
+            'message' => __('Easy Digital Downloads has no product reviews to migrate.', 'fluent-cart-migrator'),
+        ];
+    }
+
+    public function getReviewAvailability()
+    {
+        return [
+            'available' => false,
+            'reason'    => 'source_has_no_reviews',
+            'message'   => __('Easy Digital Downloads has no product reviews to migrate.', 'fluent-cart-migrator'),
+        ];
+    }
+
     public function getRecountSubsteps()
     {
         return ['fix_reactivations', 'fix_subs_uuid', 'coupons', 'customers', 'subscriptions'];

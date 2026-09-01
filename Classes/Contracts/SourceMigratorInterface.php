@@ -66,6 +66,18 @@ interface SourceMigratorInterface
     public function migrateMissingCustomers();
 
     /**
+     * Time-boxed, resumable product-review migration. Like migratePayments(),
+     * the source owns the cursor — callers just re-invoke while has_more.
+     */
+    public function migrateReviews($perPage = 200, $maxSeconds = 25);
+
+    /**
+     * Whether this install can store reviews at all, and why not when it
+     * cannot. Shape: ['available' => bool, 'reason' => string, 'message' => string].
+     */
+    public function getReviewAvailability();
+
+    /**
      * Valid substeps accepted by recountStats() for this source.
      */
     public function getRecountSubsteps();

@@ -136,6 +136,30 @@
                 </div>
             </div>
 
+            <!-- Product Reviews -->
+            <div v-if="stepsToRun.reviews" class="fct-runner-row" :class="statusClass(progress.reviews.status)">
+                <span class="fct-runner-icon">
+                    <svg v-if="progress.reviews.status === 'completed'" width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" fill="#ECFDF5"/><path d="M6 10l3 3 5-5" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span v-else-if="progress.reviews.status === 'running'" class="fct-spinner"></span>
+                    <svg v-else-if="progress.reviews.status === 'error'" width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" fill="#FEF2F2"/><path d="M7 7l6 6m0-6l-6 6" stroke="#DC2626" stroke-width="2" stroke-linecap="round"/></svg>
+                    <span v-else class="fct-runner-pending"></span>
+                </span>
+                <div class="fct-runner-detail">
+                    <strong>{{ __('Product Reviews') }}</strong>
+                    <span v-if="progress.reviews.status === 'completed'" class="fct-runner-meta">
+                        {{ sprintf(__('%s migrated'), progress.reviews.migrated) }}
+                    </span>
+                    <span v-else-if="progress.reviews.status === 'running'" class="fct-runner-meta">
+                        <!-- The step runs in two phases; naming the current one
+                             stops the rebuild reading as a stall. -->
+                        {{ progress.reviews.phase === 'aggregate' ? __('Rebuilding rating summaries...') : sprintf(__('%s migrated'), progress.reviews.migrated) }}
+                    </span>
+                    <span v-else-if="stats && stats.reviews_count" class="fct-runner-meta">
+                        {{ sprintf(__('%s to migrate'), stats.reviews_count) }}
+                    </span>
+                </div>
+            </div>
+
             <!-- Recount -->
             <div v-if="stepsToRun.recount" class="fct-runner-row" :class="statusClass(progress.recount.status)">
                 <span class="fct-runner-icon">
@@ -198,6 +222,7 @@ export default {
             coupons: { status: 'pending', total: 0, migrated: 0 },
             payments: { status: 'pending', processed: 0, hasMore: true, errorsCount: 0, logCounts: null },
             missing_customers: { status: 'pending', migrated: 0, skipped: 0 },
+            reviews: { status: 'pending', migrated: 0, phase: 'import', skippedReplies: 0, errorsCount: 0 },
             recount: {
                 status: 'pending',
                 substeps: {}
@@ -327,7 +352,10 @@ export default {
             });
         },
         runPipeline: async function () {
-            var steps = ['products', 'taxonomies', 'tax_rates', 'coupons', 'payments', 'missing_customers', 'recount'];
+            // Reviews run after missing_customers on purpose: reviews are
+            // matched to customers by email, so the customer table should be
+            // at its fullest before that lookup happens.
+            var steps = ['products', 'taxonomies', 'tax_rates', 'coupons', 'payments', 'missing_customers', 'reviews', 'recount'];
 
             for (var i = 0; i < steps.length; i++) {
                 var step = steps[i];
@@ -350,6 +378,8 @@ export default {
                         await this.runPayments();
                     } else if (step === 'missing_customers') {
                         await this.runMissingCustomers();
+                    } else if (step === 'reviews') {
+                        await this.runReviews();
                     } else if (step === 'recount') {
                         await this.runRecount();
                     }
@@ -450,6 +480,30 @@ export default {
                 this.progress.payments.errorsCount = result.log_counts.total;
             }
             this.refreshLogPanel();
+        },
+        // Two server-side phases (import, then rebuilding the rating
+        // summaries) behind one row: re-post while has_more, exactly like
+        // payments, and let the server own the cursor and the phase.
+        runReviews: async function () {
+            var total = 0;
+            var result;
+
+            do {
+                if (this.paused) break;
+
+                result = await apiRequest('POST', 'migrate/reviews');
+
+                total += result.processed || 0;
+                this.progress.reviews.migrated = total;
+                this.progress.reviews.phase = result.phase || 'import';
+                this.progress.reviews.skippedReplies = result.skipped_replies || 0;
+
+                if (result.log_counts) {
+                    this.progress.reviews.errorsCount = result.log_counts.total;
+                }
+
+                this.refreshLogPanel();
+            } while (result && result.has_more);
         },
         // Keep the open report in sync while batches keep logging.
         refreshLogPanel: function () {

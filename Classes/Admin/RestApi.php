@@ -84,6 +84,12 @@ class RestApi
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
+        register_rest_route($this->namespace, '/migrate/reviews', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'migrateReviews'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
         register_rest_route($this->namespace, '/migrate/missing-customers', [
             'methods'             => 'POST',
             'callback'            => [$this, 'migrateMissingCustomers'],
@@ -401,6 +407,22 @@ class RestApi
         return $this->guarded(function () use ($migrator) {
             $page = $migrator->getPaymentResumePage();
             return $migrator->migratePayments($page, 50, 25);
+        });
+    }
+
+    /**
+     * Reviews step. Like payments, the migrator owns the cursor and the phase,
+     * so the browser just re-posts while has_more is true.
+     */
+    public function migrateReviews(\WP_REST_Request $request)
+    {
+        $migrator = $this->resolveMigrator($request);
+        if (is_wp_error($migrator)) {
+            return $migrator;
+        }
+
+        return $this->guarded(function () use ($migrator) {
+            return $migrator->migrateReviews(200, 25);
         });
     }
 

@@ -120,6 +120,28 @@ class Commands
             \WP_CLI::line('Missing customers migrated: ' . (is_wp_error($r) ? $r->get_error_message() : ($r['migrated'] ?? 0)));
         }
 
+        if ($all || !empty($assoc_args['reviews'])) {
+            \WP_CLI::line('Migrating product reviews...');
+            $total = 0;
+            do {
+                // maxSeconds 0: no HTTP timeout to dodge on the CLI, so run
+                // each phase to completion instead of handing back.
+                $result = $src->migrateReviews(500, 0);
+
+                if (is_wp_error($result)) {
+                    \WP_CLI::warning($result->get_error_message());
+                    break;
+                }
+
+                $total += (int) ($result['processed'] ?? 0);
+                \WP_CLI::line('  ' . ($result['phase'] ?? 'import') . ': processed ' . ($result['processed'] ?? 0) . (!empty($result['skipped']) ? ' [already done]' : ''));
+            } while (!empty($result['has_more']));
+
+            if (!is_wp_error($result)) {
+                \WP_CLI::line('Reviews processed: ' . $total . ' (errors logged: ' . ($result['errors_in_batch'] ?? 0) . ')');
+            }
+        }
+
         if ($all || !empty($assoc_args['recount'])) {
             \WP_CLI::line('Recounting aggregates...');
             foreach ($src->getRecountSubsteps() as $sub) {

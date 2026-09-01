@@ -48,6 +48,13 @@
                         <span v-if="runProgress.payments.errorsCount" class="fct-text-danger">({{ sprintf(_n('%s error', '%s errors', runProgress.payments.errorsCount), runProgress.payments.errorsCount) }})</span>
                     </span>
                 </div>
+                <div v-if="stepsToRun.reviews" class="fct-summary-row">
+                    <span class="fct-summary-row-label">{{ __('Product Reviews') }}</span>
+                    <span class="fct-summary-row-value">
+                        {{ sprintf(__('%s migrated'), runProgress.reviews ? runProgress.reviews.migrated : 0) }}
+                        <span v-if="skippedReplies" class="fct-text-warn">, {{ sprintf(_n('%s reply not imported', '%s replies not imported', skippedReplies), skippedReplies) }}</span>
+                    </span>
+                </div>
                 <div v-if="stepsToRun.recount" class="fct-summary-row">
                     <span class="fct-summary-row-label">{{ __('Recount & Verify') }}</span>
                     <span class="fct-summary-row-value">{{ __('Completed') }}</span>
@@ -172,6 +179,11 @@ export default {
         };
     },
     computed: {
+        // Replies left in WooCommerce because multiple replies per review are
+        // off — reported by the step itself, like every other row's counters.
+        skippedReplies: function () {
+            return (this.runProgress.reviews && this.runProgress.reviews.skippedReplies) || 0;
+        },
         formattedDuration: function () {
             if (!this.startTime || !this.endTime) return '00:00:00';
             var seconds = Math.floor((this.endTime - this.startTime) / 1000);
