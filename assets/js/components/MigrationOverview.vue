@@ -55,6 +55,10 @@
                         <span class="fct-stat-value">{{ stats.transactions_count }}</span>
                         <span class="fct-stat-label">{{ __('Transactions') }}</span>
                     </div>
+                    <div v-if="stats.reviews_count" class="fct-stat-card">
+                        <span class="fct-stat-value">{{ stats.reviews_count }}</span>
+                        <span class="fct-stat-label">{{ __('Reviews') }}</span>
+                    </div>
                 </div>
 
                 <div class="fct-stats-meta">
@@ -124,6 +128,21 @@
                             <span v-if="isStepDone('missing_customers')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
                         </span>
                     </label>
+                    <label v-if="stats.reviews_count > 0" class="fct-check" :class="{ 'fct-check--disabled': !reviewsAvailable }">
+                        <input type="checkbox" v-model="localSteps.reviews" :disabled="!reviewsAvailable">
+                        <span class="fct-check-label">
+                            {{ __('Product Reviews') }} ({{ stats.reviews_count }})
+                            <span v-if="isStepDone('reviews')" class="fct-badge fct-badge--success">{{ __('Completed') }}</span>
+                        </span>
+                    </label>
+                    <div v-if="stats.reviews_count > 0 && !reviewsAvailable" class="fct-compat-box fct-compat-box--blocked">
+                        <strong>{{ __('Product reviews cannot be migrated yet') }}</strong>
+                        <p>{{ reviewsUnavailableMessage }}</p>
+                    </div>
+                    <div v-else-if="droppedRepliesCount > 0" class="fct-compat-box fct-compat-box--info">
+                        <strong>{{ sprintf(__('%s replies will not be imported'), droppedRepliesCount) }}</strong>
+                        <p>{{ droppedRepliesMessage }}</p>
+                    </div>
                     <label class="fct-check">
                         <input type="checkbox" v-model="localSteps.recount">
                         <span class="fct-check-label">
@@ -168,6 +187,10 @@
                 <div class="fct-cli-row">
                     <span class="fct-cli-label"></span>
                     <code class="fct-cli-code">{{ cliCommand }} --payments</code>
+                </div>
+                <div v-if="stats.reviews_count" class="fct-cli-row">
+                    <span class="fct-cli-label"></span>
+                    <code class="fct-cli-code">{{ cliCommand }} --reviews</code>
                 </div>
                 <div class="fct-cli-row">
                     <span class="fct-cli-label"></span>
@@ -216,11 +239,37 @@ export default {
                 coupons: true,
                 payments: true,
                 missing_customers: false,
+                reviews: true,
                 recount: true
             }
         };
     },
     computed: {
+        // The reviews table ships in FluentCart core, but the migrator updates
+        // on its own cycle — so a current migrator can meet an older
+        // FluentCart. The server answers; the UI only reports the answer.
+        reviewsAvailable: function () {
+            return this.stats.reviews_available !== false;
+        },
+        reviewsUnavailableMessage: function () {
+            return (this.stats.reviews_unavailable && this.stats.reviews_unavailable.message) || '';
+        },
+        // Only the replies that will actually be dropped: with multiple
+        // replies enabled nothing is lost, so nothing is announced.
+        droppedRepliesCount: function () {
+            if (this.stats.multiple_replies_allowed) {
+                return 0;
+            }
+            return this.stats.reviews_replies_count || 0;
+        },
+        droppedRepliesMessage: function () {
+            // "Buy Pro" is the wrong instruction for a store that has Pro and
+            // turned threading off, so the two cases are worded differently.
+            if (this.stats.pro_active) {
+                return __('Multiple replies per review are turned off, so only the first reply on each review is imported. The rest stay in WooCommerce.');
+            }
+            return __('Multiple replies per review require FluentCart Pro, so only the first reply on each review is imported. The rest stay in WooCommerce.');
+        },
         sourceName: function () {
             return (this.source && this.source.name) || __('your store');
         },
@@ -249,6 +298,13 @@ export default {
             return m[step] === 'yes';
         },
         onStart: function () {
+            // A disabled checkbox keeps whatever value it had, so an install
+            // that cannot store reviews would still queue the step and take a
+            // server-side error. Settle it here instead.
+            if (!this.reviewsAvailable || !this.stats.reviews_count) {
+                this.localSteps.reviews = false;
+            }
+
             this.$emit('start', {
                 stepsToRun: JSON.parse(JSON.stringify(this.localSteps)),
                 taxonomyMap: JSON.parse(JSON.stringify(this.taxonomyMap)),

@@ -65,6 +65,31 @@ class MigrationLog
                 __('Unexpected error', 'fluent-cart-migrator'),
                 __('An unexpected error happened while migrating this record. Please report the details to support.', 'fluent-cart-migrator'),
             ],
+            'woo_review_product_not_migrated' => [
+                self::SKIPPED,
+                __('Product not migrated', 'fluent-cart-migrator'),
+                __('This review belongs to a WooCommerce product that has not been migrated, so there is nothing to attach it to. Run the products step, then run the reviews step again.', 'fluent-cart-migrator'),
+            ],
+            'woo_review_orphan_parent' => [
+                self::SKIPPED,
+                __('Parent review is missing', 'fluent-cart-migrator'),
+                __('This reply answers a review that no longer exists in WooCommerce, so it has nothing to hang on. Replies without a parent cannot be displayed.', 'fluent-cart-migrator'),
+            ],
+            'woo_review_empty_content' => [
+                self::SKIPPED,
+                __('Empty review', 'fluent-cart-migrator'),
+                __('The review has no text and no star rating, so it would render as a blank card. Nothing was lost — there was nothing to show.', 'fluent-cart-migrator'),
+            ],
+            'woo_review_extra_reply' => [
+                self::SKIPPED,
+                __('Additional reply needs Pro', 'fluent-cart-migrator'),
+                __('FluentCart shows one reply per review unless multiple replies are enabled, so only the first reply was imported. The reply is still in WooCommerce: enable multiple replies (FluentCart Pro), reset the migration, and run the reviews step again to bring them all across.', 'fluent-cart-migrator'),
+            ],
+            'woo_review_write_failed' => [
+                self::FAILED,
+                __('Review could not be saved', 'fluent-cart-migrator'),
+                __('Writing this review to FluentCart failed. Please report the review id and details to support.', 'fluent-cart-migrator'),
+            ],
         ];
     }
 

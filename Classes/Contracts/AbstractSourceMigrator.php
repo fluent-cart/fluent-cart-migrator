@@ -3,6 +3,7 @@
 namespace FluentCartMigrator\Classes\Contracts;
 
 use FluentCartMigrator\Classes\Load\CustomerWriter;
+use FluentCartMigrator\Classes\Load\ReviewWriter;
 use FluentCartMigrator\Classes\Support\BatchRuntime;
 use FluentCartMigrator\Classes\Support\MigrationLog;
 use FluentCartMigrator\Classes\Support\TaxonomyApplier;
@@ -292,6 +293,26 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
         return $this->notImplemented('missing_customers');
     }
 
+    public function migrateReviews($perPage = 200, $maxSeconds = 25)
+    {
+        return $this->notImplemented('reviews');
+    }
+
+    /**
+     * Availability of the FluentCart reviews table. Source-agnostic — the
+     * answer is about the destination, not where the data comes from.
+     */
+    public function getReviewAvailability()
+    {
+        $error = ReviewWriter::unavailableError();
+
+        return [
+            'available' => !$error,
+            'reason'    => ReviewWriter::unavailableReason(),
+            'message'   => $error ? $error->get_error_message() : '',
+        ];
+    }
+
     public function getRecountSubsteps()
     {
         return [];
@@ -356,6 +377,13 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
                     'failed'  => $counts['failed'],
                 ],
                 'missing_customers' => $done('missing_customers'),
+                'reviews'           => [
+                    'done' => ($state['reviews'] ?? '') === 'yes',
+                    // Replies left behind because multiple replies are off.
+                    // Surfaced after the run too, not just in the pre-flight
+                    // notice — otherwise the only record of them is a log row.
+                    'skipped_replies' => (int) ($state['skipped_replies'] ?? 0),
+                ],
                 'recount'           => $done('recount'),
             ],
             'state'        => $state,
@@ -366,6 +394,15 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
 
         try {
             $stats = $this->getStats();
+
+            // Sources return a WP_Error when their plugin is deactivated —
+            // array-accessing that raises an Error, which the \Exception catch
+            // below never saw, so the whole summary write died instead of
+            // leaving stats empty as intended.
+            if (is_wp_error($stats) || !is_array($stats)) {
+                $stats = [];
+            }
+
             $summary['stats'] = [
                 'products'      => $stats['products_count'] ?? 0,
                 'orders'        => $stats['orders_count'] ?? 0,
@@ -373,7 +410,7 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
                 'subscriptions' => $stats['subscriptions_count'] ?? 0,
                 'coupons'       => $stats['coupons_count'] ?? 0,
             ];
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Source tables may be gone; leave stats empty.
         }
 
