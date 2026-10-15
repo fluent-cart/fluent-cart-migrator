@@ -25,9 +25,6 @@ class ReviewWriter
 {
     const TABLE = 'fct_product_reviews';
 
-    const TYPE_REVIEW = 'review';
-    const TYPE_REPLY  = 'reply';
-
     /**
      * The FluentCart release that ships fct_product_reviews.
      *
@@ -163,9 +160,23 @@ class ReviewWriter
 
         $now = gmdate('Y-m-d H:i:s');
 
+        $media = array_values((array) $review->media);
+
+        $existing = self::existingRow($review->sourceId, $metaKey);
+
+        // A re-run keeps the keys FluentCart wrote after the import (approval
+        // and reply notice state), so it never re-sends a notice.
+        $otherInfo = $existing ? self::decodeOtherInfo($existing->other_info) : [];
+        $otherInfo['source'] = $review->source;
+        $otherInfo['source_comment_id'] = (int) $review->sourceId;
+        if ($media) {
+            $otherInfo['media'] = $media;
+        } else {
+            unset($otherInfo['media']);
+        }
+
         $row = [
             'parent_id'      => $parentId,
-            'type'           => $review->isReply() ? self::TYPE_REPLY : self::TYPE_REVIEW,
             'post_id'        => (int) $review->postId,
             'order_id'       => $review->orderId ? (int) $review->orderId : null,
             'customer_id'    => $review->customerId ? (int) $review->customerId : null,
@@ -178,25 +189,21 @@ class ReviewWriter
             // it is counted in review_count but left out of the average.
             'rating'         => $review->isReply() ? null : self::normalizeRating($review->rating),
             'status'         => $review->status,
-            'is_verified'    => $review->isVerified ? 1 : 0,
+            // Only a top-level review carries the verified badge, as in core.
+            'is_verified'    => (!$review->isReply() && $review->isVerified) ? 1 : 0,
             'is_admin_reply' => $review->isAdminReply ? 1 : 0,
-            'media_count'    => 0,
+            'media_count'    => count($media),
             'ip_address'     => $review->ipAddress ? substr((string) $review->ipAddress, 0, 45) : null,
-            'other_info'     => wp_json_encode([
-                'source'            => $review->source,
-                'source_comment_id' => (int) $review->sourceId,
-            ]),
+            'other_info'     => wp_json_encode($otherInfo),
             'created_at'     => $review->createdAt ?: $now,
             'updated_at'     => $now,
         ];
 
         $db = fluentCart('db');
 
-        $existingId = self::existingId($review->sourceId, $metaKey);
-
-        if ($existingId) {
-            $db->table(self::TABLE)->where('id', $existingId)->update($row);
-            $reviewId = $existingId;
+        if ($existing) {
+            $db->table(self::TABLE)->where('id', $existing->id)->update($row);
+            $reviewId = (int) $existing->id;
         } else {
             $reviewId = (int) $db->table(self::TABLE)->insertGetId($row);
         }
@@ -213,31 +220,49 @@ class ReviewWriter
     }
 
     /**
-     * The migrated fct row for a source record, or 0. A mapping pointing at a
-     * row that has since been deleted counts as "not migrated", so the record
-     * is re-inserted rather than silently skipped.
+     * The migrated fct row id for a source record, or 0.
      */
     public static function existingId($sourceId, $metaKey)
     {
+        $row = self::existingRow($sourceId, $metaKey);
+
+        return $row ? (int) $row->id : 0;
+    }
+
+    /**
+     * The migrated fct row for a source record, or null.
+     *
+     * The mapping is trusted only when the row points back at the same source
+     * record. After a reset the table restarts at id 1, so a leftover mapping
+     * can name a row that now holds a different review; updating it would
+     * overwrite that review. Never memoized, so a deleted row is re-inserted.
+     */
+    public static function existingRow($sourceId, $metaKey)
+    {
         if (!$metaKey || !$sourceId) {
-            return 0;
+            return null;
         }
 
         $mapped = (int) get_comment_meta($sourceId, $metaKey, true);
         if (!$mapped) {
-            return 0;
+            return null;
         }
 
-        // Verified on every call, never memoized: a cached id whose row has
-        // since gone makes write() UPDATE nothing and report success, so the
-        // record is silently never inserted. The lookup is a primary-key hit
-        // and WP object-caches the comment meta, so there is little to save —
-        // and a per-source-id cache would grow with the whole import.
-        if (!fluentCart('db')->table(self::TABLE)->where('id', $mapped)->first()) {
-            return 0;
+        $row = fluentCart('db')->table(self::TABLE)
+            ->select(['id', 'parent_id', 'other_info'])
+            ->where('id', $mapped)
+            ->first();
+
+        if (!$row) {
+            return null;
         }
 
-        return $mapped;
+        $info = self::decodeOtherInfo($row->other_info);
+        if ((int) ($info['source_comment_id'] ?? 0) !== (int) $sourceId) {
+            return null;
+        }
+
+        return $row;
     }
 
     /**
@@ -253,21 +278,13 @@ class ReviewWriter
      */
     public static function rootReviewId($parentSourceId, $metaKey)
     {
-        $parentId = self::existingId($parentSourceId, $metaKey);
-        if (!$parentId) {
-            return 0;
-        }
-
-        $parent = fluentCart('db')->table(self::TABLE)->where('id', $parentId)->first();
+        $parent = self::existingRow($parentSourceId, $metaKey);
         if (!$parent) {
             return 0;
         }
 
-        if ($parent->type === self::TYPE_REPLY && $parent->parent_id) {
-            return (int) $parent->parent_id;
-        }
-
-        return $parentId;
+        // parent_id is what tells a reply from a review in core.
+        return $parent->parent_id ? (int) $parent->parent_id : (int) $parent->id;
     }
 
     /**
@@ -281,8 +298,8 @@ class ReviewWriter
         }
 
         return (bool) fluentCart('db')->table(self::TABLE)
+            ->select(['id'])
             ->where('parent_id', $rootReviewId)
-            ->where('type', self::TYPE_REPLY)
             ->first();
     }
 
@@ -311,6 +328,17 @@ class ReviewWriter
         }
 
         return $ids;
+    }
+
+    protected static function decodeOtherInfo($value)
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        $decoded = $value ? json_decode((string) $value, true) : null;
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     protected static function normalizeRating($rating)

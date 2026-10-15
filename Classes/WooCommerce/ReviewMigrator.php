@@ -43,8 +43,18 @@ class ReviewMigrator
     /** @var bool */
     protected $allowMultipleReplies;
 
-    /** @var int replies skipped because multiple replies are not enabled */
+    /** @var int replies skipped on the current page (multiple replies off) */
     protected $skippedReplies = 0;
+
+    /**
+     * Customer Reviews for WooCommerce keeps each locally stored photo as one
+     * comment-meta row holding an attachment id. Its other key,
+     * ivole_review_image, holds remote URLs, which are not media-library files.
+     */
+    const PHOTO_META = 'ivole_review_image2';
+
+    /** Upper bound on photos carried over per review. */
+    const MAX_PHOTOS = 20;
 
     public function __construct()
     {
@@ -130,15 +140,14 @@ class ReviewMigrator
             (int) $perPage
         ));
 
-        // skipped_replies is this migrator's running total, not a per-page
-        // figure, so it must be seeded here as well: the loop that drives
-        // migratePage() reads the LAST batch, and the last batch is the empty
-        // one that ends the walk. Returning 0 there would erase the count.
+        // Per page, so the caller can add each page to the saved total.
+        $this->skippedReplies = 0;
+
         $result = [
             'processed'       => 0,
             'has_more'        => false,
             'last_id'         => (int) $afterId,
-            'skipped_replies' => $this->skippedReplies,
+            'skipped_replies' => 0,
             'errors'          => [],
         ];
 
@@ -146,18 +155,33 @@ class ReviewMigrator
             return $result;
         }
 
-        $meta = $this->loadMeta(wp_list_pluck($comments, 'comment_ID'));
+        $commentIds = wp_list_pluck($comments, 'comment_ID');
+        $meta = $this->loadMeta($commentIds);
 
-        foreach ($comments as $comment) {
-            $result['last_id'] = (int) $comment->comment_ID;
+        // The id-mapping lookups read comment meta per row; one query fills it.
+        update_meta_cache('comment', $commentIds);
 
-            $outcome = $this->migrateComment($comment, $meta);
-            if ($outcome === true) {
-                $result['processed']++;
-            } elseif (is_array($outcome)) {
-                $result['errors'][] = $outcome;
+        // One page commits or rolls back as a whole, mapping meta included,
+        // so a crash mid-page leaves nothing half-written behind the cursor.
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            foreach ($comments as $comment) {
+                $result['last_id'] = (int) $comment->comment_ID;
+
+                $outcome = $this->migrateComment($comment, $meta);
+                if ($outcome === true) {
+                    $result['processed']++;
+                } elseif (is_array($outcome)) {
+                    $result['errors'][] = $outcome;
+                }
             }
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            throw $e;
         }
+
+        $wpdb->query('COMMIT');
 
         $result['has_more']        = count($comments) >= (int) $perPage;
         $result['skipped_replies'] = $this->skippedReplies;
@@ -217,6 +241,7 @@ class ReviewMigrator
             // order, so there is no order to link without inventing one.
             'orderId'        => null,
             'ipAddress'      => (string) $comment->comment_author_IP,
+            'media'          => $isReply ? [] : $this->mediaItems($commentId, $comment, $meta),
             'createdAt'      => $comment->comment_date_gmt,
             'source'         => self::SOURCE,
             'mappingKeys'    => ['source' => self::WC_TO_REVIEW_META],
@@ -307,7 +332,9 @@ class ReviewMigrator
             return $this->staffCache[$userId];
         }
 
-        $isStaff = user_can($userId, 'manage_woocommerce') || user_can($userId, 'edit_posts');
+        // moderate_comments, not edit_posts: Contributors can edit posts but
+        // are not store staff.
+        $isStaff = user_can($userId, 'manage_woocommerce') || user_can($userId, 'moderate_comments');
 
         $this->staffCache[$userId] = $isStaff ? 1 : 0;
 
@@ -315,9 +342,87 @@ class ReviewMigrator
     }
 
     /**
-     * rating + verified for a page of comments, in one query.
+     * Photo items for a review, in Pro's other_info.media shape. Only image
+     * attachments that still exist are kept.
      *
-     * @return array<int,array<string,string>>
+     * @return array
+     */
+    protected function mediaItems($commentId, $comment, array $meta)
+    {
+        $attachmentIds = $meta[$commentId][self::PHOTO_META] ?? [];
+
+        // Lets a site on another review plugin hand over its attachment ids.
+        $attachmentIds = (array) apply_filters('fluent_cart_migrator_woo_review_attachment_ids', $attachmentIds, $comment);
+        $attachmentIds = array_slice(array_values(array_unique(array_filter(array_map('intval', $attachmentIds)))), 0, self::MAX_PHOTOS);
+
+        if (!$attachmentIds) {
+            return [];
+        }
+
+        _prime_post_caches($attachmentIds, false, true);
+
+        $items = [];
+        foreach ($attachmentIds as $attachmentId) {
+            $attachment = get_post($attachmentId);
+            if (!$attachment || $attachment->post_type !== 'attachment' || strpos((string) $attachment->post_mime_type, 'image/') !== 0) {
+                continue;
+            }
+
+            $filePath = get_attached_file($attachmentId);
+
+            $items[] = [
+                'attachment_id' => $attachmentId,
+                'url'           => (string) wp_get_attachment_url($attachmentId),
+                'type'          => 'image',
+                'name'          => sanitize_text_field($filePath ? basename($filePath) : $attachment->post_title),
+                'size'          => ($filePath && file_exists($filePath)) ? (int) filesize($filePath) : 0,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * Turn reviews off on every migrated product whose WooCommerce reviews
+     * are closed. One set-based statement; re-running it changes nothing.
+     *
+     * @return int products updated
+     */
+    public static function syncClosedProductReviews()
+    {
+        global $wpdb;
+
+        $details = $wpdb->prefix . 'fct_product_details';
+
+        // $wpdb, not the query builder: WPFluent turns every double quote in
+        // a query into a backtick, which breaks JSON text. JSON_VALID skips a
+        // malformed row instead of failing the whole statement.
+        $updated = $wpdb->query($wpdb->prepare(
+            "UPDATE {$details} d
+             INNER JOIN {$wpdb->postmeta} pm ON pm.meta_key = %s AND d.post_id = CAST(pm.meta_value AS UNSIGNED)
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             SET d.other_info = JSON_MERGE_PATCH(
+                     IF(d.other_info IS NULL OR d.other_info = '', '{}', d.other_info),
+                     JSON_OBJECT('reviews_enabled', 'no')
+                 ),
+                 d.updated_at = %s
+             WHERE p.post_type = 'product'
+               AND p.comment_status = 'closed'
+               AND (
+                   d.other_info IS NULL OR d.other_info = ''
+                   OR (JSON_VALID(d.other_info) AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(d.other_info, '$.reviews_enabled')), '') <> 'no')
+               )",
+            MigratorHelper::WC_TO_FCT_META,
+            gmdate('Y-m-d H:i:s')
+        ));
+
+        return $updated === false ? 0 : (int) $updated;
+    }
+
+    /**
+     * rating, verified and photo ids for a page of comments, in one query.
+     *
+     * @return array<int,array<string,mixed>>
      */
     protected function loadMeta(array $commentIds)
     {
@@ -333,11 +438,17 @@ class ReviewMigrator
             "SELECT comment_id, meta_key, meta_value
              FROM {$wpdb->commentmeta}
              WHERE comment_id IN ({$ids})
-               AND meta_key IN ('rating', 'verified')"
+               AND meta_key IN ('rating', 'verified', '" . self::PHOTO_META . "')
+             ORDER BY meta_id ASC"
         );
 
         $meta = [];
         foreach ($rows as $row) {
+            // Photos are one row per attachment, so they collect into a list.
+            if ($row->meta_key === self::PHOTO_META) {
+                $meta[(int) $row->comment_id][self::PHOTO_META][] = $row->meta_value;
+                continue;
+            }
             $meta[(int) $row->comment_id][$row->meta_key] = $row->meta_value;
         }
 

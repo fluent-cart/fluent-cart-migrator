@@ -6,8 +6,7 @@ namespace FluentCartMigrator\Classes\Dto;
  * A single normalized review or reply handed to ReviewWriter.
  *
  * FluentCart stores reviews and replies in one table (fct_product_reviews): a
- * review is type = 'review' with parent_id NULL, a reply is type = 'reply'
- * whose parent_id points at the ROOT review. There is no deeper nesting at any
+ * review has parent_id NULL, a reply's parent_id points at the ROOT review. There is no deeper nesting at any
  * tier, so a source with an arbitrarily deep comment tree hands the writer the
  * source id of its immediate parent and the writer flattens it.
  *
@@ -45,6 +44,12 @@ class ReviewData
     public $orderId = null;
 
     public $ipAddress = '';
+
+    /**
+     * Photos, in the shape Pro keeps under other_info.media:
+     * [{attachment_id, url, type, name, size}, ...].
+     */
+    public $media = [];
 
     /** MySQL datetime in GMT. */
     public $createdAt = '';

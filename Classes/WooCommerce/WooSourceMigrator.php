@@ -671,11 +671,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
         $migrator  = new ReviewMigrator();
         $startedAt = time();
         $processed = 0;
-        $skipped   = 0;
         $hasMore   = true;
-        // The migrator's skipped-reply counter accumulates across the pages of
-        // this request, so the latest batch value is the running total — adding
-        // the batches together would count the earlier pages twice.
 
         $state  = $this->getState();
         $lastId = (int) ($state['last_review_id'] ?? 0);
@@ -686,7 +682,6 @@ class WooSourceMigrator extends AbstractSourceMigrator
             $processed += (int) $batch['processed'];
             $lastId     = (int) $batch['last_id'];
             $hasMore    = !empty($batch['has_more']);
-            $skipped    = (int) $batch['skipped_replies'];
 
             foreach ($batch['errors'] as $error) {
                 $this->logFailed(
@@ -702,8 +697,11 @@ class WooSourceMigrator extends AbstractSourceMigrator
                 );
             }
 
+            // Saved with the cursor, page by page: a total kept only until the
+            // import finished would lose every earlier time-boxed request.
             $state                    = $this->getState();
             $state['last_review_id']  = $lastId;
+            $state['skipped_replies'] = (int) ($state['skipped_replies'] ?? 0) + (int) $batch['skipped_replies'];
             $this->saveState($state);
 
             BatchRuntime::freeMemory();
@@ -724,10 +722,11 @@ class WooSourceMigrator extends AbstractSourceMigrator
         // Import finished — hand over to the aggregate phase rather than
         // marking the whole step done.
         if (!$hasMore) {
+            ReviewMigrator::syncClosedProductReviews();
+
             $state                            = $this->getState();
             $state['review_phase']            = 'aggregate';
             $state['last_aggregate_post_id']  = 0;
-            $state['skipped_replies']         = (int) ($state['skipped_replies'] ?? 0) + $skipped;
             $this->saveState($state);
             $hasMore = true;
         }
@@ -855,6 +854,9 @@ class WooSourceMigrator extends AbstractSourceMigrator
         foreach ($postMetas as $metaKey) {
             $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}postmeta WHERE meta_key = %s", $metaKey));
         }
+
+        // The reviews table was just recreated, so these ids now name nothing.
+        $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->commentmeta} WHERE meta_key = %s", ReviewMigrator::WC_TO_REVIEW_META));
 
         return [
             'success' => true,
