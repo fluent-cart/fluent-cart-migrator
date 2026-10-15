@@ -639,7 +639,9 @@ class WooSourceMigrator extends AbstractSourceMigrator
             return $unavailable;
         }
 
-        if ($this->isStepDone('reviews')) {
+        // Reviews keep arriving on a live store after the first run, so a done
+        // step reopens when there are reviews past its cursor.
+        if ($this->isStepDone('reviews') && !$this->reopenReviewsForNewComments()) {
             return [
                 'success'         => true,
                 'step'            => 'reviews',
@@ -661,6 +663,26 @@ class WooSourceMigrator extends AbstractSourceMigrator
         }
 
         return $this->aggregateReviewRatings($maxSeconds);
+    }
+
+    /**
+     * Reopen a finished reviews step when reviews were added after it ran.
+     * The import resumes from the saved cursor, so only the new comments are
+     * read; the aggregate phase then runs again for the ratings.
+     */
+    private function reopenReviewsForNewComments()
+    {
+        $state = $this->getState();
+
+        if (!ReviewMigrator::hasCommentsAfter((int) ($state['last_review_id'] ?? 0))) {
+            return false;
+        }
+
+        unset($state['reviews']);
+        $state['review_phase'] = 'import';
+        $this->saveState($state);
+
+        return true;
     }
 
     /**

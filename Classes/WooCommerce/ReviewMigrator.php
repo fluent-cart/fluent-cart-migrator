@@ -110,6 +110,27 @@ class ReviewMigrator
         return (int) $wpdb->get_var($sql);
     }
 
+    /**
+     * Whether any product review exists past the given comment id.
+     */
+    public static function hasCommentsAfter($afterId)
+    {
+        global $wpdb;
+
+        $types = self::typesInClause();
+
+        return (bool) $wpdb->get_var($wpdb->prepare(
+            "SELECT c.comment_ID
+             FROM {$wpdb->comments} c
+             INNER JOIN {$wpdb->posts} p ON p.ID = c.comment_post_ID
+             WHERE p.post_type = 'product'
+               AND c.comment_type IN ({$types})
+               AND c.comment_ID > %d
+             LIMIT 1",
+            (int) $afterId
+        ));
+    }
+
     /* -----------------------------------------------------------------
      | One page
      * ----------------------------------------------------------------- */
