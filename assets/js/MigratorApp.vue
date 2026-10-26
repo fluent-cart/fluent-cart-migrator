@@ -1,86 +1,103 @@
 <template>
-    <div class="fct-migrator">
-        <!-- Step indicator (hidden on intro) -->
-        <div v-if="currentStep !== 'intro'" class="fct-breadcrumb">
-            <span
-                v-for="(label, index) in visibleSteps"
-                :key="label.key"
-                class="fct-breadcrumb-item"
-                :class="{
-                    'is-active': label.key === currentStep,
-                    'is-done': index < activeStepIndex
-                }"
-            >
-                <span class="fct-breadcrumb-num">{{ index < activeStepIndex ? '\u2713' : index + 1 }}</span>
-                {{ label.text }}
-            </span>
+    <div class="setting-wrap fct-migrator">
+        <!-- Same header as core's settings screens (Settings/Parts/SettingsHeader.vue) -->
+        <div class="fct-setting-header">
+            <div class="fct-setting-header-content">
+                <button type="button" class="fct-setting-menu-toggle" :aria-label="__('Toggle settings navigation')" @click="toggleSettingsMenu">
+                    <DynamicIcon name="Window" />
+                </button>
+                <h3 class="fct-setting-head-title">{{ __('Migrator') }}</h3>
+            </div>
+            <div class="fct-setting-header-action">
+                <el-button size="small" tag="a" href="https://docs.fluentcart.com/guide/migration" target="_blank" rel="noopener noreferrer">
+                    {{ __('Documentation') }}
+                </el-button>
+            </div>
         </div>
 
-        <!-- Error banner -->
-        <div v-if="error" class="fct-alert fct-alert--error">
-            <p>{{ error }}</p>
-            <button @click="error = null" class="fct-alert-dismiss">&times;</button>
+        <div class="setting-wrap-inner">
+            <!-- Step indicator (hidden on intro) -->
+            <!-- Core's onboarding step style (onboarding.scss .fct-steps-wrap) -->
+            <div v-if="currentStep !== 'intro'" class="fct-steps-wrap fct-migrator-steps">
+                <el-steps :active="activeStepIndex + 1" finish-status="success" simple>
+                    <el-step v-for="label in visibleSteps" :key="label.key" :title="label.text" />
+                </el-steps>
+                <span class="fct-migrator-steps-label">
+                    {{ stepLabel }}
+                </span>
+            </div>
+
+            <!-- Error banner -->
+            <div v-if="error" class="fct-alert fct-alert-error fct-migrator-error">
+                <div class="fct-alert-content">{{ error }}</div>
+                <div class="fct-alert-close" role="button" :aria-label="__('Dismiss')" @click="error = null">
+                    <DynamicIcon name="Cross" />
+                </div>
+            </div>
+
+            <!-- Views -->
+            <IntroSection
+                v-if="currentStep === 'intro'"
+                :sources="sources"
+                :migration-summary="migrationSummary"
+                :loading="loading"
+                :admin-url="adminUrl"
+                :plugin-url="pluginUrl"
+                :is-dev-mode="isDevMode"
+                @select-source="onSelectSource"
+                @reset="onResetRequest"
+            />
+
+            <CompatibilityCheck
+                v-if="currentStep === 'compatibility'"
+                :source="selectedSource"
+                @continue="goToStep('overview')"
+                @go-back="goToStep('intro')"
+            />
+
+            <MigrationOverview
+                v-if="currentStep === 'overview'"
+                :source="selectedSource"
+                :stats="stats"
+                :migration-status="migrationStatus"
+                :is-dev-mode="isDevMode"
+                :loading="loading"
+                @start="onStartMigration"
+                @go-back="goToStep('compatibility')"
+                @reset="onResetRequest"
+            />
+
+            <MigrationRunner
+                v-if="currentStep === 'running'"
+                ref="runner"
+                :key="runKey"
+                :steps-to-run="stepsToRun"
+                :stats="stats"
+                :migration-status="migrationStatus"
+                :initial-progress="savedRunProgress"
+                @complete="onMigrationComplete"
+                @error="onMigrationError"
+            />
+
+            <!-- Confirm modal -->
+            <ConfirmModal
+                v-if="confirmModal.show"
+                :title="confirmModal.title"
+                :message="confirmModal.message"
+                :items="confirmModal.items"
+                :confirm-text="confirmModal.confirmText"
+                @confirm="onConfirmAction"
+                @cancel="confirmModal.show = false"
+            />
         </div>
-
-        <!-- Views -->
-        <IntroSection
-            v-if="currentStep === 'intro'"
-            :sources="sources"
-            :migration-summary="migrationSummary"
-            :loading="loading"
-            :admin-url="adminUrl"
-            :plugin-url="pluginUrl"
-            :is-dev-mode="isDevMode"
-            @select-source="onSelectSource"
-            @reset="onResetRequest"
-        />
-
-        <CompatibilityCheck
-            v-if="currentStep === 'compatibility'"
-            :source="selectedSource"
-            @continue="goToStep('overview')"
-            @go-back="goToStep('intro')"
-        />
-
-        <MigrationOverview
-            v-if="currentStep === 'overview'"
-            :source="selectedSource"
-            :stats="stats"
-            :migration-status="migrationStatus"
-            :is-dev-mode="isDevMode"
-            :loading="loading"
-            @start="onStartMigration"
-            @go-back="goToStep('compatibility')"
-            @reset="onResetRequest"
-        />
-
-        <MigrationRunner
-            v-if="currentStep === 'running'"
-            :key="runKey"
-            :steps-to-run="stepsToRun"
-            :stats="stats"
-            :migration-status="migrationStatus"
-            :initial-progress="savedRunProgress"
-            @complete="onMigrationComplete"
-            @error="onMigrationError"
-        />
-
-        <!-- Confirm modal -->
-        <ConfirmModal
-            v-if="confirmModal.show"
-            :title="confirmModal.title"
-            :message="confirmModal.message"
-            :items="confirmModal.items"
-            :confirm-text="confirmModal.confirmText"
-            @confirm="onConfirmAction"
-            @cancel="confirmModal.show = false"
-        />
     </div>
 </template>
 
 <script>
 import { apiRequest, setApiSource } from './api.js';
-import { __ } from './i18n.js';
+import { __, sprintf, i18nMixin } from './i18n.js';
+import { config } from './config.js';
+import { DynamicIcon } from '@fluent-cart/ui';
 import IntroSection from './components/IntroSection.vue';
 import CompatibilityCheck from './components/CompatibilityCheck.vue';
 import MigrationOverview from './components/MigrationOverview.vue';
@@ -90,8 +107,10 @@ import ConfirmModal from './components/ConfirmModal.vue';
 var STORAGE_KEY = 'fctMigratorState';
 
 export default {
+    mixins: [i18nMixin],
     name: 'MigratorApp',
     components: {
+        DynamicIcon: DynamicIcon,
         IntroSection: IntroSection,
         CompatibilityCheck: CompatibilityCheck,
         MigrationOverview: MigrationOverview,
@@ -107,10 +126,11 @@ export default {
             migrationStatus: null,
             error: null,
             loading: false,
-            isDevMode: !!window.fctMigrator.devMode,
-            adminUrl: window.fctMigrator.adminUrl,
-            pluginUrl: window.fctMigrator.pluginUrl || '',
-            migrationSummary: window.fctMigrator.migrationSummary || null,
+            isDevMode: !!config().devMode,
+            adminUrl: config().adminUrl || '',
+            pluginUrl: config().pluginUrl || '',
+            migrationSummary: null,
+            hasMigration: false,
 
             // Migration config
             stepsToRun: {},
@@ -138,6 +158,10 @@ export default {
                 { key: 'running', text: __('Migrating') }
             ];
         },
+        stepLabel: function () {
+            /* translators: 1: current step number, 2: number of steps, 3: step name */
+            return sprintf(__('Step %1$s of %2$s · %3$s'), this.activeStepIndex + 1, this.visibleSteps.length, this.visibleSteps[this.activeStepIndex].text);
+        },
         activeStepIndex: function () {
             for (var i = 0; i < this.visibleSteps.length; i++) {
                 if (this.visibleSteps[i].key === this.currentStep) return i;
@@ -148,7 +172,23 @@ export default {
     mounted: function () {
         this.init();
     },
+    beforeRouteLeave: function (to, from, next) {
+        var runner = this.$refs.runner;
+        if (!runner || !runner.running || runner.paused) {
+            return next();
+        }
+        // Leaving stops the run after the current batch (see MigrationRunner).
+        next(window.confirm(__('A migration is running. Leaving this page pauses it after the current batch. Leave anyway?')));
+    },
     methods: {
+        // Mobile: open core's settings sidebar, like SettingsHeader does.
+        toggleSettingsMenu: function () {
+            var sidebar = document.querySelector('.fct-settings-nav-container');
+            var overlay = document.querySelector('.fct-settings-menu-overlay');
+            if (sidebar) sidebar.classList.toggle('is-nav-open');
+            if (overlay) overlay.classList.toggle('is-overlay-open');
+        },
+
         init: async function () {
             this.loading = true;
             await this.loadSources();
@@ -161,7 +201,7 @@ export default {
                 this.savedRunProgress = saved.runProgress;
                 this.stepsToRun = saved.stepsToRun || {};
                 this.goToStep('running');
-            } else if (this.migrationSummary || (window.fctMigrator.migration && this.sources.length)) {
+            } else if (this.migrationSummary || (this.hasMigration && this.sources.length)) {
                 // Has migration data — stay on intro showing summary
                 this.currentStep = 'intro';
             }
@@ -174,6 +214,8 @@ export default {
             try {
                 var data = await apiRequest('GET', 'sources');
                 this.sources = data.sources;
+                this.migrationSummary = data.latest_summary || null;
+                this.hasMigration = !!data.has_migration;
             } catch (e) {
                 if (retries > 0) {
                     var self = this;

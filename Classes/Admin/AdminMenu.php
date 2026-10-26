@@ -2,150 +2,151 @@
 
 namespace FluentCartMigrator\Classes\Admin;
 
+/**
+ * Puts the migrator screen into FluentCart's admin app as Settings → Migrator
+ * (#/settings/migrator). The bundle is an ES module built against core's
+ * @fluent-cart/* import map, so it renders with core's Vue instead of its own.
+ */
 class AdminMenu
 {
+    // FLUENTCART_MODULE_API the bundle was built against.
+    const MIN_MODULE_API = 1;
+
+    const HANDLE = 'fct-migrator-app';
+
+    // The pre-module standalone page; kept only to redirect old bookmarks.
+    const LEGACY_SLUG = 'fluent-cart-migrator';
+
     public function register()
     {
-        add_action('fluent_cart/admin_submenu_added', [$this, 'addMigratorSubmenu']);
-        add_action('admin_menu', [$this, 'registerStandalonePage'], 99);
-        add_action('load-admin_page_fluent-cart-migrator', [$this, 'setPageTitle']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
-        add_action('in_admin_header', [$this, 'removeAdminNotices'], 999);
-    }
-
-    public function addMigratorSubmenu()
-    {
-        global $submenu;
-        $submenu['fluent-cart']['migrator'] = [
-            __('Migrator', 'fluent-cart-migrator'),
-            'manage_options',
-            'admin.php?page=fluent-cart-migrator',
-            '',
-            'fluent_cart_migrator'
-        ];
-    }
-
-    public function registerStandalonePage()
-    {
-        add_submenu_page(
-            null,
-            __('FluentCart Migrator', 'fluent-cart-migrator'),
-            __('Migrator', 'fluent-cart-migrator'),
-            'manage_options',
-            'fluent-cart-migrator',
-            [$this, 'renderPage']
-        );
-    }
-
-    /**
-     * The page is registered without a parent (hidden from the WP menu; the
-     * FluentCart submenu entry is injected manually above), so core's
-     * get_admin_page_title() never finds it and leaves the global $title null,
-     * which makes admin-header.php emit "strip_tags(): Passing null" on PHP 8.1+.
-     * The load-{hook} action fires before admin-header.php, so set it here.
-     */
-    public function setPageTitle()
-    {
-        global $title;
-
-        if (empty($title)) {
-            $title = __('FluentCart Migrator', 'fluent-cart-migrator');
-        }
-    }
-
-    public function renderPage()
-    {
-        include FLUENTCART_MIGRATOR_PLUGIN_PATH . 'views/admin-page.php';
-    }
-
-    public function removeAdminNotices()
-    {
-        $screen = get_current_screen();
-        if (!$screen || $screen->id !== 'admin_page_fluent-cart-migrator') {
+        if (!$this->coreSupportsModules()) {
+            add_action('admin_notices', [$this, 'showCoreTooOldNotice']);
             return;
         }
 
-        remove_all_actions('admin_notices');
-        remove_all_actions('all_admin_notices');
+        add_action('fluent_cart/loading_app', [$this, 'enqueueAssets']);
+        add_filter('fluent_cart/admin_app_data', [$this, 'addAppData']);
+        add_action('admin_menu', [$this, 'registerLegacyRedirect'], 99);
     }
 
-    public function enqueueAssets($hook)
+    private function coreSupportsModules()
     {
-        if ($hook !== 'admin_page_fluent-cart-migrator') {
+        return defined('FLUENTCART_MODULE_API') && FLUENTCART_MODULE_API >= static::MIN_MODULE_API;
+    }
+
+    public function enqueueAssets()
+    {
+        if (!current_user_can('manage_options')) {
             return;
         }
 
         wp_enqueue_style(
-            'fct-migrator-app',
+            static::HANDLE,
             FLUENTCART_MIGRATOR_URL . 'assets/build/migrator-app.css',
             [],
-            FLUENTCART_MIGRATOR_VERSION
+            $this->assetVersion('assets/build/migrator-app.css')
         );
 
         wp_enqueue_script(
-            'fct-migrator-app',
+            static::HANDLE,
             FLUENTCART_MIGRATOR_URL . 'assets/build/migrator-app.js',
             ['wp-i18n'],
-            FLUENTCART_MIGRATOR_VERSION,
+            $this->assetVersion('assets/build/migrator-app.js'),
             true
         );
 
         // JS translations: languages/fluent-cart-migrator-{locale}-{md5('assets/build/migrator-app.js')}.json
         // (generated with `wp i18n make-json languages/` or Loco Translate).
         wp_set_script_translations(
-            'fct-migrator-app',
+            static::HANDLE,
             'fluent-cart-migrator',
             FLUENTCART_MIGRATOR_PLUGIN_PATH . 'languages'
         );
 
-        wp_localize_script('fct-migrator-app', 'fctMigrator', [
-            'restUrl'          => rest_url('fct-migrator/v1/'),
-            'nonce'            => wp_create_nonce('wp_rest'),
-            'migration'        => get_option('__fluent_cart_edd3_migration_steps', false),
-            'migrationSummary' => $this->getLatestMigrationSummary(),
-            'adminUrl'         => admin_url(),
-            'pluginUrl'        => FLUENTCART_MIGRATOR_URL,
-            'devMode'          => defined('FLUENT_CART_DEV_MODE') && FLUENT_CART_DEV_MODE,
-        ]);
+        add_filter('script_loader_tag', [$this, 'makeModuleTag'], 10, 2);
     }
 
     /**
-     * Returns the most recently completed migration summary across every
-     * registered source, so the intro screen shows the right source (EDD,
-     * WooCommerce, ...) after a page reload instead of always defaulting to EDD.
+     * Plugin version plus the build's mtime: the stylesheet loads on every
+     * FluentCart screen, so a stale cached copy after a rebuild would style
+     * core's screens with old rules until the version changes.
      */
-    private function getLatestMigrationSummary()
+    private function assetVersion($relativePath)
     {
-        $manager = new \FluentCartMigrator\Classes\SourceManager();
-        $latest  = null;
+        $mtime = @filemtime(FLUENTCART_MIGRATOR_PLUGIN_PATH . $relativePath);
 
-        foreach ($manager->keys() as $key) {
-            $migrator = $manager->resolve($key);
-            if (!$migrator) {
-                continue;
-            }
+        return $mtime ? FLUENTCART_MIGRATOR_VERSION . '.' . $mtime : FLUENTCART_MIGRATOR_VERSION;
+    }
 
-            $summary = $migrator->getMigrationSummary();
-            if (!is_array($summary)) {
-                continue;
-            }
-
-            if (!isset($summary['source'])) {
-                $summary['source'] = $key;
-            }
-
-            if ($latest === null) {
-                $latest = $summary;
-                continue;
-            }
-
-            $current = isset($summary['completed_at']) ? strtotime($summary['completed_at']) : 0;
-            $best    = isset($latest['completed_at']) ? strtotime($latest['completed_at']) : 0;
-            if ($current >= $best) {
-                $latest = $summary;
-            }
+    /**
+     * The tag WordPress passes here also carries the inline translations
+     * script, so only the tag with a src becomes a module.
+     */
+    public function makeModuleTag($tag, $handle)
+    {
+        if ($handle !== static::HANDLE) {
+            return $tag;
         }
 
-        return $latest;
+        return preg_replace('/<script(?=[^>]*\ssrc=)/', '<script type="module"', $tag, 1);
+    }
+
+    public function addAppData($data)
+    {
+        if (!current_user_can('manage_options')) {
+            return $data;
+        }
+
+        $sidebar   = isset($data['addon_settings_sidebar']) ? (array)$data['addon_settings_sidebar'] : [];
+        $sidebar[] = [
+            'name'       => __('Migrator', 'fluent-cart-migrator'),
+            'icon'       => 'ArrowLeftRight',
+            // Same slug as the route meta.permission in assets/js/migrator-app.js.
+            'permission' => ['store/sensitive'],
+            'url'        => '/settings/migrator'
+        ];
+        $data['addon_settings_sidebar'] = $sidebar;
+
+        $data['fct_migrator'] = [
+            'restUrl'   => rest_url('fct-migrator/v1/'),
+            'nonce'     => wp_create_nonce('wp_rest'),
+            'adminUrl'  => admin_url(),
+            'pluginUrl' => FLUENTCART_MIGRATOR_URL,
+            'devMode'   => defined('FLUENT_CART_DEV_MODE') && FLUENT_CART_DEV_MODE,
+        ];
+
+        return $data;
+    }
+
+    /**
+     * Hidden page under the old slug that sends existing links
+     * (admin.php?page=fluent-cart-migrator) to the new settings route.
+     */
+    public function registerLegacyRedirect()
+    {
+        $hook = add_submenu_page(
+            null,
+            __('FluentCart Migrator', 'fluent-cart-migrator'),
+            __('Migrator', 'fluent-cart-migrator'),
+            'manage_options',
+            static::LEGACY_SLUG,
+            '__return_null'
+        );
+
+        if ($hook) {
+            add_action('load-' . $hook, function () {
+                wp_safe_redirect(admin_url('admin.php?page=fluent-cart#/settings/migrator'));
+                exit;
+            });
+        }
+    }
+
+    public function showCoreTooOldNotice()
+    {
+        if (!current_user_can('update_plugins')) {
+            return;
+        }
+
+        echo '<div class="notice notice-warning"><p>' . esc_html__('FluentCart Migrator needs a newer version of FluentCart. Update FluentCart to use the migrator screen (WP-CLI commands keep working).', 'fluent-cart-migrator') . '</p></div>';
     }
 }

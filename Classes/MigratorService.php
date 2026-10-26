@@ -156,7 +156,52 @@ class MigratorService implements SourceMigratorInterface
 
     public function getSources()
     {
-        return ['sources' => (new SourceManager())->sources()];
+        $manager = new SourceManager();
+
+        return [
+            'sources'        => $manager->sources(),
+            'latest_summary' => $this->getLatestMigrationSummary($manager),
+            'has_migration'  => (bool)get_option('__fluent_cart_edd3_migration_steps', false),
+        ];
+    }
+
+    /**
+     * Returns the most recently completed migration summary across every
+     * registered source, so the intro screen shows the right source (EDD,
+     * WooCommerce, ...) instead of always defaulting to EDD.
+     */
+    private function getLatestMigrationSummary(SourceManager $manager)
+    {
+        $latest = null;
+
+        foreach ($manager->keys() as $key) {
+            $migrator = $manager->resolve($key);
+            if (!$migrator) {
+                continue;
+            }
+
+            $summary = $migrator->getMigrationSummary();
+            if (!is_array($summary)) {
+                continue;
+            }
+
+            if (!isset($summary['source'])) {
+                $summary['source'] = $key;
+            }
+
+            if ($latest === null) {
+                $latest = $summary;
+                continue;
+            }
+
+            $current = isset($summary['completed_at']) ? strtotime($summary['completed_at']) : 0;
+            $best    = isset($latest['completed_at']) ? strtotime($latest['completed_at']) : 0;
+            if ($current >= $best) {
+                $latest = $summary;
+            }
+        }
+
+        return $latest;
     }
 
     public function getEddStats()

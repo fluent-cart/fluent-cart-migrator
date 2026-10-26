@@ -9,104 +9,96 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-08-24T06:16:39+00:00\n"
+"POT-Creation-Date: 2026-10-26T12:18:25+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"X-Generator: WP-CLI 2.12.0\n"
+"X-Generator: WP-CLI 2.8.1\n"
 
 #. Plugin Name of the plugin
-#: fluent-cart-migrator.php
-#: Classes/Admin/AdminMenu.php:32
-#: Classes/Admin/AdminMenu.php:52
-#: assets/build/migrator-app.js:20
+#: Classes/Admin/AdminMenu.php:129
+#: assets/build/migrator-app.js:1
 msgid "FluentCart Migrator"
 msgstr ""
 
 #. Plugin URI of the plugin
-#: fluent-cart-migrator.php
 msgid "https://github.com/fluent-cart/fluent-cart-migrator"
 msgstr ""
 
 #. Description of the plugin
-#: fluent-cart-migrator.php
 msgid "Migrate your data to FluentCart from other platforms."
 msgstr ""
 
 #. Author of the plugin
-#: fluent-cart-migrator.php
 msgid "FluentCart Team"
 msgstr ""
 
 #. Author URI of the plugin
-#: fluent-cart-migrator.php
 msgid "https://fluentcart.com"
 msgstr ""
 
-#: Classes/Admin/AdminMenu.php:20
-#: Classes/Admin/AdminMenu.php:33
+#: Classes/Admin/AdminMenu.php:102
+#: Classes/Admin/AdminMenu.php:130
+#: assets/build/migrator-app.js:1
 msgid "Migrator"
 msgstr ""
 
+#: Classes/Admin/AdminMenu.php:150
+msgid "FluentCart Migrator needs a newer version of FluentCart. Update FluentCart to use the migrator screen (WP-CLI commands keep working)."
+msgstr ""
+
 #. translators: 1: PHP error message, 2: file path, 3: line number
-#: Classes/Admin/RestApi.php:167
-#, php-format
+#: Classes/Admin/RestApi.php:173
 msgid "PHP fatal error: %1$s in %2$s on line %3$d"
 msgstr ""
 
-#: Classes/Admin/RestApi.php:173
+#: Classes/Admin/RestApi.php:179
 msgid "The migration request was terminated early by the server or by another plugin (exit/die) before the migrator could respond. Check your PHP error log, try deactivating other plugins on the staging site, or run the migration via WP-CLI."
 msgstr ""
 
 #. translators: %s: list of WordPress hook names
-#: Classes/Admin/RestApi.php:179
-#, php-format
+#: Classes/Admin/RestApi.php:185
 msgid "(terminated while running hook: %s)"
 msgstr ""
 
 #. translators: 1: exception message, 2: file path, 3: line number
-#: Classes/Admin/RestApi.php:203
-#, php-format
+#: Classes/Admin/RestApi.php:209
 msgid "%1$s (in %2$s on line %3$d)"
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Admin/RestApi.php:234
-#: Classes/Admin/RestApi.php:300
-#: Classes/Admin/RestApi.php:323
+#: Classes/Admin/RestApi.php:240
+#: Classes/Admin/RestApi.php:306
+#: Classes/Admin/RestApi.php:329
 #: Classes/Support/TaxonomyApplier.php:37
 #: Classes/Support/TaxonomyApplier.php:105
-#, php-format
 msgid "Unsupported migration source: %s"
 msgstr ""
 
-#: Classes/Admin/RestApi.php:328
+#: Classes/Admin/RestApi.php:334
 msgid "A taxonomy map is required."
 msgstr ""
 
 #. translators: %s: recount substep key
-#: Classes/Admin/RestApi.php:429
-#, php-format
+#: Classes/Admin/RestApi.php:451
 msgid "Invalid substep: %s"
 msgstr ""
 
-#: Classes/Admin/RestApi.php:489
+#: Classes/Admin/RestApi.php:511
 msgid "License verification is not supported for this source."
 msgstr ""
 
-#: Classes/Contracts/AbstractSourceMigrator.php:395
-#: Classes/MigratorService.php:982
-#: Classes/WooCommerce/WooSourceMigrator.php:608
+#: Classes/Contracts/AbstractSourceMigrator.php:432
+#: Classes/MigratorService.php:1052
+#: Classes/WooCommerce/WooSourceMigrator.php:842
 msgid "Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:407
-#, php-format
+#: Classes/Contracts/AbstractSourceMigrator.php:444
 msgid "Migration state for %s has been reset."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:417
-#, php-format
+#: Classes/Contracts/AbstractSourceMigrator.php:454
 msgid "This migration step is not implemented yet for %s."
 msgstr ""
 
@@ -134,38 +126,49 @@ msgstr ""
 msgid "No EDD products found. Nothing to migrate."
 msgstr ""
 
+#: Classes/Load/ReviewWriter.php:96
+msgid "FluentCart's database update hasn't finished, so product reviews cannot be migrated yet. Open any FluentCart admin page to complete it, then try again."
+msgstr ""
+
+#. translators: 1: required FluentCart version, 2: installed FluentCart version
+#: Classes/Load/ReviewWriter.php:104
+msgid "Migrating product reviews requires FluentCart %1$s or later. This site is running %2$s. Please update FluentCart and try again."
+msgstr ""
+
+#: Classes/Load/ReviewWriter.php:106
+msgid "an older version"
+msgstr ""
+
 #. translators: %s: EDD version number
 #: Classes/MigratorService.php:51
-#: assets/build/migrator-app.js:20
-#, php-format,js-format
+#: assets/build/migrator-app.js:1
 msgid "EDD 3.x detected (v%s)"
 msgstr ""
 
 #: Classes/MigratorService.php:52
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Your Easy Digital Downloads installation is compatible with the migration tool."
 msgstr ""
 
 #: Classes/MigratorService.php:57
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "EDD data found"
 msgstr ""
 
 #: Classes/MigratorService.php:58
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "EDD is not currently active, but migration data (v3 tables) was detected. You can proceed."
 msgstr ""
 
 #. translators: %s: EDD version number
 #: Classes/MigratorService.php:64
-#: assets/build/migrator-app.js:20
-#, php-format,js-format
+#: assets/build/migrator-app.js:1
 msgid "EDD %s detected"
 msgstr ""
 
 #. translators: %s: EDD version number
 #: Classes/MigratorService.php:64
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "(unknown version)"
 msgstr ""
 
@@ -173,11 +176,16 @@ msgstr ""
 msgid "Migration requires EDD 3.0 or later. Please upgrade EDD first, then return here."
 msgstr ""
 
-#: Classes/MigratorService.php:484
+#: Classes/MigratorService.php:118
+#: Classes/MigratorService.php:127
+msgid "Easy Digital Downloads has no product reviews to migrate."
+msgstr ""
+
+#: Classes/MigratorService.php:554
 msgid "Unknown substep"
 msgstr ""
 
-#: Classes/MigratorService.php:973
+#: Classes/MigratorService.php:1043
 msgid "All migrated data and migration state have been reset."
 msgstr ""
 
@@ -237,11 +245,51 @@ msgstr ""
 msgid "An unexpected error happened while migrating this record. Please report the details to support."
 msgstr ""
 
+#: Classes/Support/MigrationLog.php:70
+msgid "Product not migrated"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:71
+msgid "This review belongs to a WooCommerce product that has not been migrated, so there is nothing to attach it to. Run the products step, then run the reviews step again."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:75
+msgid "Parent review is missing"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:76
+msgid "This reply answers a review that no longer exists in WooCommerce, so it has nothing to hang on. Replies without a parent cannot be displayed."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:80
+msgid "Empty review"
+msgstr ""
+
 #: Classes/Support/MigrationLog.php:81
+msgid "The review has no text and no star rating, so it would render as a blank card. Nothing was lost — there was nothing to show."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:85
+msgid "Additional reply needs Pro"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:86
+msgid "FluentCart shows one reply per review unless multiple replies are enabled, so only the first reply was imported. The reply is still in WooCommerce: enable multiple replies (FluentCart Pro), reset the migration, and run the reviews step again to bring them all across."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:90
+msgid "Review could not be saved"
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:91
+msgid "Writing this review to FluentCart failed. Please report the review id and details to support."
+msgstr ""
+
+#: Classes/Support/MigrationLog.php:106
 msgid "Migration failed"
 msgstr ""
 
-#: Classes/Support/MigrationLog.php:82
+#: Classes/Support/MigrationLog.php:107
 msgid "The record could not be migrated. See the details for the exact message."
 msgstr ""
 
@@ -261,67 +309,65 @@ msgstr ""
 msgid "WooCommerce taxes are not enabled. Skipping tax rate migration."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:44
+#: Classes/WooCommerce/WooSourceMigrator.php:45
 msgid "WooCommerce not detected"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:45
+#: Classes/WooCommerce/WooSourceMigrator.php:46
 msgid "WooCommerce is not active. Please install and activate WooCommerce, then return here."
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:51
-#, php-format
+#: Classes/WooCommerce/WooSourceMigrator.php:52
 msgid "WooCommerce %s detected"
 msgstr ""
 
 #. translators: %s: minimum supported WooCommerce version
-#: Classes/WooCommerce/WooSourceMigrator.php:53
-#, php-format
+#: Classes/WooCommerce/WooSourceMigrator.php:54
 msgid "Migration requires WooCommerce %s or later. Please upgrade WooCommerce first, then return here."
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:59
-#, php-format
+#: Classes/WooCommerce/WooSourceMigrator.php:60
 msgid "WooCommerce detected (v%s)"
 msgstr ""
 
 #. translators: %s: WooCommerce version number
-#: Classes/WooCommerce/WooSourceMigrator.php:59
+#: Classes/WooCommerce/WooSourceMigrator.php:60
 msgid "WooCommerce detected"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:60
+#: Classes/WooCommerce/WooSourceMigrator.php:61
 msgid "Your WooCommerce installation is compatible with the migration tool."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:76
+#: Classes/WooCommerce/WooSourceMigrator.php:77
 msgid "WooCommerce plugin not found. Please install and activate WooCommerce and try again."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:80
+#: Classes/WooCommerce/WooSourceMigrator.php:81
 msgid "No WooCommerce products found. Nothing to migrate."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:89
-#: Classes/WooCommerce/WooSourceMigrator.php:142
-#: Classes/WooCommerce/WooSourceMigrator.php:238
-#: Classes/WooCommerce/WooSourceMigrator.php:287
-#: Classes/WooCommerce/WooSourceMigrator.php:318
-#: Classes/WooCommerce/WooSourceMigrator.php:545
+#: Classes/WooCommerce/WooSourceMigrator.php:90
+#: Classes/WooCommerce/WooSourceMigrator.php:160
+#: Classes/WooCommerce/WooSourceMigrator.php:256
+#: Classes/WooCommerce/WooSourceMigrator.php:305
+#: Classes/WooCommerce/WooSourceMigrator.php:336
+#: Classes/WooCommerce/WooSourceMigrator.php:563
+#: Classes/WooCommerce/WooSourceMigrator.php:631
 msgid "WooCommerce is not active."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:648
+#: Classes/WooCommerce/WooSourceMigrator.php:885
 msgid "All migrated data and WooCommerce migration state have been reset."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:707
+#: Classes/WooCommerce/WooSourceMigrator.php:944
 msgid "Reset dropped the FluentCart tables but failed to recreate them"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:709
+#: Classes/WooCommerce/WooSourceMigrator.php:946
 msgid "Re-activate FluentCart (or run its DB migration) to restore the schema before retrying."
 msgstr ""
 
@@ -329,636 +375,654 @@ msgstr ""
 msgid "Check Update"
 msgstr ""
 
-#: views/admin-page.php:5
-msgid "Loading migrator..."
-msgstr ""
-
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Server error:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "Unexpected server response (HTTP %s): %s"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "The server returned an empty response (HTTP %s). This usually means PHP stopped before replying — a fatal error, memory limit, timeout, or another plugin calling exit(). Check the PHP error log (enable WP_DEBUG_LOG), try deactivating other plugins on the staging site, or run the migration via WP-CLI."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Could not load the report:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s customer"
 msgid_plural "%s customers"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s order"
 msgid_plural "%s orders"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Loading report..."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s record not migrated"
 msgid_plural "%s records not migrated"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s skipped"
 msgid_plural "%s skipped"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s failed"
 msgid_plural "%s failed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%1$s of %2$s orders migrated"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Refreshing..."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Refresh"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Download CSV report"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Skipped records are source data that cannot be migrated as-is (expected). Failed records hit an unexpected error and need attention."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Failed"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Skipped"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "User ID"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Name"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Email"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Registered"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Details"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Order"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-msgid "Date"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "Status"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "Total"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-msgid "Customer"
-msgstr ""
-
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "ID %s"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
+msgid "Date"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Status"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Total"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Customer"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Show more (%s remaining)"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Record ID"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Stage"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Message"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Nothing was skipped — every record was migrated."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Seamlessly migrate your eCommerce data to FluentCart. Transfer products, orders, customers, subscriptions, licenses, and more — all in a few clicks."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Read the documentation →"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s Migration Completed"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "Completed on %s"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Products"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Orders"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Customers"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Coupons"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Subscriptions"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Licenses"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Taxonomies"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Tax Rates"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
+msgid "Reviews"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Verified"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Keep this plugin active"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "it provides backward compatibility for:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "License API"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "activate, deactivate, and check-license endpoints still route here"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "PayPal IPN"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "renewal notifications for existing subscriptions"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Stripe webhooks"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "charge ID resolution for legacy orders"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Download & renewal URLs"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "legacy EDD links won't resolve without it"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "charge ID resolution for migrated orders"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "View FluentCart Dashboard"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Select Migration Source"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Choose the platform you want to migrate data from."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Coming Soon"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Detected"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Not Found"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Unknown source"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Migration requires <strong>EDD 3.0 or later</strong>. Please upgrade EDD first, then return here."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Compatibility Check"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Back"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Continue"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "the source store"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Duplicate of an earlier row — ignored."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "Merged with the other rows pointing at %s."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s taxonomy will be migrated."
 msgid_plural "%s taxonomies will be migrated."
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "No taxonomies will be migrated."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Failed to load taxonomies:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Taxonomy Mapping"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "Every FluentCart product taxonomy is listed below — pick the %s taxonomy that feeds it. Rows with an empty side are ignored."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "FluentCart"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "— Not migrated —"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "— Ignore —"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s term"
 msgid_plural "%s terms"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Remove row"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Add mapping"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Saved changes are applied by the “Product Taxonomies” step below — editing the mapping re-opens that step even if it already ran."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "No product taxonomies were found in your %s data, so there is nothing to map."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
+msgid "Multiple replies per review are turned off, so only the first reply on each review is imported. The rest stay in WooCommerce."
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Multiple replies per review require FluentCart Pro, so only the first reply on each review is imported. The rest stay in WooCommerce."
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "your store"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Pre-Migration Overview"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "Here is a summary of the data that will be migrated from %s."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Previous migration detected."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Some steps may already be completed. You can re-run individual steps below."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Reset Migration"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s without orders"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Transactions"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Payment Gateways:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "None"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Order Statuses:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Migration Steps"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Select which steps to run. Completed steps will be skipped automatically."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Completed"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Product Taxonomies"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Orders, Payments, Customers"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Missing Customers"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
+msgid "Product Reviews"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Product reviews cannot be migrated yet"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "%s replies will not be imported"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Recount & Verify"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Resume Migration"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Start Migration"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "WP-CLI (Recommended for Large Stores)"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "For stores with thousands of orders, running via WP-CLI is faster and avoids browser timeouts."
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Full migration"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
+msgid "Copy to clipboard"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Step by step"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Check stats"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Reactivations"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Subscriptions UUID"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%ss"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s min"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%1$sh %2$sm"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Migration in Progress"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "Elapsed: %s"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s migrated"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s product updated"
 msgid_plural "%s products updated"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Done"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Orders & Payments"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s order processed"
 msgid_plural "%s orders processed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s error"
 msgid_plural "%s errors"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Hide details"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Why?"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%1$s of ~%2$s orders"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "~%s remaining"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-#, js-format
+#: assets/build/migrator-app.js:1
 msgid "%s to migrate"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
+msgid "Rebuilding rating summaries..."
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Resume"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Pause"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Confirm"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
-msgid "This action cannot be undone."
-msgstr ""
-
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Cancel"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
+msgid "This action cannot be undone."
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Compatibility"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Overview"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Migrating"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
+msgid "Step %1$s of %2$s · %3$s"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "A migration is running. Leaving this page pauses it after the current batch. Leave anyway?"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Failed to load sources:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Failed to load stats:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Failed to save the taxonomy mapping:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "This will permanently delete all migrated data from FluentCart, including:"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Products and variations"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Orders and transactions"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Customers and subscriptions"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Migration progress"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Yes, Reset Everything"
 msgstr ""
 
-#: assets/build/migrator-app.js:20
+#: assets/build/migrator-app.js:1
 msgid "Reset failed:"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Toggle settings navigation"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Documentation"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Dismiss"
 msgstr ""

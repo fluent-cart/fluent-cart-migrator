@@ -1,75 +1,82 @@
 <template>
-    <div class="fct-card fct-taxonomy">
+    <div class="fct-card fct-card-border fct-taxonomy">
         <div class="fct-card-header">
-            <h2>{{ __('Taxonomy Mapping') }}</h2>
-            <p>{{ sprintf(__('Every FluentCart product taxonomy is listed below — pick the %s taxonomy that feeds it. Rows with an empty side are ignored.'), sourceName) }}</p>
+            <div class="flex-1">
+                <h2 class="fct-card-header-title">{{ __('Taxonomy Mapping') }}</h2>
+                <p class="fct-card-header-text">{{ sprintf(__('Every FluentCart product taxonomy is listed below — pick the %s taxonomy that feeds it. Rows with an empty side are ignored.'), sourceName) }}</p>
+            </div>
         </div>
+        <div class="fct-card-body">
 
-        <div v-if="loading" class="fct-skeleton fct-skeleton--block"></div>
+            <el-skeleton v-if="loading" animated :rows="3" />
 
-        <div v-else-if="error" class="fct-notice fct-notice--warning">
-            <div>{{ error }}</div>
-        </div>
-
-        <template v-else>
-            <div v-if="!sources.length" class="fct-notice fct-notice--info">
-                <div>{{ sprintf(__('No product taxonomies were found in your %s data, so there is nothing to map.'), sourceName) }}</div>
+            <div v-else-if="error" class="fct-alert fct-alert-warning fct-migrator-alert">
+                <div class="fct-alert-icon"><DynamicIcon name="Warning"/></div>
+                <div class="fct-alert-content">{{ error }}</div>
             </div>
 
             <template v-else>
-                <div class="fct-tax-head">
-                    <span class="fct-tax-col">{{ __('FluentCart') }}</span>
-                    <span class="fct-tax-arrow"></span>
-                    <span class="fct-tax-col">{{ sourceName }}</span>
-                    <span class="fct-tax-remove"></span>
+                <div v-if="!sources.length" class="fct-alert fct-migrator-alert">
+                    <div class="fct-alert-icon"><DynamicIcon name="Information"/></div>
+                    <div class="fct-alert-content">{{ sprintf(__('No product taxonomies were found in your %s data, so there is nothing to map.'), sourceName) }}</div>
                 </div>
 
-                <div class="fct-tax-rows">
-                    <div v-for="(row, index) in rows" :key="index" class="fct-tax-item">
-                        <div class="fct-tax-row" :class="{ 'is-ignored': rowStates[index].ignored }">
-                            <select v-model="row.destination" class="fct-tax-select">
-                                <option value="">{{ __('— Not migrated —') }}</option>
-                                <option v-for="dest in destinations" :key="dest.name" :value="dest.name">
-                                    {{ dest.label }} ({{ dest.name }})
-                                </option>
-                            </select>
-
-                            <span class="fct-tax-arrow" aria-hidden="true">&#8592;</span>
-
-                            <select v-model="row.source" class="fct-tax-select">
-                                <option value="">{{ __('— Ignore —') }}</option>
-                                <option v-for="src in sources" :key="src.name" :value="src.name">
-                                    {{ src.label }} ({{ src.name }}) &middot; {{ sprintf(_n('%s term', '%s terms', src.count), src.count) }}
-                                </option>
-                            </select>
-
-                            <button type="button" class="fct-tax-remove" :title="__('Remove row')" @click="removeRow(index)">&times;</button>
-                        </div>
-                        <p v-if="rowStates[index].note" class="fct-tax-row-note" :class="{ 'is-warn': rowStates[index].ignored }">
-                            {{ rowStates[index].note }}
-                        </p>
+                <template v-else>
+                    <div class="fct-tax-head">
+                        <span class="fct-tax-col">{{ __('FluentCart') }}</span>
+                        <span class="fct-tax-arrow"></span>
+                        <span class="fct-tax-col">{{ sourceName }}</span>
+                        <span class="fct-tax-remove"></span>
                     </div>
-                </div>
 
-                <div class="fct-tax-footer">
-                    <button type="button" class="fct-btn fct-btn--link" @click="addRow">+ {{ __('Add mapping') }}</button>
-                    <span class="fct-tax-summary">{{ summary }}</span>
-                </div>
+                    <div class="fct-tax-rows">
+                        <div v-for="(row, index) in rows" :key="index" class="fct-tax-item">
+                            <div class="fct-tax-row" :class="{ 'is-ignored': rowStates[index].ignored }">
+                                <el-select v-model="row.destination" class="fct-tax-select" filterable>
+                                    <el-option value="" :label="__('— Not migrated —')" />
+                                    <el-option v-for="dest in destinations" :key="dest.name" :value="dest.name" :label="dest.label + ' (' + dest.name + ')'" />
+                                </el-select>
 
-                <p class="fct-tax-hint">
-                    {{ __('Saved changes are applied by the “Product Taxonomies” step below — editing the mapping re-opens that step even if it already ran.') }}
-                </p>
+                                <span class="fct-tax-arrow" aria-hidden="true">&#8592;</span>
+
+                                <el-select v-model="row.source" class="fct-tax-select" filterable>
+                                    <el-option value="" :label="__('— Ignore —')" />
+                                    <el-option v-for="src in sources" :key="src.name" :value="src.name" :label="src.label + ' (' + src.name + ') · ' + sprintf(_n('%s term', '%s terms', src.count), src.count)" />
+                                </el-select>
+
+                                <el-button link class="fct-tax-remove" :title="__('Remove row')" :aria-label="__('Remove row')" @click="removeRow(index)"><DynamicIcon name="Cross"/></el-button>
+                            </div>
+                            <p v-if="rowStates[index].note" class="fct-tax-row-note" :class="{ 'is-warn': rowStates[index].ignored }">
+                                {{ rowStates[index].note }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="fct-tax-footer">
+                        <el-button link @click="addRow">+ {{ __('Add mapping') }}</el-button>
+                        <span class="fct-tax-summary">{{ summary }}</span>
+                    </div>
+
+                    <p class="fct-tax-hint">
+                        {{ __('Saved changes are applied by the “Product Taxonomies” step below — editing the mapping re-opens that step even if it already ran.') }}
+                    </p>
+                </template>
             </template>
-        </template>
+        </div>
     </div>
 </template>
 
 <script>
 import { apiRequest } from '../api.js';
-import { __, _n, sprintf } from '../i18n.js';
+import { __, _n, sprintf, i18nMixin } from '../i18n.js';
+import { DynamicIcon } from '@fluent-cart/ui';
 
 export default {
+    mixins: [i18nMixin],
     name: 'TaxonomyMapper',
+    components: {
+        DynamicIcon: DynamicIcon
+    },
     props: {
         source: { type: Object, default: null }
     },
