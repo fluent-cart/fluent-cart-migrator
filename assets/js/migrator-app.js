@@ -1,13 +1,26 @@
-import { createApp } from 'vue';
+// Registers the migrator as a child route of FluentCart's Settings screen.
+// Bootstrap only: no exports. Built against core's @fluent-cart/* import map.
 import MigratorApp from './MigratorApp.vue';
-import { __, _n, sprintf } from './i18n.js';
+import { __ } from './i18n.js';
 import '../css/migrator-app.css';
 
-var app = createApp(MigratorApp);
+var hooks = window.fluent_cart_admin && window.fluent_cart_admin.hooks;
 
-// Expose the i18n helpers to every component template.
-app.config.globalProperties.__ = __;
-app.config.globalProperties._n = _n;
-app.config.globalProperties.sprintf = sprintf;
-
-app.mount('#fct-migrator-app');
+if (hooks) {
+    hooks.addFilter('fluent_cart_routes', 'fluent_cart_migrator', function (routes) {
+        if (routes.settings && routes.settings.children) {
+            routes.settings.children.push({
+                name: 'fct_migrator',
+                path: 'migrator',
+                component: MigratorApp,
+                meta: {
+                    active_menu: 'settings',
+                    title: __('Migrator'),
+                    // Same slug as the sidebar item; REST also requires manage_options.
+                    permission: ['store/sensitive']
+                }
+            });
+        }
+        return routes;
+    });
+}

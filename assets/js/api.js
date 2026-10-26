@@ -1,4 +1,5 @@
 import { __, sprintf } from './i18n';
+import { config } from './config.js';
 
 // The migration source currently selected in the wizard. Every request carries
 // it as a `source` query param so the REST API routes to the right migrator
@@ -19,14 +20,14 @@ export function getApiSource() {
  * a file download) and still authenticate via cookies.
  */
 export function apiUrl(path, source, withNonce) {
-    var url = window.fctMigrator.restUrl + path;
+    var url = config().restUrl + path;
     var src = source || currentSource;
     var params = [];
     if (src) {
         params.push('source=' + encodeURIComponent(src));
     }
     if (withNonce) {
-        params.push('_wpnonce=' + encodeURIComponent(window.fctMigrator.nonce));
+        params.push('_wpnonce=' + encodeURIComponent(config().nonce));
     }
     if (params.length) {
         url += (url.indexOf('?') === -1 ? '?' : '&') + params.join('&');
@@ -38,7 +39,7 @@ export function apiRequest(method, path, data, source) {
     var opts = {
         method: method,
         headers: {
-            'X-WP-Nonce': window.fctMigrator.nonce,
+            'X-WP-Nonce': config().nonce,
             'Content-Type': 'application/json'
         }
     };

@@ -1,58 +1,52 @@
 <template>
-    <div class="fct-card">
+    <div class="fct-card fct-card-border">
         <div class="fct-card-header">
-            <h2>{{ __('Compatibility Check') }}</h2>
+            <h2 class="fct-card-header-title">{{ __('Compatibility Check') }}</h2>
         </div>
+        <div class="fct-card-body">
 
-        <div v-if="versionState === 'pass'" class="fct-compat-box fct-compat-box--pass">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                <circle cx="16" cy="16" r="14" fill="#ECFDF5"/>
-                <path d="M10 16l4 4 8-8" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <div>
-                <h3>{{ compat.title }}</h3>
-                <p>{{ compat.message }}</p>
+            <div v-if="versionState === 'pass'" class="fct-alert fct-alert-success fct-migrator-alert">
+                <div class="fct-alert-icon"><DynamicIcon name="CheckCircle"/></div>
+                <div class="fct-alert-content">
+                    <h3 class="fct-alert-title">{{ compat.title }}</h3>
+                    <p>{{ compat.message }}</p>
+                </div>
+            </div>
+
+            <div v-else-if="versionState === 'blocked'" class="fct-alert fct-alert-error fct-migrator-alert">
+                <div class="fct-alert-icon"><DynamicIcon name="CrossCircle"/></div>
+                <div class="fct-alert-content">
+                    <h3 class="fct-alert-title">{{ compat.title }}</h3>
+                    <p v-html="compat.message"></p>
+                </div>
+            </div>
+
+            <div v-else-if="versionState === 'data_only'" class="fct-alert fct-migrator-alert">
+                <div class="fct-alert-icon"><DynamicIcon name="Information"/></div>
+                <div class="fct-alert-content">
+                    <h3 class="fct-alert-title">{{ compat.title }}</h3>
+                    <p>{{ compat.message }}</p>
+                </div>
             </div>
         </div>
 
-        <div v-else-if="versionState === 'blocked'" class="fct-compat-box fct-compat-box--blocked">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                <circle cx="16" cy="16" r="14" fill="#FEF2F2"/>
-                <path d="M12 12l8 8m0-8l-8 8" stroke="#DC2626" stroke-width="2.5" stroke-linecap="round"/>
-            </svg>
-            <div>
-                <h3>{{ compat.title }}</h3>
-                <p v-html="compat.message"></p>
-            </div>
-        </div>
-
-        <div v-else-if="versionState === 'data_only'" class="fct-compat-box fct-compat-box--info">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                <circle cx="16" cy="16" r="14" fill="#EEF2FF"/>
-                <path d="M16 11v6m0 4v.5" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
-            </svg>
-            <div>
-                <h3>{{ compat.title }}</h3>
-                <p>{{ compat.message }}</p>
-            </div>
-        </div>
-
-        <div class="fct-card-footer">
-            <button @click="$emit('go-back')" class="fct-btn fct-btn--secondary">{{ __('Back') }}</button>
-            <button
-                v-if="versionState !== 'blocked'"
-                @click="$emit('continue')"
-                class="fct-btn fct-btn--primary"
-            >{{ __('Continue') }}</button>
+        <div class="fct-card-footer fct-migrator-actions">
+            <el-button @click="$emit('go-back')">{{ __('Back') }}</el-button>
+            <el-button v-if="versionState !== 'blocked'" type="primary" @click="$emit('continue')">{{ __('Continue') }}</el-button>
         </div>
     </div>
 </template>
 
 <script>
-import { __, sprintf } from '../i18n.js';
+import { __, sprintf, i18nMixin } from '../i18n.js';
+import { DynamicIcon } from '@fluent-cart/ui';
 
 export default {
+    mixins: [i18nMixin],
     name: 'CompatibilityCheck',
+    components: {
+        DynamicIcon: DynamicIcon
+    },
     props: {
         source: { type: Object, required: true }
     },

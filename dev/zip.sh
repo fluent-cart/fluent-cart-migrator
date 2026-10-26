@@ -30,7 +30,6 @@ BUILD_WHITELIST=(
     "index.php"
     "readme.txt"
     "Classes"
-    "views"
     "languages"
     "assets/build"
     "assets/images"

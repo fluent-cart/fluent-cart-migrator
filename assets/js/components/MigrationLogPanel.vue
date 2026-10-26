@@ -18,12 +18,12 @@
                     </span>
                 </div>
                 <div class="fct-log-panel-actions">
-                    <button class="fct-btn fct-btn--secondary fct-btn--sm" :disabled="loading" @click="load">
+                    <el-button size="small" :disabled="loading" @click="load">
                         {{ loading ? __('Refreshing...') : __('Refresh') }}
-                    </button>
-                    <a v-if="counts.total" :href="exportUrl" class="fct-btn fct-btn--primary fct-btn--sm" download>
+                    </el-button>
+                    <el-button tag="a" type="primary" size="small" v-if="counts.total" :href="exportUrl" download>
                         {{ __('Download CSV report') }}
-                    </a>
+                    </el-button>
                 </div>
             </div>
 
@@ -42,62 +42,65 @@
                 <div v-if="groups.length" class="fct-log-groups">
                     <div v-for="group in groups" :key="group.key" class="fct-log-group" :class="'is-' + group.severity">
                         <button type="button" class="fct-log-group-head" @click="toggleGroup(group.key)">
-                            <span class="fct-badge" :class="group.severity === 'failed' ? 'fct-badge--danger' : 'fct-badge--warning'">
+                            <span class="badge small" :class="group.severity === 'failed' ? 'danger' : 'warning'">
                                 {{ group.severity === 'failed' ? __('Failed') : __('Skipped') }}
                             </span>
                             <strong class="fct-log-group-title">{{ group.title }}</strong>
                             <span class="fct-log-group-count">{{ countLabel(group) }}</span>
-                            <span class="fct-log-group-chevron" :class="{ 'is-open': isOpen(group.key) }">&#9662;</span>
+                            <DynamicIcon name="ChevronDown" class="fct-log-group-chevron" :class="{ 'is-open': isOpen(group.key) }" />
                         </button>
                         <p class="fct-log-group-hint">{{ group.hint }}</p>
 
                         <div v-if="isOpen(group.key)" class="fct-error-log">
-                            <table class="fct-table">
-                                <thead>
-                                    <tr v-if="group.type === 'customer'">
-                                        <th>{{ __('User ID') }}</th>
-                                        <th>{{ __('Name') }}</th>
-                                        <th>{{ __('Email') }}</th>
-                                        <th>{{ __('Registered') }}</th>
-                                        <th>{{ __('Details') }}</th>
-                                    </tr>
-                                    <tr v-else>
-                                        <th>{{ __('Order') }}</th>
-                                        <th>{{ __('Date') }}</th>
-                                        <th>{{ __('Status') }}</th>
-                                        <th>{{ __('Total') }}</th>
-                                        <th>{{ __('Customer') }}</th>
-                                        <th>{{ __('Details') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="entry in visibleEntries(group)" :key="entry.key">
-                                        <template v-if="group.type === 'customer'">
-                                            <td><a v-if="entry.context.url" :href="entry.context.url" target="_blank" rel="noopener">#{{ entry.id }}</a><span v-else>#{{ entry.id }}</span></td>
-                                            <td>{{ entry.context.name || '-' }}</td>
-                                            <td>{{ entry.context.email || '-' }}</td>
-                                            <td class="fct-nowrap">{{ entry.context.date || '-' }}</td>
-                                            <td class="fct-log-message">{{ entry.message }}</td>
+                            <el-table :data="visibleEntries(group)" row-key="key" class="fct-log-table">
+                                <template v-if="group.type === 'customer'">
+                                    <el-table-column :label="__('User ID')" min-width="90">
+                                        <template #default="{ row }">
+                                            <a v-if="row.context.url" :href="row.context.url" target="_blank" rel="noopener">#{{ row.id }}</a><span v-else>#{{ row.id }}</span>
                                         </template>
-                                        <template v-else>
-                                            <td>
-                                                <a v-if="entry.context.url" :href="entry.context.url" target="_blank" rel="noopener">#{{ entry.context.number || entry.id }}</a>
-                                                <span v-else>#{{ entry.context.number || entry.id }}</span>
-                                                <span v-if="entry.context.number && entry.context.number !== entry.id" class="fct-log-sub">({{ sprintf(__('ID %s'), entry.id) }})</span>
-                                            </td>
-                                            <td class="fct-nowrap">{{ entry.context.date || '-' }}</td>
-                                            <td>{{ entry.context.status || '-' }}</td>
-                                            <td class="fct-nowrap">{{ formatTotal(entry) }}</td>
-                                            <td>{{ entry.context.email || entry.context.name || '-' }}</td>
-                                            <td class="fct-log-message">{{ entry.message }}</td>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Name')" min-width="120">
+                                        <template #default="{ row }">{{ row.context.name || '-' }}</template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Email')" min-width="160">
+                                        <template #default="{ row }">{{ row.context.email || '-' }}</template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Registered')" min-width="110">
+                                        <template #default="{ row }"><span class="fct-nowrap">{{ row.context.date || '-' }}</span></template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Details')" min-width="200">
+                                        <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
+                                    </el-table-column>
+                                </template>
+                                <template v-else>
+                                    <el-table-column :label="__('Order')" min-width="110">
+                                        <template #default="{ row }">
+                                            <a v-if="row.context.url" :href="row.context.url" target="_blank" rel="noopener">#{{ row.context.number || row.id }}</a>
+                                            <span v-else>#{{ row.context.number || row.id }}</span>
+                                            <span v-if="row.context.number && row.context.number !== row.id" class="fct-log-sub">({{ sprintf(__('ID %s'), row.id) }})</span>
                                         </template>
-                                    </tr>
-                                </tbody>
-                            </table>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Date')" min-width="110">
+                                        <template #default="{ row }"><span class="fct-nowrap">{{ row.context.date || '-' }}</span></template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Status')" min-width="100">
+                                        <template #default="{ row }">{{ row.context.status || '-' }}</template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Total')" min-width="90">
+                                        <template #default="{ row }"><span class="fct-nowrap">{{ formatTotal(row) }}</span></template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Customer')" min-width="150">
+                                        <template #default="{ row }">{{ row.context.email || row.context.name || '-' }}</template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Details')" min-width="200">
+                                        <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
+                                    </el-table-column>
+                                </template>
+                            </el-table>
                             <div v-if="remaining(group) > 0" class="fct-log-more">
-                                <button type="button" class="fct-btn fct-btn--secondary fct-btn--sm" @click="showMore(group.key)">
+                                <el-button size="small" @click="showMore(group.key)">
                                     {{ sprintf(__('Show more (%s remaining)'), remaining(group)) }}
-                                </button>
+                                </el-button>
                             </div>
                         </div>
                     </div>
@@ -105,26 +108,19 @@
 
                 <!-- Flat fallback (sources without reason codes, e.g. EDD) -->
                 <div v-else class="fct-error-log">
-                    <table class="fct-table">
-                        <thead>
-                            <tr>
-                                <th>{{ __('Record ID') }}</th>
-                                <th>{{ __('Stage') }}</th>
-                                <th>{{ __('Message') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="entry in flatVisible" :key="entry.key">
-                                <td>{{ entry.id }}</td>
-                                <td>{{ entry.stage || '-' }}</td>
-                                <td class="fct-log-message">{{ entry.message }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <el-table :data="flatVisible" row-key="key" class="fct-log-table">
+                        <el-table-column prop="id" :label="__('Record ID')" min-width="100" />
+                        <el-table-column :label="__('Stage')" min-width="100">
+                            <template #default="{ row }">{{ row.stage || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column :label="__('Message')" min-width="240">
+                            <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
+                        </el-table-column>
+                    </el-table>
                     <div v-if="entries.length > flatLimit" class="fct-log-more">
-                        <button type="button" class="fct-btn fct-btn--secondary fct-btn--sm" @click="flatLimit += pageSize">
+                        <el-button size="small" @click="flatLimit += pageSize">
                             {{ sprintf(__('Show more (%s remaining)'), entries.length - flatLimit) }}
-                        </button>
+                        </el-button>
                     </div>
                 </div>
             </template>
@@ -134,7 +130,8 @@
 
 <script>
 import { apiRequest, apiUrl } from '../api.js';
-import { __, _n, sprintf } from '../i18n.js';
+import { __, _n, sprintf, i18nMixin } from '../i18n.js';
+import { DynamicIcon } from '@fluent-cart/ui';
 
 /**
  * Skip / failure report for the current migration source. Loads GET /logs,
@@ -143,7 +140,11 @@ import { __, _n, sprintf } from '../i18n.js';
  * the post-migration summary.
  */
 export default {
+    mixins: [i18nMixin],
     name: 'MigrationLogPanel',
+    components: {
+        DynamicIcon: DynamicIcon
+    },
     props: {
         // Explicit source key; falls back to the api.js current source.
         source: { type: String, default: '' }

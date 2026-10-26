@@ -45,3 +45,15 @@ export function sprintf() {
     }
     return fallbackSprintf.apply(null, arguments);
 }
+
+/**
+ * Exposes __, _n and sprintf to a component's template. The screen renders
+ * inside FluentCart's app, so they can't be app-wide globals.
+ */
+export var i18nMixin = {
+    methods: {
+        __: __,
+        _n: _n,
+        sprintf: sprintf
+    }
+};

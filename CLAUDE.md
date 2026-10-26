@@ -15,7 +15,7 @@ npm run zip    # Pack builds/fluent-cart-migrator.zip from the whitelist in dev/
 npm run build:zip  # Build + zip
 ```
 
-Build entry point: `assets/js/migrator-app.js` (Vue 3 app). Output: `assets/build/migrator-app.{js,css}`.
+Build entry point: `assets/js/migrator-app.js`. Output: `assets/build/migrator-app.{js,css}` — an ES module built against FluentCart's `@fluent-cart/*` import map (Vue is external, never bundled). `npm run build` ends with `dev/check-bundle.mjs`, which fails if the bundle imports a Vue name core's `@fluent-cart/vue` doesn't export (`fluent-cart/resources/admin/shared/module-vue.js`) — so no native `v-model`/`v-show`/`<Transition>` (use `:value`/`:checked` + `@change`, `v-if`), and `hoistStatic` is off to avoid `createStaticVNode`.
 
 There are no PHP tests, linting, or composer autoloading — classes are loaded via `require_once`.
 
@@ -48,7 +48,7 @@ wp fluent_cart_migrator migrate_from_edd --log            # View failed payment 
 
 `fluent-cart-migrator.php` hooks into `plugins_loaded` and only initializes if FluentCart (`FLUENTCART_VERSION`) is active. It loads:
 - **WP-CLI commands** (`Classes/Commands.php`) — only in CLI context
-- **AdminMenu** (`Classes/Admin/AdminMenu.php`) — only in admin context
+- **AdminMenu** (`Classes/Admin/AdminMenu.php`) — only in admin context; registers the Settings → Migrator screen (needs `FLUENTCART_MODULE_API` >= 1) and redirects the old `admin.php?page=fluent-cart-migrator` URL
 - **RestApi** (`Classes/Admin/RestApi.php`) — unconditionally (REST requests don't pass `is_admin()`)
 - **EddLicenseHandler** (`Classes/EDD3/EddLicenseHandler.php`) — always, for backward compat
 
@@ -77,7 +77,7 @@ Namespace: `fct-migrator/v1`. All routes require `manage_options`. Key endpoints
 
 ### Frontend
 
-Vue 3 single-file app (`assets/js/MigratorApp.vue`) mounted to `#fct-migrator-app`. Multi-step wizard: source selection -> version check -> statistics -> migration (batched) -> recount/verification -> complete.
+`assets/js/MigratorApp.vue` is a route inside FluentCart's admin app: `#/settings/migrator`, pushed onto `routes.settings.children` via the `fluent_cart_routes` JS filter; the sidebar item comes from `addon_settings_sidebar` in `fluent_cart/admin_app_data` (see the `fluentcart-admin-extension` skill in fluent-cart). The bundle is enqueued on `fluent_cart/loading_app` as `type="module"`; config (`restUrl`, `nonce`, …) is read from `window.fluentCartAdminApp.fct_migrator` via `assets/js/config.js`. Templates get `__`/`_n`/`sprintf` from `i18nMixin` (add it to every new component). **Theming follows core strictly:** build UI from core's classes and Element Plus — page shell `setting-wrap` / `fct-setting-header` / `setting-wrap-inner`, cards `fct-card fct-card-border` + `fct-card-header` / `fct-card-body` / `fct-card-footer`, `badge {success|warning|danger|info} small`, `fct-alert fct-alert-{warning|success|error}` (bare `fct-alert` = blue info), `el-button` / `el-checkbox` / `el-select` / `el-table` / `el-progress` / `el-skeleton` / `el-dialog` (append-to-body, class `fct-migrator-dialog`), icons via `DynamicIcon` from `@fluent-cart/ui`. Custom CSS (`assets/css/migrator-app.css`) is only for the migrator's own layout and may only use the `--fct-mig-*` tokens at its top — each is a core token (`extends/color.js`) with its `.fluent_theme_dark` pair; never a literal colour. SVG icons colour through the `fct-fill-*` / `fct-stroke-*` classes. All CSS is auto-scoped under `.fct-migrator` (or `.fct-migrator-dialog`) by a PostCSS plugin in `vite.config.mjs`, since it loads on every FluentCart admin page; `.fluent_theme_dark X` selectors stay in front of the scope. Never restyle a core class. Multi-step wizard: source selection -> version check -> statistics -> migration (batched) -> recount/verification -> complete.
 
 ### Taxonomy Mapping
 
