@@ -60,8 +60,9 @@ subscriptions via the CRUD API (HPOS-safe) and lists gateways + order statuses.
   taxonomy the admin paired it with, **parents-first**, and fills
   `ProductData->taxonomies` (`destinationTaxonomy → fctTermIds`). The pairs live
   in `__fluent_cart_migrator_taxonomy_map_woocommerce`; see the Taxonomy Mapping
-  section in `CLAUDE.md`. `pa_*` attribute taxonomies are excluded — they
-  migrate as advanced variations instead. Because every product written here
+  section in `CLAUDE.md`. `pa_*` attribute taxonomies are excluded — on a
+  variable product they become advanced variation groups, on any other product
+  `wc_attributes` meta. Because every product written here
   gets its terms, a completed products run also marks the separate
   `taxonomies` step done; editing the mapping re-opens that step.
 - Each product → `Dto\ProductData` (+ `ProductVariationData[]`, each with
@@ -74,10 +75,11 @@ Simple product → one variation (`variation_identifier = '0'`); variable produc
 
 ### Advanced variations (attributes & terms)
 
-**Any product that carries attributes** is migrated as a FluentCart
-**advanced-variations** product. `ProductMigrator::resolveAttributeGroups()`
-(Transform) maps each WC attribute — global taxonomy (`pa_*`) and custom — onto
-the shared FluentCart attribute library via `Load\AttributeWriter`:
+Only a **variable product with at least one child variation** is migrated as a
+FluentCart **advanced-variations** product. `ProductMigrator::resolveAttributeGroups()`
+(Transform) maps each of its variation-defining WC attributes — global taxonomy
+(`pa_*`) and custom — onto the shared FluentCart attribute library via
+`Load\AttributeWriter`:
 
 - **Group** (`fct_atts_groups`) per attribute, deduped by slug across the whole
   store (taxonomy → `wc_attribute_label()` title + taxonomy slug; custom →
@@ -93,11 +95,11 @@ Variations are built per product type:
 - **Variable / variable-subscription** → one FluentCart variation per WC child,
   carrying the terms (in group order) that define it. Only variation-defining
   attributes participate.
-- **Non-variable with attributes** (simple/subscription) → the cartesian product
-  of **all** attribute terms, one variation per combination, each sharing the
-  source price/stock. Capped at `ProductMigrator::MAX_COMBINATIONS` (500); above
-  it the product stays a plain single-variation product. The first combination
-  keeps the legacy `'0'` map key so pre-existing orders still resolve.
+- **Every other type** (simple, subscription, external, …) → a simple product
+  with one variation. WooCommerce attributes on these are display data, not buyer
+  choices; they are stored as `wc_attributes` product meta (`label => values`).
+- **Variable with no child variations** (or none that load) → a simple product, out of stock (its
+  synced price is empty, so it is kept unpurchasable as in WooCommerce).
 
 Each advanced variation matches FluentCart's canonical shape (see the editor's
 `AdvancedVariationService`):
