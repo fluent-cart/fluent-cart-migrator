@@ -22,15 +22,6 @@ use FluentCartMigrator\Classes\Support\TaxonomyResolver;
  */
 class ProductMigrator
 {
-    /**
-     * Hard ceiling on generated combinations for a non-variable product whose
-     * attributes are expanded into a cartesian of advanced variations. Mirrors
-     * FluentCart's AdvancedVariationService::DEFAULT_MAX_COMBINATIONS so a
-     * product with many informational attributes can't explode the migration.
-     * Above this the product stays a simple single-variation product.
-     */
-    const MAX_COMBINATIONS = 500;
-
     /** @var TaxonomyResolver|null source→FluentCart taxonomy mapping, built once per run */
     private $taxonomies = null;
 
@@ -276,29 +267,34 @@ class ProductMigrator
     {
         $createdAt  = MigratorHelper::date($product->get_date_created());
         $isExternal = $product->is_type('external');
-        $isVariable = !$isExternal && $product->is_type(['variable', 'variable-subscription']);
 
-        // Resolve every (variation-defining for variable products, all for
-        // non-variable) WooCommerce attribute into the shared FluentCart
-        // attribute library (groups + terms) up front, then build variations.
-        // Any product carrying attributes becomes an advanced-variations product.
-        // External products skip this: they migrate as catalog-only entries.
-        $groups          = $isExternal ? [] : $this->resolveAttributeGroups($product, $isVariable);
-        $attributeConfig = [];
-        $variations      = null;
-
-        if ($isVariable) {
+        // Only a variable product's variation-defining attributes are buyer
+        // choices. On every other type WooCommerce attributes are display data:
+        // the product migrates as simple and they are kept as product meta.
+        $groups     = [];
+        $variations = [];
+        if ($product instanceof \WC_Product_Variable && $product->get_children()) {
+            $groups     = $this->resolveAttributeGroups($product);
             $variations = $this->buildVariableVariations($product, $createdAt, $groups);
-        } elseif ($groups) {
-            $variations = $this->buildCartesianVariations($product, $createdAt, $groups);
         }
 
-        if ($variations === null) {
-            // No attributes, or the cartesian exceeded MAX_COMBINATIONS — fall
-            // back to a plain single-variation product.
-            $variations = [$this->buildSimpleVariation($product, $createdAt)];
-        } elseif ($groups) {
-            $attributeConfig = $this->buildAttributeConfig($groups);
+        $isVariable      = (bool) $variations;
+        $attributeConfig = $isVariable && $groups ? $this->buildAttributeConfig($groups) : [];
+
+        if (!$isVariable) {
+            $variation = $this->buildSimpleVariation($product, $createdAt);
+
+            // A variable product without variations has nothing to sell (its
+            // synced price is empty, so it would migrate at 0) — keep it
+            // unpurchasable, as WooCommerce does.
+            if ($product instanceof \WC_Product_Variable) {
+                $variation->manageStock = 1;
+                $variation->totalStock  = 0;
+                $variation->available   = 0;
+                $variation->stockStatus = 'out-of-stock';
+            }
+
+            $variations = [$variation];
         }
 
         // External/affiliate products have no cart flow in WooCommerce — they
@@ -339,7 +335,9 @@ class ProductMigrator
         $data->thumbnailId       = $product->get_image_id() ?: null;
         $data->isVariable        = $isVariable;
         $data->manageStock       = $anyManaged ? 1 : 0;
-        $data->stockAvailability = $isExternal ? 'out-of-stock' : MigratorHelper::stockStatus($product->get_stock_status());
+        $data->stockAvailability = $isExternal || (!$isVariable && $product instanceof \WC_Product_Variable)
+            ? 'out-of-stock'
+            : MigratorHelper::stockStatus($product->get_stock_status());
         $data->isDownloadable    = $product->is_downloadable() ? 1 : 0;
         $data->taxonomies        = $this->taxonomyResolver()->resolveForObject($product->get_id());
         $data->variations        = $variations;
@@ -350,6 +348,12 @@ class ProductMigrator
                 'external_product_url'    => (string) $product->get_product_url(),
                 'external_product_button' => (string) ($product->get_button_text() ?: __('Buy Now', 'fluent-cart-migrator')),
             ];
+        }
+        if (!$isVariable) {
+            $attributes = $this->informationalAttributes($product);
+            if ($attributes) {
+                $data->meta['wc_attributes'] = $attributes;
+            }
         }
         $data->mappingKeys       = [
             'source'       => MigratorHelper::WC_TO_FCT_META,
@@ -367,8 +371,8 @@ class ProductMigrator
 
     /**
      * The shared fct_product_variations field set sourced from a WC product (or
-     * variation). Used directly for simple products and as the per-combination
-     * price/stock base for cartesian advanced variations.
+     * variation). Used for simple products and for each child of a variable
+     * product.
      *
      * @return array
      */
@@ -481,7 +485,7 @@ class ProductMigrator
      *
      * @param array $groups resolveAttributeGroups() output (by ref so terms
      *                       recovered per variation land in attribute_config)
-     * @return ProductVariationData[]
+     * @return ProductVariationData[] empty when no child variation loads
      */
     private function buildVariableVariations($product, $createdAt, array &$groups)
     {
@@ -505,64 +509,6 @@ class ProductMigrator
             $fields['variationTitle']      = $resolved['title'] !== ''
                 ? $resolved['title']
                 : $this->variationTitle($variation);
-
-            $rows[] = ProductVariationData::make($fields);
-        }
-
-        // A variable product with no published variations still needs one row.
-        if (!$rows) {
-            return [$this->buildSimpleVariation($product, $createdAt)];
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Expand a non-variable product's attributes into the cartesian product of
-     * all their terms, one FluentCart variation per combination (all sharing the
-     * source product's price/stock). Returns null if the combination count would
-     * exceed MAX_COMBINATIONS, signalling the caller to keep the product simple.
-     *
-     * @param array $groups resolveAttributeGroups() output
-     * @return ProductVariationData[]|null
-     */
-    private function buildCartesianVariations($product, $createdAt, array $groups)
-    {
-        // Cartesian of [['term_id','group_id','title'], ...] across all groups.
-        $combos = [[]];
-        foreach ($groups as $group) {
-            $next = [];
-            foreach ($combos as $combo) {
-                foreach ($group['terms'] as $term) {
-                    $next[] = array_merge($combo, [[
-                        'term_id'  => $term['id'],
-                        'group_id' => $group['group_id'],
-                        'title'    => $term['title'],
-                    ]]);
-                }
-            }
-            $combos = $next;
-
-            if (count($combos) > self::MAX_COMBINATIONS) {
-                return null;
-            }
-        }
-
-        $base  = $this->variationFields($product, $createdAt);
-        $rows  = [];
-        $index = 0;
-        foreach ($combos as $combo) {
-            $index++;
-            $fields                        = $base;
-            $fields['serialIndex']         = $index;
-            $fields['variantTermIds']      = $combo;
-            $fields['variationTitle']      = implode(' / ', array_column($combo, 'title'));
-            // Keep the legacy '0' map key on the first combination so existing
-            // orders for this (formerly simple) product still resolve to a
-            // variation; the rest are keyed by their joined term ids.
-            $fields['variationIdentifier'] = $index === 1
-                ? '0'
-                : implode('_', array_column($combo, 'term_id'));
 
             $rows[] = ProductVariationData::make($fields);
         }
@@ -606,9 +552,7 @@ class ProductMigrator
     /**
      * Map a product's WooCommerce attributes onto the shared FluentCart attribute
      * library (creating groups + terms as needed) and return them in WC attribute
-     * order. For variable products only variation-defining attributes are taken;
-     * for non-variable products every attribute participates (it becomes an
-     * advanced-variations product via the cartesian).
+     * order. Only variation-defining attributes are taken.
      *
      * Each returned group:
      *   [
@@ -620,12 +564,12 @@ class ProductMigrator
      *
      * @return array<int,array>
      */
-    private function resolveAttributeGroups($product, $variationAttrsOnly)
+    private function resolveAttributeGroups($product)
     {
         $groups = [];
 
         foreach ($product->get_attributes() as $key => $attribute) {
-            if ($variationAttrsOnly && !$attribute->get_variation()) {
+            if (!$attribute->get_variation()) {
                 continue;
             }
 
@@ -677,6 +621,33 @@ class ProductMigrator
         }
 
         return $groups;
+    }
+
+    /**
+     * A non-variable product's WooCommerce attributes as label => values, for
+     * the `wc_attributes` product meta.
+     *
+     * @return array<string,string[]>
+     */
+    private function informationalAttributes($product)
+    {
+        $out = [];
+
+        foreach ($product->get_attributes() as $attribute) {
+            if ($attribute->is_taxonomy()) {
+                $label  = wc_attribute_label($attribute->get_name());
+                $values = wp_list_pluck($attribute->get_terms() ?: [], 'name');
+            } else {
+                $label  = $attribute->get_name();
+                $values = $attribute->get_options();
+            }
+
+            if ($values) {
+                $out[$label] = array_values(array_unique(array_merge($out[$label] ?? [], $values)));
+            }
+        }
+
+        return $out;
     }
 
     /**
