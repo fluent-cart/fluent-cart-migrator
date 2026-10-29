@@ -4,7 +4,7 @@ Tags: ecommerce, migration, easy-digital-downloads, edd, fluentcart
 Requires at least: 5.9
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.2
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -136,6 +136,15 @@ Yes. Use the `fluentcart_migrator_edd3_to_cents` filter to apply a conversion ra
 Yes. Reach out to the FluentCart support team for assistance with large migrations. For issues or feature requests, open an issue on the GitHub repository.
 
 == Changelog ==
+= 1.1.1 (Oct 29, 2026) =
+- Adds WooCommerce product reviews migration: ratings, verified-purchase badges, replies and review photos (Customer Reviews for WooCommerce), with a Reviews step in the wizard, REST and WP-CLI (--reviews, included in --all)
+- Adds rating summary rebuild per product after reviews import, so product cards show correct stars right away
+- Adds re-run support for reviews: reviews added in WooCommerce after the step finished are imported on the next run without duplicates
+- Adds Migrator screen inside FluentCart admin (Settings → Migrator) with light and dark mode; the old Migrator page URL redirects there
+- Fixes WooCommerce simple products being migrated as variations; only variable products with variations become variations now, and other product attributes are kept as product meta
+- Fixes Variable products with no variations now migrate as simple and out of stock
+- Fixes Migration summary failing when the source plugin is deactivated
+
 = 1.1.0-beta (Aug 20, 2026) =
 - Adds Woocommerce migrator for order, product, customer, coupon, subscriptions, and renewal managements
 - Adds Taxonomy mapping: pick which source taxonomy (categories, tags, brands, custom) migrates into which FluentCart taxonomy, plus a Product Taxonomies migration step that applies the mapping (UI, --taxonomies and --taxonomy_map WP-CLI flags)
