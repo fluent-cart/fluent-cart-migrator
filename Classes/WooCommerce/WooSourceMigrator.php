@@ -131,14 +131,18 @@ class WooSourceMigrator extends AbstractSourceMigrator
             // Reviews. `reviews_available` drives the blocked state on the
             // step; `multiple_replies_allowed` drives the dropped-replies
             // notice, which is only meaningful when there are replies to drop.
-            'reviews_count'            => ReviewMigrator::countReviews(),
-            'reviews_replies_count'    => ReviewMigrator::countReplies(),
-            'multiple_replies_allowed' => ReviewMigrator::multipleRepliesAllowed(),
+            'reviews_count'                 => ReviewMigrator::countReviews(),
+            'reviews_replies_count'         => ReviewMigrator::countReplies(),
+            'reviews_dropped_replies_count' => ReviewMigrator::countDroppedReplies(),
+            'multiple_replies_allowed'      => ReviewMigrator::multipleRepliesAllowed(),
+            // A done step still has work when reviews arrived or became
+            // importable since, so the overview must not call it Completed.
+            'reviews_pending'               => $this->isStepDone('reviews') && $this->reviewsResumeCursor() !== null,
             // Separates "needs Pro" from "has Pro, threading switched off" —
             // the two need different advice in the dropped-replies notice.
-            'pro_active'               => defined('FLUENTCART_PRO_PLUGIN_VERSION'),
-            'reviews_available'        => $reviewAvailability['available'],
-            'reviews_unavailable'      => [
+            'pro_active'                    => defined('FLUENTCART_PRO_PLUGIN_VERSION'),
+            'reviews_available'             => $reviewAvailability['available'],
+            'reviews_unavailable'           => [
                 'reason'  => $reviewAvailability['reason'],
                 'message' => $reviewAvailability['message'],
             ],
@@ -406,7 +410,7 @@ class WooSourceMigrator extends AbstractSourceMigrator
             'step'            => 'missing_customers',
             'migrated'        => $migrated,
             'skipped'         => $skipped,
-            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+            'log_counts'      => MigrationLog::counts($this->logEntriesOfType('review', true)),
             'migration_state' => $state,
         ];
     }
@@ -642,14 +646,17 @@ class WooSourceMigrator extends AbstractSourceMigrator
         // Reviews keep arriving on a live store after the first run, so a done
         // step reopens when there are reviews past its cursor.
         if ($this->isStepDone('reviews') && !$this->reopenReviewsForNewComments()) {
+            $reviewLog = $this->reviewLogPayload();
+
             return [
                 'success'         => true,
                 'step'            => 'reviews',
                 'phase'           => 'done',
                 'processed'       => 0,
                 'has_more'        => false,
-                'errors_in_batch' => count($this->getFailedLogs()),
-                'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+                'skipped_replies' => $reviewLog['skipped_replies'],
+                'errors_in_batch' => $reviewLog['errors_in_batch'],
+                'log_counts'      => $reviewLog['log_counts'],
                 'skipped'         => true,
                 'migration_state' => $this->getState(),
             ];
@@ -672,17 +679,89 @@ class WooSourceMigrator extends AbstractSourceMigrator
      */
     private function reopenReviewsForNewComments()
     {
-        $state = $this->getState();
-
-        if (!ReviewMigrator::hasCommentsAfter((int) ($state['last_review_id'] ?? 0))) {
+        $cursor = $this->reviewsResumeCursor();
+        if ($cursor === null) {
             return false;
         }
 
+        $state = $this->getState();
         unset($state['reviews']);
-        $state['review_phase'] = 'import';
+        $state['review_phase']   = 'import';
+        $state['last_review_id'] = $cursor;
         $this->saveState($state);
 
         return true;
+    }
+
+    /**
+     * Where a finished reviews step should resume, or null when nothing is
+     * waiting. Reviews skipped because their product was not migrated sit
+     * behind the cursor, so once that product is mapped the cursor rewinds to
+     * the first of them. Re-reading migrated rows updates them, never duplicates.
+     */
+    private function reviewsResumeCursor()
+    {
+        global $wpdb;
+
+        $cursor = (int) ($this->getState()['last_review_id'] ?? 0);
+
+        $waitingIds = [];
+        foreach ($this->logEntriesOfType('review') as $entry) {
+            if ($entry['code'] === 'woo_review_product_not_migrated') {
+                $waitingIds[] = (int) $entry['id'];
+            }
+        }
+
+        $retryFrom = 0;
+        foreach (array_chunk(array_filter($waitingIds), 1000) as $chunk) {
+            $first = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT MIN(c.comment_ID)
+                 FROM {$wpdb->comments} c
+                 INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = c.comment_post_ID AND pm.meta_key = %s AND pm.meta_value <> ''
+                 WHERE c.comment_ID IN (" . implode(',', $chunk) . ")",
+                MigratorHelper::WC_TO_FCT_META
+            ));
+            if ($first && (!$retryFrom || $first < $retryFrom)) {
+                $retryFrom = $first;
+            }
+        }
+
+        if ($retryFrom && $retryFrom <= $cursor) {
+            return $retryFrom - 1;
+        }
+
+        return ReviewMigrator::hasCommentsAfter($cursor) ? $cursor : null;
+    }
+
+    /**
+     * The reviews step's own log figures, normalized once per response.
+     */
+    private function reviewLogPayload()
+    {
+        $entries = $this->logEntriesOfType('review');
+
+        return [
+            'skipped_replies' => $this->skippedRepliesCount($entries),
+            'errors_in_batch' => count($entries),
+            'log_counts'      => MigrationLog::counts($entries),
+        ];
+    }
+
+    protected function migratedReviewsCount()
+    {
+        global $wpdb;
+
+        if (!ReviewWriter::isAvailable()) {
+            return 0;
+        }
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+             FROM {$wpdb->commentmeta} cm
+             INNER JOIN {$wpdb->prefix}fct_product_reviews r ON r.id = CAST(cm.meta_value AS UNSIGNED)
+             WHERE cm.meta_key = %s",
+            ReviewMigrator::WC_TO_REVIEW_META
+        ));
     }
 
     /**
@@ -719,11 +798,15 @@ class WooSourceMigrator extends AbstractSourceMigrator
                 );
             }
 
-            // Saved with the cursor, page by page: a total kept only until the
-            // import finished would lose every earlier time-boxed request.
-            $state                    = $this->getState();
-            $state['last_review_id']  = $lastId;
-            $state['skipped_replies'] = (int) ($state['skipped_replies'] ?? 0) + (int) $batch['skipped_replies'];
+            // A review that imports on a retry is no longer a skip.
+            if ($batch['migrated_ids']) {
+                MigrationLog::forget($this->failedLogOptionKey(), array_map(function ($id) {
+                    return MigrationLog::key('review', $id);
+                }, $batch['migrated_ids']));
+            }
+
+            $state                   = $this->getState();
+            $state['last_review_id'] = $lastId;
             $this->saveState($state);
 
             BatchRuntime::freeMemory();
@@ -753,15 +836,17 @@ class WooSourceMigrator extends AbstractSourceMigrator
             $hasMore = true;
         }
 
+        $reviewLog = $this->reviewLogPayload();
+
         return [
             'success'         => true,
             'step'            => 'reviews',
             'phase'           => 'import',
             'processed'       => $processed,
-            'skipped_replies' => (int) (($this->getState()['skipped_replies'] ?? 0)),
+            'skipped_replies' => $reviewLog['skipped_replies'],
             'has_more'        => $hasMore,
-            'errors_in_batch' => count($this->getFailedLogs()),
-            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+            'errors_in_batch' => $reviewLog['errors_in_batch'],
+            'log_counts'      => $reviewLog['log_counts'],
             'migration_state' => $this->getState(),
         ];
     }
@@ -816,15 +901,17 @@ class WooSourceMigrator extends AbstractSourceMigrator
             $this->buildAndSaveSummary();
         }
 
+        $reviewLog = $this->reviewLogPayload();
+
         return [
             'success'         => true,
             'step'            => 'reviews',
             'phase'           => 'aggregate',
             'processed'       => $processed,
-            'skipped_replies' => (int) (($this->getState()['skipped_replies'] ?? 0)),
+            'skipped_replies' => $reviewLog['skipped_replies'],
             'has_more'        => $hasMore,
-            'errors_in_batch' => count($this->getFailedLogs()),
-            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+            'errors_in_batch' => $reviewLog['errors_in_batch'],
+            'log_counts'      => $reviewLog['log_counts'],
             'migration_state' => $this->getState(),
         ];
     }

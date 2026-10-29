@@ -72,6 +72,25 @@
                                         <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
                                     </el-table-column>
                                 </template>
+                                <template v-else-if="group.type === 'review'">
+                                    <el-table-column :label="__('Review')" min-width="90">
+                                        <template #default="{ row }">
+                                            <a v-if="row.context.url" :href="row.context.url" target="_blank" rel="noopener">#{{ row.id }}</a><span v-else>#{{ row.id }}</span>
+                                        </template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Product ID')" min-width="90">
+                                        <template #default="{ row }">{{ row.context.product_id || '-' }}</template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Reviewer')" min-width="150">
+                                        <template #default="{ row }">{{ row.context.name || row.context.email || '-' }}</template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Date')" min-width="110">
+                                        <template #default="{ row }"><span class="fct-nowrap">{{ row.context.date || '-' }}</span></template>
+                                    </el-table-column>
+                                    <el-table-column :label="__('Details')" min-width="200">
+                                        <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
+                                    </el-table-column>
+                                </template>
                                 <template v-else>
                                     <el-table-column :label="__('Order')" min-width="110">
                                         <template #default="{ row }">
@@ -157,7 +176,7 @@ export default {
             error: null,
             entries: [],
             groups: [],
-            counts: { total: 0, skipped: 0, failed: 0, orders: 0, customers: 0 },
+            counts: { total: 0, skipped: 0, failed: 0, orders: 0, customers: 0, reviews: 0 },
             totals: {},
             openGroups: {},
             limits: {},
@@ -170,7 +189,9 @@ export default {
             return apiUrl('logs/export', this.source, true);
         },
         hasOrderTotals: function () {
-            return this.totals && typeof this.totals.source_orders === 'number';
+            // A report holding only reviews says nothing about orders.
+            var reviewsOnly = this.counts.total > 0 && this.counts.total === this.counts.reviews;
+            return this.totals && typeof this.totals.source_orders === 'number' && !reviewsOnly;
         },
         flatVisible: function () {
             return this.entries.slice(0, this.flatLimit);
@@ -242,6 +263,9 @@ export default {
         countLabel: function (group) {
             if (group.type === 'customer') {
                 return sprintf(_n('%s customer', '%s customers', group.count), group.count);
+            }
+            if (group.type === 'review') {
+                return sprintf(_n('%s review', '%s reviews', group.count), group.count);
             }
             return sprintf(_n('%s order', '%s orders', group.count), group.count);
         },

@@ -129,7 +129,7 @@
                         <el-checkbox v-if="stats.reviews_count > 0" class="fct-check" :class="{ 'fct-check--disabled': !reviewsAvailable }" v-model="localSteps.reviews" :disabled="!reviewsAvailable">
                             <span class="fct-check-label">
                                 {{ __('Product Reviews') }} ({{ stats.reviews_count }})
-                                <span v-if="isStepDone('reviews')" class="badge success small">{{ __('Completed') }}</span>
+                                <span v-if="isStepDone('reviews') && !stats.reviews_pending" class="badge success small">{{ __('Completed') }}</span>
                             </span>
                         </el-checkbox>
                         <div v-if="stats.reviews_count > 0 && !reviewsAvailable" class="fct-alert fct-alert-error fct-migrator-alert">
@@ -269,7 +269,7 @@ export default {
             if (this.stats.multiple_replies_allowed) {
                 return 0;
             }
-            return this.stats.reviews_replies_count || 0;
+            return this.stats.reviews_dropped_replies_count || 0;
         },
         droppedRepliesMessage: function () {
             // "Buy Pro" is the wrong instruction for a store that has Pro and

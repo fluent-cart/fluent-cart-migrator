@@ -133,12 +133,15 @@ class Commands
                     break;
                 }
 
-                $total += (int) ($result['processed'] ?? 0);
+                // The aggregate phase counts products, not reviews.
+                if (($result['phase'] ?? 'import') === 'import') {
+                    $total += (int) ($result['processed'] ?? 0);
+                }
                 \WP_CLI::line('  ' . ($result['phase'] ?? 'import') . ': processed ' . ($result['processed'] ?? 0) . (!empty($result['skipped']) ? ' [already done]' : ''));
             } while (!empty($result['has_more']));
 
             if (!is_wp_error($result)) {
-                \WP_CLI::line('Reviews processed: ' . $total . ' (errors logged: ' . ($result['errors_in_batch'] ?? 0) . ')');
+                \WP_CLI::line('Reviews imported: ' . $total . ' (replies not imported: ' . ($result['skipped_replies'] ?? 0) . ', errors logged: ' . ($result['errors_in_batch'] ?? 0) . ')');
             }
         }
 

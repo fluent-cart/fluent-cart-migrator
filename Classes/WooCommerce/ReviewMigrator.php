@@ -43,9 +43,6 @@ class ReviewMigrator
     /** @var bool */
     protected $allowMultipleReplies;
 
-    /** @var int replies skipped on the current page (multiple replies off) */
-    protected $skippedReplies = 0;
-
     /**
      * Customer Reviews for WooCommerce keeps each locally stored photo as one
      * comment-meta row holding an attachment id. Its other key,
@@ -111,6 +108,30 @@ class ReviewMigrator
     }
 
     /**
+     * Replies that will be left behind when multiple replies are off: every
+     * reply except the first on each review. A thread always starts with a
+     * direct reply, so the kept ones are the reviews that have one.
+     */
+    public static function countDroppedReplies()
+    {
+        global $wpdb;
+
+        $types = self::typesInClause();
+
+        $kept = (int) $wpdb->get_var(
+            "SELECT COUNT(DISTINCT r.comment_parent)
+             FROM {$wpdb->comments} r
+             INNER JOIN {$wpdb->comments} t ON t.comment_ID = r.comment_parent AND t.comment_parent = 0
+             INNER JOIN {$wpdb->posts} p ON p.ID = r.comment_post_ID
+             WHERE p.post_type = 'product'
+               AND r.comment_type IN ({$types})
+               AND t.comment_type IN ({$types})"
+        );
+
+        return max(0, self::countReplies() - $kept);
+    }
+
+    /**
      * Whether any product review exists past the given comment id.
      */
     public static function hasCommentsAfter($afterId)
@@ -138,7 +159,7 @@ class ReviewMigrator
     /**
      * Migrate one page of comments after $afterId.
      *
-     * @return array{processed:int,has_more:bool,last_id:int,skipped_replies:int,errors:array}
+     * @return array{processed:int,has_more:bool,last_id:int,migrated_ids:int[],errors:array}
      */
     public function migratePage($afterId, $perPage = 200)
     {
@@ -148,7 +169,7 @@ class ReviewMigrator
 
         $comments = $wpdb->get_results($wpdb->prepare(
             "SELECT c.comment_ID, c.comment_post_ID, c.comment_parent, c.comment_author,
-                    c.comment_author_email, c.comment_author_IP, c.comment_date_gmt,
+                    c.comment_author_email, c.comment_author_IP, c.comment_date, c.comment_date_gmt,
                     c.comment_content, c.comment_approved, c.user_id
              FROM {$wpdb->comments} c
              INNER JOIN {$wpdb->posts} p ON p.ID = c.comment_post_ID
@@ -161,15 +182,12 @@ class ReviewMigrator
             (int) $perPage
         ));
 
-        // Per page, so the caller can add each page to the saved total.
-        $this->skippedReplies = 0;
-
         $result = [
-            'processed'       => 0,
-            'has_more'        => false,
-            'last_id'         => (int) $afterId,
-            'skipped_replies' => 0,
-            'errors'          => [],
+            'processed'    => 0,
+            'has_more'     => false,
+            'last_id'      => (int) $afterId,
+            'migrated_ids' => [],
+            'errors'       => [],
         ];
 
         if (!$comments) {
@@ -191,8 +209,12 @@ class ReviewMigrator
                 $result['last_id'] = (int) $comment->comment_ID;
 
                 $outcome = $this->migrateComment($comment, $meta);
-                if ($outcome === true) {
-                    $result['processed']++;
+                if ($outcome === true || $outcome === 'existing') {
+                    // A retry re-reads rows already imported; only new ones count.
+                    if ($outcome === true) {
+                        $result['processed']++;
+                    }
+                    $result['migrated_ids'][] = (int) $comment->comment_ID;
                 } elseif (is_array($outcome)) {
                     $result['errors'][] = $outcome;
                 }
@@ -204,18 +226,24 @@ class ReviewMigrator
 
         $wpdb->query('COMMIT');
 
-        $result['has_more']        = count($comments) >= (int) $perPage;
-        $result['skipped_replies'] = $this->skippedReplies;
+        $result['has_more'] = count($comments) >= (int) $perPage;
 
         return $result;
     }
 
     /**
-     * @return true|array true written, array skip/failure descriptor
+     * @return true|string|array true inserted, 'existing' already imported, array skip/failure descriptor
      */
     protected function migrateComment($comment, array $meta)
     {
         $commentId = (int) $comment->comment_ID;
+
+        // A retry re-reads imported rows; leave them as FluentCart has them,
+        // so moderation and edits made after the import survive.
+        if (ReviewWriter::existingRow($commentId, self::WC_TO_REVIEW_META)) {
+            return 'existing';
+        }
+
         $content   = trim((string) $comment->comment_content);
         $rating    = (int) ($meta[$commentId]['rating'] ?? 0);
         $isReply   = ((int) $comment->comment_parent) > 0;
@@ -230,17 +258,20 @@ class ReviewMigrator
             return $this->skip($commentId, 'woo_review_empty_content', $comment);
         }
 
-        $alreadyMigrated = (bool) ReviewWriter::existingId($commentId, self::WC_TO_REVIEW_META);
-
-        if ($isReply && !$alreadyMigrated && !$this->allowMultipleReplies) {
+        if ($isReply && !$this->allowMultipleReplies) {
             $rootId = ReviewWriter::rootReviewId((int) $comment->comment_parent, self::WC_TO_REVIEW_META);
+
+            // A reply to a reply that was itself dropped has no mapped parent,
+            // but it belongs to the same review and is dropped for the same reason.
+            if (!$rootId) {
+                $rootId = ReviewWriter::rootReviewId($this->sourceRootId((int) $comment->comment_parent), self::WC_TO_REVIEW_META);
+            }
 
             // Ascending-id order means the first reply reaching this check is
             // the oldest one, so "the review already has a reply" is exactly
             // the first-reply-only rule. Re-running is safe: a reply that was
-            // already migrated took the branch above and is updated instead.
+            // already migrated returned early above.
             if ($rootId && ReviewWriter::hasReply($rootId)) {
-                $this->skippedReplies++;
                 return $this->skip($commentId, 'woo_review_extra_reply', $comment);
             }
         }
@@ -263,7 +294,7 @@ class ReviewMigrator
             'orderId'        => null,
             'ipAddress'      => (string) $comment->comment_author_IP,
             'media'          => $isReply ? [] : $this->mediaItems($commentId, $comment, $meta),
-            'createdAt'      => $comment->comment_date_gmt,
+            'createdAt'      => self::createdAt($comment),
             'source'         => self::SOURCE,
             'mappingKeys'    => ['source' => self::WC_TO_REVIEW_META],
         ]);
@@ -284,6 +315,42 @@ class ReviewMigrator
     /* -----------------------------------------------------------------
      | Mapping helpers
      * ----------------------------------------------------------------- */
+
+    /**
+     * Top-level ancestor of a source comment. Bounded so a corrupt parent
+     * loop cannot spin forever.
+     */
+    protected function sourceRootId($commentId)
+    {
+        for ($hops = 0; $commentId && $hops < 50; $hops++) {
+            $source = get_comment($commentId);
+            if (!$source || !(int) $source->comment_parent) {
+                break;
+            }
+            $commentId = (int) $source->comment_parent;
+        }
+
+        return (int) $commentId;
+    }
+
+    /**
+     * GMT creation date. Some importers leave comment_date_gmt zeroed, so
+     * fall back to the local date; '' lets the writer use now.
+     */
+    protected static function createdAt($comment)
+    {
+        $gmt = (string) $comment->comment_date_gmt;
+        if ($gmt !== '' && strpos($gmt, '0000-00-00') !== 0) {
+            return $gmt;
+        }
+
+        $local = (string) ($comment->comment_date ?? '');
+        if ($local !== '' && strpos($local, '0000-00-00') !== 0) {
+            return get_gmt_from_date($local);
+        }
+
+        return '';
+    }
 
     /**
      * Map a WordPress comment_approved value to FluentCart's review status
@@ -499,7 +566,9 @@ class ReviewMigrator
             'context' => [
                 'product_id' => (int) $comment->comment_post_ID,
                 'author'     => (string) $comment->comment_author,
-                'date'       => (string) $comment->comment_date_gmt,
+                'name'       => (string) $comment->comment_author,
+                'email'      => (string) $comment->comment_author_email,
+                'date'       => self::createdAt($comment),
                 'url'        => get_edit_comment_link($commentId) ?: '',
             ],
         ];

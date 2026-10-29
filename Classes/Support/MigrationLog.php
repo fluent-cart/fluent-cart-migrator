@@ -73,7 +73,7 @@ class MigrationLog
             'woo_review_orphan_parent' => [
                 self::SKIPPED,
                 __('Parent review is missing', 'fluent-cart-migrator'),
-                __('This reply answers a review that no longer exists in WooCommerce, so it has nothing to hang on. Replies without a parent cannot be displayed.', 'fluent-cart-migrator'),
+                __('This reply answers a review that was not imported (it was deleted, empty, or skipped for another reason listed here), so it has nothing to hang on. Replies without a parent cannot be displayed.', 'fluent-cart-migrator'),
             ],
             'woo_review_empty_content' => [
                 self::SKIPPED,
@@ -144,6 +144,23 @@ class MigrationLog
         return $entry;
     }
 
+    /**
+     * Drop entries for records that have since migrated.
+     */
+    public static function forget($optionKey, array $keys)
+    {
+        $logs = self::all($optionKey);
+        $before = count($logs);
+
+        foreach ($keys as $key) {
+            unset($logs[(string) $key]);
+        }
+
+        if (count($logs) !== $before) {
+            update_option($optionKey, $logs, false);
+        }
+    }
+
     public static function key($type, $id)
     {
         return $type === 'order' ? (string) $id : $type . ':' . $id;
@@ -194,14 +211,15 @@ class MigrationLog
             'message'  => (string) ($entry['message'] ?? ''),
             'stage'    => (string) ($entry['stage'] ?? ''),
             'context'  => [
-                'number'   => (string) ($context['number'] ?? ''),
-                'status'   => (string) ($context['status'] ?? ''),
-                'date'     => (string) ($context['date'] ?? ''),
-                'total'    => (string) ($context['total'] ?? ''),
-                'currency' => (string) ($context['currency'] ?? ''),
-                'email'    => (string) ($context['email'] ?? ''),
-                'name'     => (string) ($context['name'] ?? ''),
-                'url'      => (string) ($context['url'] ?? ''),
+                'number'     => (string) ($context['number'] ?? ''),
+                'status'     => (string) ($context['status'] ?? ''),
+                'date'       => (string) ($context['date'] ?? ''),
+                'total'      => (string) ($context['total'] ?? ''),
+                'currency'   => (string) ($context['currency'] ?? ''),
+                'email'      => (string) ($context['email'] ?? ''),
+                'name'       => (string) ($context['name'] ?? ''),
+                'url'        => (string) ($context['url'] ?? ''),
+                'product_id' => (string) ($context['product_id'] ?? ''),
             ],
         ];
     }
@@ -220,11 +238,11 @@ class MigrationLog
 
     /**
      * @param array<int,array> $entries normalized
-     * @return array{total:int,skipped:int,failed:int,orders:int,customers:int}
+     * @return array{total:int,skipped:int,failed:int,orders:int,customers:int,reviews:int}
      */
     public static function counts(array $entries)
     {
-        $counts = ['total' => count($entries), 'skipped' => 0, 'failed' => 0, 'orders' => 0, 'customers' => 0];
+        $counts = ['total' => count($entries), 'skipped' => 0, 'failed' => 0, 'orders' => 0, 'customers' => 0, 'reviews' => 0];
 
         foreach ($entries as $entry) {
             if ($entry['severity'] === self::SKIPPED) {
@@ -234,6 +252,8 @@ class MigrationLog
             }
             if ($entry['type'] === 'customer') {
                 $counts['customers']++;
+            } elseif ($entry['type'] === 'review') {
+                $counts['reviews']++;
             } else {
                 $counts['orders']++;
             }

@@ -94,6 +94,18 @@
                     <span v-if="summarySteps.reviews && summarySteps.reviews.done" class="fct-step-tag fct-step-tag--done">
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         {{ __('Reviews') }}
+                        <template v-if="reviewSummary">
+                            ({{ sprintf(__('%s migrated'), reviewSummary.migrated || 0) }})
+                            <button v-if="reviewSummary.skipped_replies" class="fct-step-tag-warn fct-step-tag-btn is-skipped" @click.stop="toggleErrorLog">
+                                ({{ sprintf(_n('%s reply not imported', '%s replies not imported', reviewSummary.skipped_replies), reviewSummary.skipped_replies) }})
+                            </button>
+                            <button v-if="reviewOtherSkips" class="fct-step-tag-warn fct-step-tag-btn is-skipped" @click.stop="toggleErrorLog">
+                                ({{ sprintf(_n('%s skipped', '%s skipped', reviewOtherSkips), reviewOtherSkips) }})
+                            </button>
+                            <button v-if="reviewSummary.failed" class="fct-step-tag-warn fct-step-tag-btn" @click.stop="toggleErrorLog">
+                                ({{ sprintf(_n('%s failed', '%s failed', reviewSummary.failed), reviewSummary.failed) }})
+                            </button>
+                        </template>
                     </span>
                     <span v-if="summarySteps.recount && summarySteps.recount.done" class="fct-step-tag fct-step-tag--done">
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -230,6 +242,16 @@ export default {
         summarySteps: function () {
             if (!this.migrationSummary || !this.migrationSummary.steps) return null;
             return this.migrationSummary.steps;
+        },
+        // Older summaries carry only `done`, so the counts are optional.
+        reviewSummary: function () {
+            var r = this.summarySteps && this.summarySteps.reviews;
+            return r && r.migrated !== undefined ? r : null;
+        },
+        // Dropped replies are skips too, but they get their own label.
+        reviewOtherSkips: function () {
+            var r = this.reviewSummary;
+            return r ? Math.max(0, (parseInt(r.skipped, 10) || 0) - (parseInt(r.skipped_replies, 10) || 0)) : 0;
         },
         // Newer sources split the error count into skipped (expected,
         // unmigratable data) and failed (real errors); EDD only reports the

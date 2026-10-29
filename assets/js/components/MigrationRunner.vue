@@ -147,6 +147,9 @@
                         <strong>{{ __('Product Reviews') }}</strong>
                         <span v-if="progress.reviews.status === 'completed'" class="fct-runner-meta">
                             {{ sprintf(__('%s migrated'), progress.reviews.migrated) }}
+                            <span v-if="progress.reviews.skippedReplies" class="fct-text-warn">
+                                ({{ sprintf(_n('%s reply not imported', '%s replies not imported', progress.reviews.skippedReplies), progress.reviews.skippedReplies) }})
+                            </span>
                         </span>
                         <span v-else-if="progress.reviews.status === 'running'" class="fct-runner-meta">
                             <!-- The step runs in two phases; naming the current one
@@ -499,7 +502,10 @@ export default {
 
                 result = await apiRequest('POST', 'migrate/reviews');
 
-                total += result.processed || 0;
+                // The aggregate phase counts products, not reviews.
+                if ((result.phase || 'import') === 'import') {
+                    total += result.processed || 0;
+                }
                 this.progress.reviews.migrated = total;
                 this.progress.reviews.phase = result.phase || 'import';
                 this.progress.reviews.skippedReplies = result.skipped_replies || 0;

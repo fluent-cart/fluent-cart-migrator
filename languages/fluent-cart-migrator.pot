@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-29T06:26:26+00:00\n"
+"POT-Creation-Date: 2026-10-29T07:03:10+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 
@@ -96,20 +96,20 @@ msgstr ""
 msgid "License verification is not supported for this source."
 msgstr ""
 
-#: Classes/Contracts/AbstractSourceMigrator.php:432
+#: Classes/Contracts/AbstractSourceMigrator.php:470
 #: Classes/MigratorService.php:1052
-#: Classes/WooCommerce/WooSourceMigrator.php:842
+#: Classes/WooCommerce/WooSourceMigrator.php:909
 msgid "Reset is only available in dev mode. Define FLUENT_CART_DEV_MODE in wp-config.php."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:444
+#: Classes/Contracts/AbstractSourceMigrator.php:482
 #, php-format
 msgid "Migration state for %s has been reset."
 msgstr ""
 
 #. translators: %s: migration source key
-#: Classes/Contracts/AbstractSourceMigrator.php:454
+#: Classes/Contracts/AbstractSourceMigrator.php:492
 #, php-format
 msgid "This migration step is not implemented yet for %s."
 msgstr ""
@@ -273,7 +273,7 @@ msgid "Parent review is missing"
 msgstr ""
 
 #: Classes/Support/MigrationLog.php:76
-msgid "This reply answers a review that no longer exists in WooCommerce, so it has nothing to hang on. Replies without a parent cannot be displayed."
+msgid "This reply answers a review that was not imported (it was deleted, empty, or skipped for another reason listed here), so it has nothing to hang on. Replies without a parent cannot be displayed."
 msgstr ""
 
 #: Classes/Support/MigrationLog.php:80
@@ -368,24 +368,24 @@ msgid "No WooCommerce products found. Nothing to migrate."
 msgstr ""
 
 #: Classes/WooCommerce/WooSourceMigrator.php:90
-#: Classes/WooCommerce/WooSourceMigrator.php:160
-#: Classes/WooCommerce/WooSourceMigrator.php:256
-#: Classes/WooCommerce/WooSourceMigrator.php:305
-#: Classes/WooCommerce/WooSourceMigrator.php:336
-#: Classes/WooCommerce/WooSourceMigrator.php:563
-#: Classes/WooCommerce/WooSourceMigrator.php:631
+#: Classes/WooCommerce/WooSourceMigrator.php:164
+#: Classes/WooCommerce/WooSourceMigrator.php:260
+#: Classes/WooCommerce/WooSourceMigrator.php:309
+#: Classes/WooCommerce/WooSourceMigrator.php:340
+#: Classes/WooCommerce/WooSourceMigrator.php:567
+#: Classes/WooCommerce/WooSourceMigrator.php:635
 msgid "WooCommerce is not active."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:885
+#: Classes/WooCommerce/WooSourceMigrator.php:952
 msgid "All migrated data and WooCommerce migration state have been reset."
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:944
+#: Classes/WooCommerce/WooSourceMigrator.php:1011
 msgid "Reset dropped the FluentCart tables but failed to recreate them"
 msgstr ""
 
-#: Classes/WooCommerce/WooSourceMigrator.php:946
+#: Classes/WooCommerce/WooSourceMigrator.php:1013
 msgid "Re-activate FluentCart (or run its DB migration) to restore the schema before retrying."
 msgstr ""
 
@@ -415,6 +415,13 @@ msgstr ""
 #, js-format
 msgid "%s customer"
 msgid_plural "%s customers"
+msgstr[0] ""
+msgstr[1] ""
+
+#: assets/build/migrator-app.js:1
+#, js-format
+msgid "%s review"
+msgid_plural "%s reviews"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -500,16 +507,28 @@ msgid "Details"
 msgstr ""
 
 #: assets/build/migrator-app.js:1
+msgid "Review"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Product ID"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Reviewer"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+msgid "Date"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
 msgid "Order"
 msgstr ""
 
 #: assets/build/migrator-app.js:1
 #, js-format
 msgid "ID %s"
-msgstr ""
-
-#: assets/build/migrator-app.js:1
-msgid "Date"
 msgstr ""
 
 #: assets/build/migrator-app.js:1
@@ -598,6 +617,18 @@ msgstr ""
 #: assets/build/migrator-app.js:1
 msgid "Reviews"
 msgstr ""
+
+#: assets/build/migrator-app.js:1
+#, js-format
+msgid "%s migrated"
+msgstr ""
+
+#: assets/build/migrator-app.js:1
+#, js-format
+msgid "%s reply not imported"
+msgid_plural "%s replies not imported"
+msgstr[0] ""
+msgstr[1] ""
 
 #: assets/build/migrator-app.js:1
 msgid "Verified"
@@ -921,11 +952,6 @@ msgstr ""
 #: assets/build/migrator-app.js:1
 #, js-format
 msgid "Elapsed: %s"
-msgstr ""
-
-#: assets/build/migrator-app.js:1
-#, js-format
-msgid "%s migrated"
 msgstr ""
 
 #: assets/build/migrator-app.js:1

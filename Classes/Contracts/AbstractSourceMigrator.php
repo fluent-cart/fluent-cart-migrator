@@ -104,6 +104,48 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
     }
 
     /**
+     * Log entries of one record type, or of every type but it when $exclude.
+     */
+    protected function logEntriesOfType($type, $exclude = false, ?array $entries = null)
+    {
+        if ($entries === null) {
+            $entries = $this->getLogEntries();
+        }
+
+        return array_values(array_filter($entries, function ($entry) use ($type, $exclude) {
+            return ($entry['type'] === $type) !== $exclude;
+        }));
+    }
+
+    /**
+     * Replies left behind because multiple replies are off. Counted from the
+     * log, which is keyed by comment id, so re-reading a page cannot double it.
+     */
+    protected function skippedRepliesCount(?array $reviewEntries = null)
+    {
+        if ($reviewEntries === null) {
+            $reviewEntries = $this->logEntriesOfType('review');
+        }
+
+        $count = 0;
+        foreach ($reviewEntries as $entry) {
+            if ($entry['code'] === 'woo_review_extra_reply') {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Reviews this source has written to FluentCart.
+     */
+    protected function migratedReviewsCount()
+    {
+        return 0;
+    }
+
+    /**
      * Source-level totals shown above the skip report (e.g. how many orders the
      * source has vs how many were migrated). Sources override; keys are free-form
      * but the UI knows `source_orders` and `migrated_orders`.
@@ -210,8 +252,8 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
                 'page'            => $page,
                 'processed'       => 0,
                 'has_more'        => false,
-                'errors_in_batch' => count($this->getFailedLogs()),
-                'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+                'errors_in_batch' => count($this->logEntriesOfType('review', true)),
+                'log_counts'      => MigrationLog::counts($this->logEntriesOfType('review', true)),
                 'skipped'         => true,
                 'migration_state' => $this->getState(),
             ];
@@ -264,8 +306,8 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
             'page'            => $page,
             'processed'       => $totalProcessed,
             'has_more'        => $hasMore,
-            'errors_in_batch' => count($this->getFailedLogs()),
-            'log_counts'      => MigrationLog::counts($this->getLogEntries()),
+            'errors_in_batch' => count($this->logEntriesOfType('review', true)),
+            'log_counts'      => MigrationLog::counts($this->logEntriesOfType('review', true)),
             'migration_state' => $state,
         ];
     }
@@ -352,8 +394,13 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
 
     public function buildAndSaveSummary()
     {
-        $state  = $this->getState();
-        $counts = MigrationLog::counts($this->getLogEntries());
+        $state         = $this->getState();
+        $entries       = $this->getLogEntries();
+        $counts        = MigrationLog::counts($entries);
+        // Review skips have their own row on the card, not the Orders one.
+        $reviewEntries = $this->logEntriesOfType('review', false, $entries);
+        $orderCounts   = MigrationLog::counts($this->logEntriesOfType('review', true, $entries));
+        $reviewCounts  = MigrationLog::counts($reviewEntries);
 
         $done = function ($step) use ($state) {
             return ['done' => ($state[$step] ?? '') === 'yes'];
@@ -372,17 +419,18 @@ abstract class AbstractSourceMigrator implements SourceMigratorInterface
                 'coupons'           => $done('coupons'),
                 'payments'          => [
                     'done'    => ($state['payments'] ?? '') === 'yes',
-                    'errors'  => $counts['total'],
-                    'skipped' => $counts['skipped'],
-                    'failed'  => $counts['failed'],
+                    'errors'  => $orderCounts['total'],
+                    'skipped' => $orderCounts['skipped'],
+                    'failed'  => $orderCounts['failed'],
                 ],
                 'missing_customers' => $done('missing_customers'),
                 'reviews'           => [
-                    'done' => ($state['reviews'] ?? '') === 'yes',
+                    'done'            => ($state['reviews'] ?? '') === 'yes',
+                    'migrated'        => $this->migratedReviewsCount(),
                     // Replies left behind because multiple replies are off.
-                    // Surfaced after the run too, not just in the pre-flight
-                    // notice — otherwise the only record of them is a log row.
-                    'skipped_replies' => (int) ($state['skipped_replies'] ?? 0),
+                    'skipped_replies' => $this->skippedRepliesCount($reviewEntries),
+                    'skipped'         => $reviewCounts['skipped'],
+                    'failed'          => $reviewCounts['failed'],
                 ],
                 'recount'           => $done('recount'),
             ],
