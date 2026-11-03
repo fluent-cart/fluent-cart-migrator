@@ -136,7 +136,7 @@ Yes. Use the `fluentcart_migrator_edd3_to_cents` filter to apply a conversion ra
 Yes. Reach out to the FluentCart support team for assistance with large migrations. For issues or feature requests, open an issue on the GitHub repository.
 
 == Changelog ==
-= 1.1.1 (Oct 29, 2026) =
+= 1.1.1 (Nov 03, 2026) =
 - Adds WooCommerce product reviews migration: ratings, verified-purchase badges, replies and review photos (Customer Reviews for WooCommerce), with a Reviews step in the wizard, REST and WP-CLI (--reviews, included in --all)
 - Adds rating summary rebuild per product after reviews import, so product cards show correct stars right away
 - Adds re-run support for reviews: reviews added in WooCommerce after the step finished are imported on the next run without duplicates
