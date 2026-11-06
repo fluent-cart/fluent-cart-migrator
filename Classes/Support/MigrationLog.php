@@ -90,6 +90,36 @@ class MigrationLog
                 __('Review could not be saved', 'fluent-cart-migrator'),
                 __('Writing this review to FluentCart failed. Please report the review id and details to support.', 'fluent-cart-migrator'),
             ],
+            'ff_already_migrated' => [
+                self::SKIPPED,
+                __('Already in FluentCart', 'fluent-cart-migrator'),
+                __('A FluentCart subscription with this Stripe subscription id already exists, so it was left as it is.', 'fluent-cart-migrator'),
+            ],
+            'ff_never_paid' => [
+                self::SKIPPED,
+                __('Never paid', 'fluent-cart-migrator'),
+                __('The subscription has no paid charge in Fluent Forms (pending or abandoned checkout), so there is nothing to move.', 'fluent-cart-migrator'),
+            ],
+            'ff_paypal' => [
+                self::SKIPPED,
+                __('PayPal subscription', 'fluent-cart-migrator'),
+                __('Only Stripe subscriptions can be migrated for now. This one keeps running in Fluent Forms.', 'fluent-cart-migrator'),
+            ],
+            'ff_not_stripe' => [
+                self::SKIPPED,
+                __('Not a Stripe subscription', 'fluent-cart-migrator'),
+                __('Only Stripe subscriptions can be migrated for now. This one keeps running in Fluent Forms.', 'fluent-cart-migrator'),
+            ],
+            'ff_no_submission' => [
+                self::FAILED,
+                __('Form entry not found', 'fluent-cart-migrator'),
+                __('The Fluent Forms entry this subscription belongs to no longer exists, so there is no customer to attach it to.', 'fluent-cart-migrator'),
+            ],
+            'ff_failed' => [
+                self::FAILED,
+                __('Subscription could not be migrated', 'fluent-cart-migrator'),
+                __('Nothing was written for this subscription. Please report the entry id and the details to support.', 'fluent-cart-migrator'),
+            ],
         ];
     }
 

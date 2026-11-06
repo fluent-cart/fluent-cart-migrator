@@ -239,6 +239,8 @@ export default {
                 : defaultProgress,
             running: false,
             paused: false,
+            // One per mount: retries and Pause/Resume reuse it, a new Start gets a new one.
+            runId: Date.now() + '-' + Math.random().toString(36).slice(2),
             showLog: false,
             startTime: null,
             endTime: null,
@@ -266,7 +268,8 @@ export default {
         },
         totalOrders: function () {
             if (!this.stats) return 0;
-            return this.stats.orders_count;
+            // A source whose batches walk another unit (Fluent Forms: subscriptions) says so.
+            return this.stats.progress_total || this.stats.orders_count;
         },
         // Per-severity counts from the server (newer sources); null for sources
         // that only report a total error count.
@@ -457,7 +460,7 @@ export default {
             while (hasMore && !this.paused) {
                 try {
                     // Server handles pagination and time-boxing (~25s per call)
-                    var result = await apiRequest('POST', 'migrate/payments');
+                    var result = await apiRequest('POST', 'migrate/payments', { run_id: this.runId });
                     hasMore = result.has_more;
                     this.progress.payments.processed = this.progress.payments.processed + result.processed;
                     this.progress.payments.hasMore = hasMore;

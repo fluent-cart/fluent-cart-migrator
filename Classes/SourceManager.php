@@ -3,6 +3,7 @@
 namespace FluentCartMigrator\Classes;
 
 use FluentCartMigrator\Classes\Contracts\SourceMigratorInterface;
+use FluentCartMigrator\Classes\FluentForms\FluentFormsSourceMigrator;
 use FluentCartMigrator\Classes\WooCommerce\WooSourceMigrator;
 
 /**
@@ -20,6 +21,7 @@ class SourceManager
     protected $map = [
         'edd'         => MigratorService::class,
         'woocommerce' => WooSourceMigrator::class,
+        'fluentforms' => FluentFormsSourceMigrator::class,
     ];
 
     /**

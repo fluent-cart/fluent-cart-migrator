@@ -24,7 +24,7 @@
                     </div>
 
                     <div class="fct-stats-grid">
-                        <div class="fct-stat-card">
+                        <div v-if="!isFluentForms" class="fct-stat-card">
                             <span class="fct-stat-value">{{ stats.products_count }}</span>
                             <span class="fct-stat-label">{{ __('Products') }}</span>
                         </div>
@@ -63,7 +63,7 @@
 
                     <div class="fct-stats-meta">
                         <p><strong>{{ __('Payment Gateways:') }}</strong> {{ stats.gateways.join(', ') || __('None') }}</p>
-                        <p><strong>{{ __('Order Statuses:') }}</strong> {{ stats.statuses.join(', ') || __('None') }}</p>
+                        <p><strong>{{ isFluentForms ? __('Subscription Statuses:') : __('Order Statuses:') }}</strong> {{ stats.statuses.join(', ') || __('None') }}</p>
                     </div>
                 </template>
             </div>
@@ -71,7 +71,7 @@
 
         <!-- Taxonomy mapping -->
         <TaxonomyMapper
-            v-if="stats && !loading"
+            v-if="stats && !loading && !isFluentForms"
             :source="source"
             @change="onTaxonomyMapChange"
         />
@@ -88,25 +88,25 @@
 
                 <div class="fct-config-group">
                     <div class="fct-config-checks">
-                        <el-checkbox class="fct-check" v-model="localSteps.products">
+                        <el-checkbox v-if="!isFluentForms" class="fct-check" v-model="localSteps.products">
                             <span class="fct-check-label">
                                 {{ __('Products') }}
                                 <span v-if="isStepDone('products')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
                         </el-checkbox>
-                        <el-checkbox class="fct-check" v-model="localSteps.taxonomies">
+                        <el-checkbox v-if="!isFluentForms" class="fct-check" v-model="localSteps.taxonomies">
                             <span class="fct-check-label">
                                 {{ __('Product Taxonomies') }}
                                 <span v-if="isStepDone('taxonomies')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
                         </el-checkbox>
-                        <el-checkbox class="fct-check" v-model="localSteps.tax_rates">
+                        <el-checkbox v-if="!isFluentForms" class="fct-check" v-model="localSteps.tax_rates">
                             <span class="fct-check-label">
                                 {{ __('Tax Rates') }}
                                 <span v-if="isStepDone('tax_rates')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
                         </el-checkbox>
-                        <el-checkbox class="fct-check" v-model="localSteps.coupons">
+                        <el-checkbox v-if="!isFluentForms" class="fct-check" v-model="localSteps.coupons">
                             <span class="fct-check-label">
                                 {{ __('Coupons') }}
                                 <span v-if="isStepDone('coupons')" class="badge success small">{{ __('Completed') }}</span>
@@ -146,7 +146,7 @@
                                 <p>{{ droppedRepliesMessage }}</p>
                             </div>
                         </div>
-                        <el-checkbox class="fct-check" v-model="localSteps.recount">
+                        <el-checkbox v-if="!isFluentForms" class="fct-check" v-model="localSteps.recount">
                             <span class="fct-check-label">
                                 {{ __('Recount & Verify') }}
                                 <span v-if="isStepDone('recount')" class="badge success small">{{ __('Completed') }}</span>
@@ -173,6 +173,17 @@
             </div>
             <div class="fct-card-body">
                 <div class="fct-cli-commands">
+                    <template v-if="isFluentForms">
+                        <div class="fct-cli-row">
+                            <span class="fct-cli-label">{{ __('Full migration') }}</span>
+                            <code class="copyable-content fct-cli-code" :title="__('Copy to clipboard')">{{ cliCommand }}</code>
+                        </div>
+                        <div class="fct-cli-row">
+                            <span class="fct-cli-label">{{ __('Preview, writes nothing') }}</span>
+                            <code class="copyable-content fct-cli-code" :title="__('Copy to clipboard')">{{ cliCommand }} --dry-run</code>
+                        </div>
+                    </template>
+                    <template v-else>
                     <div class="fct-cli-row">
                         <span class="fct-cli-label">{{ __('Full migration') }}</span>
                         <code class="copyable-content fct-cli-code" :title="__('Copy to clipboard')">{{ cliCommand }} --all</code>
@@ -205,6 +216,7 @@
                         <span class="fct-cli-label">{{ __('Check stats') }}</span>
                         <code class="copyable-content fct-cli-code" :title="__('Copy to clipboard')">{{ cliCommand }} --stats</code>
                     </div>
+                    </template>
                 </div>
             </div>
         </div>
@@ -285,9 +297,14 @@ export default {
         sourceKey: function () {
             return (this.source && this.source.key) || '';
         },
+        // Fluent Forms runs the payments step only; SubscriptionMigrator
+        // recounts the customers it creates, so no store-wide recount.
+        isFluentForms: function () {
+            return this.sourceKey === 'fluentforms';
+        },
         cliCommand: function () {
             // Sources that ship a WP-CLI command.
-            var map = { edd: 'migrate_from_edd', woocommerce: 'migrate_from_woo' };
+            var map = { edd: 'migrate_from_edd', woocommerce: 'migrate_from_woo', fluentforms: 'migrate_from_fluentforms' };
             var cmd = map[this.sourceKey];
             return cmd ? 'wp fluent_cart_migrator ' + cmd : '';
         },
@@ -319,6 +336,12 @@ export default {
             // server-side error. Settle it here instead.
             if (!this.reviewsAvailable || !this.stats.reviews_count) {
                 this.localSteps.reviews = false;
+            }
+
+            if (this.isFluentForms) {
+                ['products', 'taxonomies', 'tax_rates', 'coupons', 'missing_customers', 'reviews', 'recount'].forEach(function (step) {
+                    this.localSteps[step] = false;
+                }, this);
             }
 
             this.$emit('start', {

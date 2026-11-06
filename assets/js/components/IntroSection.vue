@@ -176,6 +176,7 @@
                             <img v-if="source.key === 'edd'" :src="pluginUrl + 'assets/images/edd-logo.png'" alt="Easy Digital Downloads" class="fct-source-logo is-mono" />
                             <img v-else-if="source.key === 'woocommerce'" :src="pluginUrl + 'assets/images/woo-logo.png'" alt="WooCommerce" class="fct-source-logo" />
                             <img v-else-if="source.key === 'surecart'" :src="pluginUrl + 'assets/images/surecart-logo.svg'" alt="SureCart" class="fct-source-logo is-mono" />
+                            <img v-else-if="source.key === 'fluentforms'" :src="pluginUrl + 'assets/images/fluentforms-logo.svg'" alt="Fluent Forms" class="fct-source-logo" />
                             <svg v-else width="40" height="40" viewBox="0 0 40 40" fill="none">
                                 <rect class="fct-fill-muted-soft" width="40" height="40" rx="10"/>
                                 <path class="fct-stroke-muted" d="M14 16h12v8H14z" stroke-width="1.5"/>
@@ -271,7 +272,7 @@ export default {
             return this.summarySource === 'woocommerce';
         },
         sourceLabel: function () {
-            var labels = { edd: 'EDD', woocommerce: 'WooCommerce', surecart: 'SureCart' };
+            var labels = { edd: 'EDD', woocommerce: 'WooCommerce', surecart: 'SureCart', fluentforms: 'Fluent Forms' };
             var key = this.summarySource;
             if (labels[key]) return labels[key];
             // Fall back to the matching source card's display name, else the raw key.

@@ -106,6 +106,10 @@ add_action('plugins_loaded', function () {
         \WP_CLI::add_command('fluent_cart_migrator migrate_from_woo', function ($args, $assoc_args) {
             (new \FluentCartMigrator\Classes\WooCommerce\Commands())->run($args, $assoc_args);
         });
+
+        \WP_CLI::add_command('fluent_cart_migrator migrate_from_fluentforms', function ($args, $assoc_args) {
+            (new \FluentCartMigrator\Classes\FluentForms\Commands())->run($args, $assoc_args);
+        });
     }
 
     if (!defined('FLUENTCART_VERSION')) {
