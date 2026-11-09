@@ -9,9 +9,9 @@
                 <h3 class="fct-setting-head-title">{{ __('Migrator') }}</h3>
             </div>
             <div class="fct-setting-header-action">
-                <el-button size="small" tag="a" href="https://docs.fluentcart.com/guide/migration" target="_blank" rel="noopener noreferrer">
+                <fct-button size="small" tag="a" href="https://docs.fluentcart.com/guide/migration" target="_blank" rel="noopener noreferrer">
                     {{ __('Documentation') }}
-                </el-button>
+                </fct-button>
             </div>
         </div>
 

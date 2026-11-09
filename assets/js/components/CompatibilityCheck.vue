@@ -31,8 +31,8 @@
         </div>
 
         <div class="fct-card-footer fct-migrator-actions">
-            <el-button @click="$emit('go-back')">{{ __('Back') }}</el-button>
-            <el-button v-if="versionState !== 'blocked'" type="primary" @click="$emit('continue')">{{ __('Continue') }}</el-button>
+            <fct-button @click="$emit('go-back')">{{ __('Back') }}</fct-button>
+            <fct-button v-if="versionState !== 'blocked'" type="primary" @click="$emit('continue')">{{ __('Continue') }}</fct-button>
         </div>
     </div>
 </template>

@@ -18,9 +18,9 @@
                     </span>
                 </div>
                 <div class="fct-log-panel-actions">
-                    <el-button size="small" :disabled="loading" @click="load">
+                    <fct-button size="small" :disabled="loading" @click="load">
                         {{ loading ? __('Refreshing...') : __('Refresh') }}
-                    </el-button>
+                    </fct-button>
                     <el-button tag="a" type="primary" size="small" v-if="counts.total" :href="exportUrl" download>
                         {{ __('Download CSV report') }}
                     </el-button>
@@ -52,74 +52,74 @@
                         <p class="fct-log-group-hint">{{ group.hint }}</p>
 
                         <div v-if="isOpen(group.key)" class="fct-error-log">
-                            <el-table :data="visibleEntries(group)" row-key="key" class="fct-log-table">
+                            <fct-table :data="visibleEntries(group)" row-key="key" class="fct-log-table">
                                 <template v-if="group.type === 'customer'">
-                                    <el-table-column :label="__('User ID')" min-width="90">
+                                    <fct-table-column :label="__('User ID')" min-width="90">
                                         <template #default="{ row }">
                                             <a v-if="row.context.url" :href="row.context.url" target="_blank" rel="noopener">#{{ row.id }}</a><span v-else>#{{ row.id }}</span>
                                         </template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Name')" min-width="120">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Name')" min-width="120">
                                         <template #default="{ row }">{{ row.context.name || '-' }}</template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Email')" min-width="160">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Email')" min-width="160">
                                         <template #default="{ row }">{{ row.context.email || '-' }}</template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Registered')" min-width="110">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Registered')" min-width="110">
                                         <template #default="{ row }"><span class="fct-nowrap">{{ row.context.date || '-' }}</span></template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Details')" min-width="200">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Details')" min-width="200">
                                         <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
-                                    </el-table-column>
+                                    </fct-table-column>
                                 </template>
                                 <template v-else-if="group.type === 'review'">
-                                    <el-table-column :label="__('Review')" min-width="90">
+                                    <fct-table-column :label="__('Review')" min-width="90">
                                         <template #default="{ row }">
                                             <a v-if="row.context.url" :href="row.context.url" target="_blank" rel="noopener">#{{ row.id }}</a><span v-else>#{{ row.id }}</span>
                                         </template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Product ID')" min-width="90">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Product ID')" min-width="90">
                                         <template #default="{ row }">{{ row.context.product_id || '-' }}</template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Reviewer')" min-width="150">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Reviewer')" min-width="150">
                                         <template #default="{ row }">{{ row.context.name || row.context.email || '-' }}</template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Date')" min-width="110">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Date')" min-width="110">
                                         <template #default="{ row }"><span class="fct-nowrap">{{ row.context.date || '-' }}</span></template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Details')" min-width="200">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Details')" min-width="200">
                                         <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
-                                    </el-table-column>
+                                    </fct-table-column>
                                 </template>
                                 <template v-else>
-                                    <el-table-column :label="__('Order')" min-width="110">
+                                    <fct-table-column :label="__('Order')" min-width="110">
                                         <template #default="{ row }">
                                             <a v-if="row.context.url" :href="row.context.url" target="_blank" rel="noopener">#{{ row.context.number || row.id }}</a>
                                             <span v-else>#{{ row.context.number || row.id }}</span>
                                             <span v-if="row.context.number && row.context.number !== row.id" class="fct-log-sub">({{ sprintf(__('ID %s'), row.id) }})</span>
                                         </template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Date')" min-width="110">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Date')" min-width="110">
                                         <template #default="{ row }"><span class="fct-nowrap">{{ row.context.date || '-' }}</span></template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Status')" min-width="100">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Status')" min-width="100">
                                         <template #default="{ row }">{{ row.context.status || '-' }}</template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Total')" min-width="90">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Total')" min-width="90">
                                         <template #default="{ row }"><span class="fct-nowrap">{{ formatTotal(row) }}</span></template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Customer')" min-width="150">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Customer')" min-width="150">
                                         <template #default="{ row }">{{ row.context.email || row.context.name || '-' }}</template>
-                                    </el-table-column>
-                                    <el-table-column :label="__('Details')" min-width="200">
+                                    </fct-table-column>
+                                    <fct-table-column :label="__('Details')" min-width="200">
                                         <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
-                                    </el-table-column>
+                                    </fct-table-column>
                                 </template>
-                            </el-table>
+                            </fct-table>
                             <div v-if="remaining(group) > 0" class="fct-log-more">
-                                <el-button size="small" @click="showMore(group.key)">
+                                <fct-button size="small" @click="showMore(group.key)">
                                     {{ sprintf(__('Show more (%s remaining)'), remaining(group)) }}
-                                </el-button>
+                                </fct-button>
                             </div>
                         </div>
                     </div>
@@ -127,19 +127,19 @@
 
                 <!-- Flat fallback (sources without reason codes, e.g. EDD) -->
                 <div v-else class="fct-error-log">
-                    <el-table :data="flatVisible" row-key="key" class="fct-log-table">
-                        <el-table-column prop="id" :label="__('Record ID')" min-width="100" />
-                        <el-table-column :label="__('Stage')" min-width="100">
+                    <fct-table :data="flatVisible" row-key="key" class="fct-log-table">
+                        <fct-table-column prop="id" :label="__('Record ID')" min-width="100" />
+                        <fct-table-column :label="__('Stage')" min-width="100">
                             <template #default="{ row }">{{ row.stage || '-' }}</template>
-                        </el-table-column>
-                        <el-table-column :label="__('Message')" min-width="240">
+                        </fct-table-column>
+                        <fct-table-column :label="__('Message')" min-width="240">
                             <template #default="{ row }"><span class="fct-log-message">{{ row.message }}</span></template>
-                        </el-table-column>
-                    </el-table>
+                        </fct-table-column>
+                    </fct-table>
                     <div v-if="entries.length > flatLimit" class="fct-log-more">
-                        <el-button size="small" @click="flatLimit += pageSize">
+                        <fct-button size="small" @click="flatLimit += pageSize">
                             {{ sprintf(__('Show more (%s remaining)'), entries.length - flatLimit) }}
-                        </el-button>
+                        </fct-button>
                     </div>
                 </div>
             </template>

@@ -11,7 +11,7 @@
             <div class="fct-card-body">
 
                 <!-- Skeleton while loading -->
-                <el-skeleton v-if="loading" animated :rows="4" />
+                <fct-skeleton v-if="loading" animated :rows="4" />
 
                 <template v-else-if="stats">
                     <!-- Resume banner -->
@@ -19,7 +19,7 @@
                         <div class="fct-alert-icon"><DynamicIcon name="Information"/></div>
                         <div class="fct-alert-content">
                             <strong class="fct-alert-heading">{{ __('Previous migration detected.') }}</strong> {{ __('Some steps may already be completed. You can re-run individual steps below.') }}
-                            <el-button type="danger" link v-if="isDevMode" @click="$emit('reset')">{{ __('Reset Migration') }}</el-button>
+                            <fct-button type="danger" link v-if="isDevMode" @click="$emit('reset')">{{ __('Reset Migration') }}</fct-button>
                         </div>
                     </div>
 
@@ -88,50 +88,50 @@
 
                 <div class="fct-config-group">
                     <div class="fct-config-checks">
-                        <el-checkbox class="fct-check" v-model="localSteps.products">
+                        <fct-choice class="fct-check" v-model="localSteps.products">
                             <span class="fct-check-label">
                                 {{ __('Products') }}
                                 <span v-if="isStepDone('products')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
-                        <el-checkbox class="fct-check" v-model="localSteps.taxonomies">
+                        </fct-choice>
+                        <fct-choice class="fct-check" v-model="localSteps.taxonomies">
                             <span class="fct-check-label">
                                 {{ __('Product Taxonomies') }}
                                 <span v-if="isStepDone('taxonomies')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
-                        <el-checkbox class="fct-check" v-model="localSteps.tax_rates">
+                        </fct-choice>
+                        <fct-choice class="fct-check" v-model="localSteps.tax_rates">
                             <span class="fct-check-label">
                                 {{ __('Tax Rates') }}
                                 <span v-if="isStepDone('tax_rates')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
-                        <el-checkbox class="fct-check" v-model="localSteps.coupons">
+                        </fct-choice>
+                        <fct-choice class="fct-check" v-model="localSteps.coupons">
                             <span class="fct-check-label">
                                 {{ __('Coupons') }}
                                 <span v-if="isStepDone('coupons')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
-                        <el-checkbox class="fct-check" v-model="localSteps.payments">
+                        </fct-choice>
+                        <fct-choice class="fct-check" v-model="localSteps.payments">
                             <span class="fct-check-label">
                                 {{ __('Orders, Payments, Customers') }}
                                 <span v-if="stats.has_subscriptions">, {{ __('Subscriptions') }}</span>
                                 <span v-if="stats.has_licenses">, {{ __('Licenses') }}</span>
                                 <span v-if="isStepDone('payments')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
-                        <el-checkbox v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-check" v-model="localSteps.missing_customers">
+                        </fct-choice>
+                        <fct-choice v-if="stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-check" v-model="localSteps.missing_customers">
                             <span class="fct-check-label">
                                 {{ __('Missing Customers') }} ({{ sprintf(__('%s without orders'), stats.customers_breakdown.missing) }})
                                 <span v-if="isStepDone('missing_customers')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
-                        <el-checkbox v-if="stats.reviews_count > 0" class="fct-check" :class="{ 'fct-check--disabled': !reviewsAvailable }" v-model="localSteps.reviews" :disabled="!reviewsAvailable">
+                        </fct-choice>
+                        <fct-choice v-if="stats.reviews_count > 0" class="fct-check" :class="{ 'fct-check--disabled': !reviewsAvailable }" v-model="localSteps.reviews" :disabled="!reviewsAvailable">
                             <span class="fct-check-label">
                                 {{ __('Product Reviews') }} ({{ stats.reviews_count }})
                                 <span v-if="isStepDone('reviews') && !stats.reviews_pending" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
+                        </fct-choice>
                         <div v-if="stats.reviews_count > 0 && !reviewsAvailable" class="fct-alert fct-alert-error fct-migrator-alert">
                             <div class="fct-alert-icon"><DynamicIcon name="CrossCircle"/></div>
                             <div class="fct-alert-content">
@@ -146,20 +146,20 @@
                                 <p>{{ droppedRepliesMessage }}</p>
                             </div>
                         </div>
-                        <el-checkbox class="fct-check" v-model="localSteps.recount">
+                        <fct-choice class="fct-check" v-model="localSteps.recount">
                             <span class="fct-check-label">
                                 {{ __('Recount & Verify') }}
                                 <span v-if="isStepDone('recount')" class="badge success small">{{ __('Completed') }}</span>
                             </span>
-                        </el-checkbox>
+                        </fct-choice>
                     </div>
                 </div>
             </div>
             <div class="fct-card-footer fct-migrator-actions">
-                <el-button @click="$emit('go-back')">{{ __('Back') }}</el-button>
-                <el-button type="primary" @click="onStart">
+                <fct-button @click="$emit('go-back')">{{ __('Back') }}</fct-button>
+                <fct-button type="primary" @click="onStart">
                     {{ hasExistingMigration ? __('Resume Migration') : __('Start Migration') }}
-                </el-button>
+                </fct-button>
             </div>
         </div>
 
