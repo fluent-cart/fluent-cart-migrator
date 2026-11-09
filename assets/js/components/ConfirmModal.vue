@@ -1,5 +1,5 @@
 <template>
-    <el-dialog
+    <fct-dialog
         :model-value="true"
         :title="title"
         width="460px"
@@ -16,10 +16,10 @@
         </div>
 
         <template #footer>
-            <el-button @click="$emit('cancel')">{{ __('Cancel') }}</el-button>
-            <el-button type="danger" @click="$emit('confirm')">{{ confirmText }}</el-button>
+            <fct-button @click="$emit('cancel')">{{ __('Cancel') }}</fct-button>
+            <fct-button type="danger" @click="$emit('confirm')">{{ confirmText }}</fct-button>
         </template>
-    </el-dialog>
+    </fct-dialog>
 </template>
 
 <script>

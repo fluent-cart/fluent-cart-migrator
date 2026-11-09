@@ -93,12 +93,12 @@
                             <span v-else-if="progress.payments.errorsCount" class="fct-text-danger">
                                 ({{ sprintf(_n('%s error', '%s errors', progress.payments.errorsCount), progress.payments.errorsCount) }})
                             </span>
-                            <el-button link v-if="progress.payments.errorsCount" @click="showLog = !showLog">
+                            <fct-button link v-if="progress.payments.errorsCount" @click="showLog = !showLog">
                                 {{ showLog ? __('Hide details') : __('Why?') }}
-                            </el-button>
+                            </fct-button>
                         </span>
                         <div v-if="showPaymentProgress" class="fct-progress">
-                            <el-progress :percentage="paymentsPercent" :status="progress.payments.status === 'completed' ? 'success' : ''" :show-text="false" :stroke-width="8" />
+                            <fct-progress :percentage="paymentsPercent" :status="progress.payments.status === 'completed' ? 'success' : ''" :show-text="false" :stroke-width="8" />
                             <span class="fct-progress-text">
                                 {{ sprintf(__('%1$s of ~%2$s orders'), progress.payments.processed, totalOrders) }}
                                 <span v-if="etaText"> &middot; {{ sprintf(__('~%s remaining'), etaText) }}</span>
@@ -125,9 +125,9 @@
                             <span v-if="progress.missing_customers.skipped" class="fct-text-warn">
                                 ({{ sprintf(_n('%s skipped', '%s skipped', progress.missing_customers.skipped), progress.missing_customers.skipped) }})
                             </span>
-                            <el-button link v-if="progress.missing_customers.skipped" @click="showLog = !showLog">
+                            <fct-button link v-if="progress.missing_customers.skipped" @click="showLog = !showLog">
                                 {{ showLog ? __('Hide details') : __('Why?') }}
-                            </el-button>
+                            </fct-button>
                         </span>
                         <span v-else-if="stats && stats.customers_breakdown && stats.customers_breakdown.missing > 0" class="fct-runner-meta">
                             {{ sprintf(__('%s to migrate'), stats.customers_breakdown.missing) }}
@@ -191,12 +191,12 @@
         </div>
 
         <div class="fct-card-footer fct-migrator-actions">
-            <el-button v-if="!paused" @click="pause" :disabled="!running">
+            <fct-button v-if="!paused" @click="pause" :disabled="!running">
                 {{ __('Pause') }}
-            </el-button>
-            <el-button type="primary" v-else @click="resume">
+            </fct-button>
+            <fct-button type="primary" v-else @click="resume">
                 {{ __('Resume') }}
-            </el-button>
+            </fct-button>
         </div>
     </div>
 </template>

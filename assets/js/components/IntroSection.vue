@@ -144,9 +144,9 @@
                 </div>
 
                 <div class="fct-previous-summary-actions">
-                    <el-button tag="a" type="success" :href="adminUrl + 'admin.php?page=fluent-cart#/'">
+                    <fct-button tag="a" type="success" :href="adminUrl + 'admin.php?page=fluent-cart#/'">
                         {{ __('View FluentCart Dashboard') }}
-                    </el-button>
+                    </fct-button>
                 </div>
             </div>
         </div>
@@ -162,15 +162,13 @@
             <div class="fct-card-body">
 
                 <!-- Loading skeleton -->
-                <el-skeleton v-if="loading" animated class="fct-source-grid">
-                    <template #template>
-                        <div v-for="n in 2" :key="n" class="fct-source-card is-skeleton">
-                            <el-skeleton-item variant="circle" class="fct-skeleton--icon" />
-                            <el-skeleton-item variant="text" class="fct-skeleton--text" />
-                            <el-skeleton-item variant="text" class="fct-skeleton--badge" />
-                        </div>
-                    </template>
-                </el-skeleton>
+                <fct-skeleton v-if="loading" animated class="fct-source-grid">
+                    <div v-for="n in 2" :key="n" class="fct-source-card is-skeleton">
+                        <fct-skeleton variant="circle" class="fct-skeleton--icon" />
+                        <fct-skeleton variant="text" class="fct-skeleton--text" />
+                        <fct-skeleton variant="text" class="fct-skeleton--badge" />
+                    </div>
+                </fct-skeleton>
 
                 <!-- Actual source cards -->
                 <div v-else class="fct-source-grid">

@@ -10,7 +10,7 @@ namespace FluentCartMigrator\Classes\Admin;
 class AdminMenu
 {
     // FLUENTCART_MODULE_API the bundle was built against.
-    const MIN_MODULE_API = 1;
+    const MIN_MODULE_API = 3;
 
     const HANDLE = 'fct-migrator-app';
 

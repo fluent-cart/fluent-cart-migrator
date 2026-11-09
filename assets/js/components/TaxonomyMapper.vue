@@ -8,7 +8,7 @@
         </div>
         <div class="fct-card-body">
 
-            <el-skeleton v-if="loading" animated :rows="3" />
+            <fct-skeleton v-if="loading" animated :rows="3" />
 
             <div v-else-if="error" class="fct-alert fct-alert-warning fct-migrator-alert">
                 <div class="fct-alert-icon"><DynamicIcon name="Warning"/></div>
@@ -32,19 +32,23 @@
                     <div class="fct-tax-rows">
                         <div v-for="(row, index) in rows" :key="index" class="fct-tax-item">
                             <div class="fct-tax-row" :class="{ 'is-ignored': rowStates[index].ignored }">
-                                <el-select v-model="row.destination" class="fct-tax-select" filterable>
-                                    <el-option value="" :label="__('— Not migrated —')" />
-                                    <el-option v-for="dest in destinations" :key="dest.name" :value="dest.name" :label="dest.label + ' (' + dest.name + ')'" />
-                                </el-select>
+                                <fct-select
+                                    v-model="row.destination"
+                                    class="fct-tax-select"
+                                    filterable
+                                    :options="[{ value: '', label: __('— Not migrated —') }].concat(destinations.map(dest => ({ value: dest.name, label: dest.label + ' (' + dest.name + ')' })))"
+                                />
 
                                 <span class="fct-tax-arrow" aria-hidden="true">&#8592;</span>
 
-                                <el-select v-model="row.source" class="fct-tax-select" filterable>
-                                    <el-option value="" :label="__('— Ignore —')" />
-                                    <el-option v-for="src in sources" :key="src.name" :value="src.name" :label="src.label + ' (' + src.name + ') · ' + sprintf(_n('%s term', '%s terms', src.count), src.count)" />
-                                </el-select>
+                                <fct-select
+                                    v-model="row.source"
+                                    class="fct-tax-select"
+                                    filterable
+                                    :options="[{ value: '', label: __('— Ignore —') }].concat(sources.map(src => ({ value: src.name, label: src.label + ' (' + src.name + ') · ' + sprintf(_n('%s term', '%s terms', src.count), src.count) })))"
+                                />
 
-                                <el-button link class="fct-tax-remove" :title="__('Remove row')" :aria-label="__('Remove row')" @click="removeRow(index)"><DynamicIcon name="Cross"/></el-button>
+                                <fct-button link class="fct-tax-remove" :title="__('Remove row')" :aria-label="__('Remove row')" @click="removeRow(index)"><DynamicIcon name="Cross"/></fct-button>
                             </div>
                             <p v-if="rowStates[index].note" class="fct-tax-row-note" :class="{ 'is-warn': rowStates[index].ignored }">
                                 {{ rowStates[index].note }}
@@ -53,7 +57,7 @@
                     </div>
 
                     <div class="fct-tax-footer">
-                        <el-button link @click="addRow">+ {{ __('Add mapping') }}</el-button>
+                        <fct-button link @click="addRow">+ {{ __('Add mapping') }}</fct-button>
                         <span class="fct-tax-summary">{{ summary }}</span>
                     </div>
 
