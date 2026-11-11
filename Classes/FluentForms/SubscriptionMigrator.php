@@ -1123,7 +1123,7 @@ class SubscriptionMigrator
             'trialling' => Status::SUBSCRIPTION_TRIALING,
             'cancelled' => Status::SUBSCRIPTION_CANCELED,
             'refunded'  => Status::SUBSCRIPTION_CANCELED,
-            'completed'=> Status::SUBSCRIPTION_COMPLETED,
+            'completed' => Status::SUBSCRIPTION_COMPLETED,
             'failing'   => Status::SUBSCRIPTION_FAILING,
             'pending'   => Status::SUBSCRIPTION_PENDING,
         ];
