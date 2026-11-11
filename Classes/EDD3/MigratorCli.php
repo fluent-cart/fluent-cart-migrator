@@ -655,7 +655,7 @@ class MigratorCli
             $maxPrice = $minPrice = absint(MigratorHelper::toCents(Arr::get($formattedMeta, 'edd_price')));
             $price = [
                 'index'          => 1,
-                'name'           => '',
+                'name'           => $product->post_title,
                 'amount'         => $minPrice,
                 'recurring'      => Arr::get($formattedMeta, 'edd_recurring', 'no'),
                 'period'         => Arr::get($formattedMeta, 'edd_period', 'yearly'),

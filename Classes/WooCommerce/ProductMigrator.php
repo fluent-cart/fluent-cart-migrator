@@ -366,7 +366,10 @@ class ProductMigrator
 
     private function buildSimpleVariation($product, $createdAt)
     {
-        return ProductVariationData::make($this->variationFields($product, $createdAt));
+        $fields                   = $this->variationFields($product, $createdAt);
+        $fields['variationTitle'] = $product->get_name();
+
+        return ProductVariationData::make($fields);
     }
 
     /**
