@@ -149,7 +149,8 @@ class RenewalScheduleStopper
             $rows = fluentCart('db')->table('fct_subscriptions')
                 ->select(['id', 'config'])
                 ->where('id', '>', $lastId)
-                ->where('config', 'like', '%"migration_source":"woocommerce"%')
+                // A JSON column reads back as `"key": "value"`, so match the key only.
+                ->where('config', 'like', '%"migration_source"%')
                 ->orderBy('id', 'ASC')
                 ->limit(1000)
                 ->get();
@@ -157,7 +158,10 @@ class RenewalScheduleStopper
             foreach ($rows as $row) {
                 $lastId = (int) $row->id;
                 $config = json_decode((string) $row->config, true);
-                $wcId   = is_array($config) ? (int) Arr::get($config, 'wc_subscription_id', 0) : 0;
+                if (!is_array($config) || Arr::get($config, 'migration_source') !== 'woocommerce') {
+                    continue;
+                }
+                $wcId = (int) Arr::get($config, 'wc_subscription_id', 0);
                 if ($wcId) {
                     $ids[$wcId] = true;
                 }
