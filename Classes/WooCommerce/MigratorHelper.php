@@ -2,7 +2,6 @@
 
 namespace FluentCartMigrator\Classes\WooCommerce;
 
-use FluentCart\Api\StoreSettings;
 use FluentCart\App\Helpers\Status;
 use FluentCartMigrator\Classes\Support\Money;
 
@@ -277,7 +276,9 @@ class MigratorHelper
      * this store", and the saved card is unreachable.
      *
      * Gateways with no test/live concept (offline, cheque, BACS) and any
-     * gateway we don't recognise fall back to the store's own order mode.
+     * gateway we don't recognise take the source shop's mode (sourceStoreMode()).
+     * FluentCart's own order mode is never read: the data comes from another
+     * store, and FluentCart is often in test mode on purpose during a migration.
      *
      * @param \WC_Order $order
      * @return string One of Status::ORDER_MODE_TEST | Status::ORDER_MODE_LIVE
@@ -285,27 +286,95 @@ class MigratorHelper
     public static function orderMode($order)
     {
         $gateway = (string) $order->get_payment_method();
-        $mode    = null;
-
-        if (strpos($gateway, 'stripe') === 0) {
-            $mode = self::modeFromFlag('woocommerce_stripe_settings', 'testmode');
-        } elseif (strpos($gateway, 'ppcp') === 0) {
-            // The newer PayPal Payments plugin stores a boolean, not 'yes'/'no'.
-            $mode = self::modeFromFlag('woocommerce-ppcp-settings', 'sandbox_on');
-        } elseif (strpos($gateway, 'paypal') === 0) {
-            $mode = self::modeFromFlag('woocommerce_paypal_settings', 'testmode');
-        }
+        $mode    = self::gatewayMode($gateway);
 
         if ($mode === null) {
-            $mode = (new StoreSettings())->get('order_mode') === Status::ORDER_MODE_TEST
-                ? Status::ORDER_MODE_TEST
-                : Status::ORDER_MODE_LIVE;
+            $mode = self::sourceStoreMode();
         }
 
         return apply_filters('fluentcart_migrator_woo_order_mode', $mode, [
             'order'   => $order,
             'gateway' => $gateway,
         ]);
+    }
+
+    /**
+     * Mode of the WooCommerce shop being migrated: live, unless every enabled
+     * Stripe/PayPal gateway it has is in test mode (a demo or development shop).
+     *
+     * @return string One of Status::ORDER_MODE_TEST | Status::ORDER_MODE_LIVE
+     */
+    private static function sourceStoreMode()
+    {
+        $enabledOptions = [
+            'stripe' => 'woocommerce_stripe_settings',
+            'ppcp'   => 'woocommerce_ppcp-gateway_settings',
+            'paypal' => 'woocommerce_paypal_settings',
+        ];
+
+        $sawTest = false;
+
+        foreach ($enabledOptions as $gateway => $option) {
+            $settings = get_option($option, null);
+
+            if (is_array($settings) && array_key_exists('enabled', $settings) && !self::isOn($settings['enabled'])) {
+                continue;
+            }
+
+            $mode = self::gatewayMode($gateway);
+
+            if ($mode === Status::ORDER_MODE_LIVE) {
+                return Status::ORDER_MODE_LIVE;
+            }
+
+            if ($mode === Status::ORDER_MODE_TEST) {
+                $sawTest = true;
+            }
+        }
+
+        return $sawTest ? Status::ORDER_MODE_TEST : Status::ORDER_MODE_LIVE;
+    }
+
+    /**
+     * @return string|null Null for a gateway with no test/live setting we can read.
+     */
+    private static function gatewayMode($gateway)
+    {
+        if (strpos($gateway, 'stripe') === 0) {
+            return self::modeFromFlag('woocommerce_stripe_settings', 'testmode');
+        }
+
+        if (strpos($gateway, 'ppcp') === 0) {
+            return self::ppcpMode();
+        }
+
+        if (strpos($gateway, 'paypal') === 0) {
+            return self::modeFromFlag('woocommerce_paypal_settings', 'testmode');
+        }
+
+        return null;
+    }
+
+    /**
+     * PayPal Payments 4.x keeps the connected account in data-common; older
+     * versions store a boolean sandbox_on, not 'yes'/'no'.
+     *
+     * @return string|null
+     */
+    private static function ppcpMode()
+    {
+        $common = get_option('woocommerce-ppcp-data-common', null);
+
+        if (is_array($common)) {
+            // Disconnected: sandbox_on left over from before 4.x no longer describes any account.
+            if (empty($common['merchant_id']) || empty($common['client_id']) || !array_key_exists('sandbox_merchant', $common)) {
+                return null;
+            }
+
+            return self::isOn($common['sandbox_merchant']) ? Status::ORDER_MODE_TEST : Status::ORDER_MODE_LIVE;
+        }
+
+        return self::modeFromFlag('woocommerce-ppcp-settings', 'sandbox_on');
     }
 
     /**
@@ -323,12 +392,17 @@ class MigratorHelper
             return null;
         }
 
-        $flag = $settings[$key];
+        return self::isOn($settings[$key]) ? Status::ORDER_MODE_TEST : Status::ORDER_MODE_LIVE;
+    }
 
-        // 'yes' (classic Stripe/PayPal) or true/1 (PayPal Payments) — both sandbox.
-        $isTest = $flag === 'yes' || $flag === true || $flag === 1 || $flag === '1';
-
-        return $isTest ? Status::ORDER_MODE_TEST : Status::ORDER_MODE_LIVE;
+    /**
+     * 'yes' (classic Stripe/PayPal) or true/1 (PayPal Payments).
+     *
+     * @return bool
+     */
+    private static function isOn($flag)
+    {
+        return $flag === 'yes' || $flag === true || $flag === 1 || $flag === '1';
     }
 
     /* -----------------------------------------------------------------
