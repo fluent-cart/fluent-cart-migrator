@@ -107,7 +107,9 @@ Subscription rows migrate with accurate current state: status, billing interval,
   `woocommerce_scheduled_subscription_{payment, trial_end,
   expiration, end_of_prepaid_term}` and the three `..._customer_notification_*` hooks by
   `subscription_id`, plus `..._payment_retry` actions whose renewal order belongs to a
-  migrated sub. The Woo subscriptions are not loaded or saved. WCS re-schedules on a date
+  migrated sub. It scans Action Scheduler's table 500 rows at a time and needs
+  `ActionScheduler_DBStore`: while Action Scheduler is still moving actions out of posts,
+  the check and the button return an error. The Woo subscriptions are not loaded or saved. WCS re-schedules on a date
   edit, a status change to active, or (notifications) any save of an active sub, so the
   admin must deactivate WooCommerce Subscriptions after verifying and must not run its
   Health Check fix.
