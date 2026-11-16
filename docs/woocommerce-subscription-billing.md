@@ -99,9 +99,18 @@ Subscription rows migrate with accurate current state: status, billing interval,
 - **Overdue migrated subs.** FluentCart's invoice engine drives renewals off
   `next_billing_date`; a migrated sub whose next payment is already past due will generate
   its invoice (and, for `system`, attempt a charge) on the next scheduler pass.
-- **Stop WooCommerce from also billing.** Once FluentCart owns renewals, disable
-  WooCommerce Subscriptions' renewal scheduling for the migrated subs (or keep WooCommerce
-  in its duplicate-site/manual state) so the customer isn't billed twice.
+- **Stop WooCommerce from also billing.** WooCommerce Subscriptions keeps its Action
+  Scheduler renewals after the migration. The Migrator screen warns while any migrated sub
+  (`fct_subscriptions.config` has `"migration_source":"woocommerce"`; dummy placeholders
+  excluded; Woo id read from `config.wc_subscription_id`) still has a pending action, and
+  **Stop WooCommerce renewals** cancels them by action id (`RenewalScheduleStopper`):
+  `woocommerce_scheduled_subscription_{payment, trial_end,
+  expiration, end_of_prepaid_term}` and the three `..._customer_notification_*` hooks by
+  `subscription_id`, plus `..._payment_retry` actions whose renewal order belongs to a
+  migrated sub. The Woo subscriptions are not loaded or saved. WCS re-schedules on a date
+  edit, a status change to active, or (notifications) any save of an active sub, so the
+  admin must deactivate WooCommerce Subscriptions after verifying and must not run its
+  Health Check fix.
 
 ## 5. Quick reference
 

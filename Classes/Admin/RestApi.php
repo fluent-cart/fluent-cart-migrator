@@ -6,6 +6,7 @@ use FluentCartMigrator\Classes\MigratorService;
 use FluentCartMigrator\Classes\SourceManager;
 use FluentCartMigrator\Classes\Support\MigrationLog;
 use FluentCartMigrator\Classes\Support\TaxonomyMap;
+use FluentCartMigrator\Classes\WooCommerce\RenewalScheduleStopper;
 
 class RestApi
 {
@@ -129,6 +130,18 @@ class RestApi
         register_rest_route($this->namespace, '/migration-summary', [
             'methods'             => 'GET',
             'callback'            => [$this, 'getMigrationSummary'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/woo-renewals', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'getWooRenewals'],
+            'permission_callback' => [$this, 'checkPermission'],
+        ]);
+
+        register_rest_route($this->namespace, '/woo-renewals/stop', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'stopWooRenewals'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
 
@@ -536,6 +549,20 @@ class RestApi
         }
 
         return rest_ensure_response(['summary' => $migrator->getMigrationSummary()]);
+    }
+
+    public function getWooRenewals()
+    {
+        return $this->guarded(function () {
+            return (new RenewalScheduleStopper())->status();
+        });
+    }
+
+    public function stopWooRenewals(\WP_REST_Request $request)
+    {
+        return $this->guarded(function () use ($request) {
+            return (new RenewalScheduleStopper())->stop((int) $request->get_param('last_id'));
+        });
     }
 
 }

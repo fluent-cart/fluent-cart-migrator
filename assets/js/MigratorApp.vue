@@ -27,6 +27,15 @@
                 </span>
             </div>
 
+            <!-- The WooCommerce completion card shows this itself -->
+            <WooRenewalsAlert
+                v-if="wooRenewals.count > 0 && !wooSummaryShown"
+                :count="wooRenewals.count"
+                :wcs-active="wooRenewals.wcsActive"
+                :stopping="wooRenewals.stopping"
+                @stop="onStopWooRenewalsRequest"
+            />
+
             <!-- Error banner -->
             <div v-if="error" class="fct-alert fct-alert-error fct-migrator-error">
                 <div class="fct-alert-content">{{ error }}</div>
@@ -44,6 +53,8 @@
                 :admin-url="adminUrl"
                 :plugin-url="pluginUrl"
                 :is-dev-mode="isDevMode"
+                :woo-renewals="wooRenewals"
+                @stop-woo-renewals="onStopWooRenewalsRequest"
                 @select-source="onSelectSource"
                 @reset="onResetRequest"
             />
@@ -103,6 +114,7 @@ import CompatibilityCheck from './components/CompatibilityCheck.vue';
 import MigrationOverview from './components/MigrationOverview.vue';
 import MigrationRunner from './components/MigrationRunner.vue';
 import ConfirmModal from './components/ConfirmModal.vue';
+import WooRenewalsAlert from './components/WooRenewalsAlert.vue';
 
 var STORAGE_KEY = 'fctMigratorState';
 
@@ -115,7 +127,8 @@ export default {
         CompatibilityCheck: CompatibilityCheck,
         MigrationOverview: MigrationOverview,
         MigrationRunner: MigrationRunner,
-        ConfirmModal: ConfirmModal
+        ConfirmModal: ConfirmModal,
+        WooRenewalsAlert: WooRenewalsAlert
     },
     data: function () {
         return {
@@ -131,6 +144,7 @@ export default {
             pluginUrl: config().pluginUrl || '',
             migrationSummary: null,
             hasMigration: false,
+            wooRenewals: { count: 0, wcsActive: false, stopping: false },
 
             // Migration config
             stepsToRun: {},
@@ -151,6 +165,9 @@ export default {
         };
     },
     computed: {
+        wooSummaryShown: function () {
+            return this.currentStep === 'intro' && !!this.migrationSummary && this.migrationSummary.source === 'woocommerce';
+        },
         visibleSteps: function () {
             return [
                 { key: 'compatibility', text: __('Compatibility') },
@@ -192,6 +209,7 @@ export default {
         init: async function () {
             this.loading = true;
             await this.loadSources();
+            this.loadWooRenewals();
 
             // Check for session-saved state (e.g. page refresh during migration)
             var saved = this.loadSessionState();
@@ -252,6 +270,46 @@ export default {
             }
         },
 
+        loadWooRenewals: async function () {
+            try {
+                var data = await apiRequest('GET', 'woo-renewals');
+                this.wooRenewals.count = data.count || 0;
+                this.wooRenewals.wcsActive = !!data.wcs_active;
+            } catch (e) {
+                this.error = __('Failed to check WooCommerce renewals:') + ' ' + e.message;
+            }
+        },
+
+        onStopWooRenewalsRequest: function () {
+            this.confirmModal.title = __('Stop WooCommerce renewals');
+            this.confirmModal.message = __('Cancel what WooCommerce has scheduled for migrated subscriptions:');
+            this.confirmModal.items = [
+                __('Renewal payments and payment retries'),
+                __('Trial end and expiration'),
+                __('Renewal and expiration reminder emails')
+            ];
+            this.confirmModal.confirmText = __('Yes, Stop Renewals');
+            this.confirmModal.action = 'stop_woo_renewals';
+            this.confirmModal.show = true;
+        },
+
+        stopWooRenewals: async function () {
+            this.wooRenewals.stopping = true;
+            try {
+                var lastId = 0;
+                var result;
+                do {
+                    result = await apiRequest('POST', 'woo-renewals/stop', { last_id: lastId });
+                    lastId = result.last_id;
+                } while (!result.done);
+            } catch (e) {
+                this.error = __('Failed to stop WooCommerce renewals:') + ' ' + e.message;
+            } finally {
+                this.wooRenewals.stopping = false;
+            }
+            await this.loadWooRenewals();
+        },
+
         onSelectSource: function (source) {
             this.selectedSource = source;
             setApiSource(source.key);
@@ -302,6 +360,7 @@ export default {
             // Fetch the server-saved summary and go to intro
             await this.fetchSummary();
             this.currentStep = 'intro';
+            this.loadWooRenewals();
         },
 
         onMigrationError: function (message) {
@@ -350,6 +409,8 @@ export default {
             this.confirmModal.show = false;
             if (this.confirmModal.action === 'reset') {
                 await this.doReset();
+            } else if (this.confirmModal.action === 'stop_woo_renewals') {
+                await this.stopWooRenewals();
             }
         },
 
