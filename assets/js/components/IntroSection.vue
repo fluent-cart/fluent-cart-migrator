@@ -118,6 +118,14 @@
                     <MigrationLogPanel :source="summarySource" />
                 </div>
 
+                <WooRenewalsAlert
+                    v-if="isWoo && wooRenewals.count > 0"
+                    :count="wooRenewals.count"
+                    :wcs-active="wooRenewals.wcsActive"
+                    :stopping="wooRenewals.stopping"
+                    @stop="$emit('stop-woo-renewals')"
+                />
+
                 <!-- Backward-compat notice (EDD only — the migrator routes legacy EDD endpoints) -->
                 <div v-if="isEdd" class="fct-alert fct-alert-warning fct-migrator-alert">
                     <div class="fct-alert-icon"><DynamicIcon name="Warning"/></div>
@@ -206,6 +214,7 @@
 <script>
 import { i18nMixin } from '../i18n.js';
 import MigrationLogPanel from './MigrationLogPanel.vue';
+import WooRenewalsAlert from './WooRenewalsAlert.vue';
 import { DynamicIcon } from '@fluent-cart/ui';
 
 export default {
@@ -213,7 +222,8 @@ export default {
     name: 'IntroSection',
     components: {
         DynamicIcon: DynamicIcon,
-        MigrationLogPanel: MigrationLogPanel
+        MigrationLogPanel: MigrationLogPanel,
+        WooRenewalsAlert: WooRenewalsAlert
     },
     props: {
         sources: { type: Array, default: function () { return []; } },
@@ -221,9 +231,10 @@ export default {
         loading: { type: Boolean, default: false },
         adminUrl: { type: String, default: '' },
         pluginUrl: { type: String, default: '' },
-        isDevMode: { type: Boolean, default: false }
+        isDevMode: { type: Boolean, default: false },
+        wooRenewals: { type: Object, default: function () { return { count: 0, wcsActive: false, stopping: false }; } }
     },
-    emits: ['select-source', 'reset'],
+    emits: ['select-source', 'reset', 'stop-woo-renewals'],
     data: function () {
         return {
             showErrorLog: false

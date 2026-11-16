@@ -27,20 +27,14 @@
                 </span>
             </div>
 
-            <!-- Not dismissable: shown until Woo has no pending actions for migrated subscriptions -->
-            <div v-if="wooRenewals.count > 0" class="fct-alert fct-alert-warning fct-migrator-alert">
-                <div class="fct-alert-icon"><DynamicIcon name="Warning"/></div>
-                <div class="fct-alert-content">
-                    <strong class="fct-alert-heading">{{ __('WooCommerce can still charge migrated subscriptions') }}</strong>
-                    {{ wooRenewalsMessage }}
-                    <p v-if="wooRenewals.wcsActive">{{ __('After you check FluentCart, deactivate WooCommerce Subscriptions. It can schedule them again.') }}</p>
-                    <p>
-                        <fct-button size="small" type="warning" :disabled="wooRenewals.stopping" @click="onStopWooRenewalsRequest">
-                            {{ __('Stop WooCommerce renewals') }}
-                        </fct-button>
-                    </p>
-                </div>
-            </div>
+            <!-- The WooCommerce completion card shows this itself -->
+            <WooRenewalsAlert
+                v-if="wooRenewals.count > 0 && !wooSummaryShown"
+                :count="wooRenewals.count"
+                :wcs-active="wooRenewals.wcsActive"
+                :stopping="wooRenewals.stopping"
+                @stop="onStopWooRenewalsRequest"
+            />
 
             <!-- Error banner -->
             <div v-if="error" class="fct-alert fct-alert-error fct-migrator-error">
@@ -59,6 +53,8 @@
                 :admin-url="adminUrl"
                 :plugin-url="pluginUrl"
                 :is-dev-mode="isDevMode"
+                :woo-renewals="wooRenewals"
+                @stop-woo-renewals="onStopWooRenewalsRequest"
                 @select-source="onSelectSource"
                 @reset="onResetRequest"
             />
@@ -110,7 +106,7 @@
 
 <script>
 import { apiRequest, setApiSource } from './api.js';
-import { __, _n, sprintf, i18nMixin } from './i18n.js';
+import { __, sprintf, i18nMixin } from './i18n.js';
 import { config } from './config.js';
 import { DynamicIcon } from '@fluent-cart/ui';
 import IntroSection from './components/IntroSection.vue';
@@ -118,6 +114,7 @@ import CompatibilityCheck from './components/CompatibilityCheck.vue';
 import MigrationOverview from './components/MigrationOverview.vue';
 import MigrationRunner from './components/MigrationRunner.vue';
 import ConfirmModal from './components/ConfirmModal.vue';
+import WooRenewalsAlert from './components/WooRenewalsAlert.vue';
 
 var STORAGE_KEY = 'fctMigratorState';
 
@@ -130,7 +127,8 @@ export default {
         CompatibilityCheck: CompatibilityCheck,
         MigrationOverview: MigrationOverview,
         MigrationRunner: MigrationRunner,
-        ConfirmModal: ConfirmModal
+        ConfirmModal: ConfirmModal,
+        WooRenewalsAlert: WooRenewalsAlert
     },
     data: function () {
         return {
@@ -167,10 +165,8 @@ export default {
         };
     },
     computed: {
-        wooRenewalsMessage: function () {
-            var count = this.wooRenewals.count;
-            /* translators: %d: number of migrated subscriptions */
-            return sprintf(_n('%d migrated subscription still has renewals scheduled in WooCommerce. FluentCart bills it now, so the customer can be charged twice.', '%d migrated subscriptions still have renewals scheduled in WooCommerce. FluentCart bills them now, so customers can be charged twice.', count), count);
+        wooSummaryShown: function () {
+            return this.currentStep === 'intro' && !!this.migrationSummary && this.migrationSummary.source === 'woocommerce';
         },
         visibleSteps: function () {
             return [
