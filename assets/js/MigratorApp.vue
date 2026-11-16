@@ -27,6 +27,21 @@
                 </span>
             </div>
 
+            <!-- Not dismissable: shown until Woo has no pending actions for migrated subscriptions -->
+            <div v-if="wooRenewals.count > 0" class="fct-alert fct-alert-warning fct-migrator-alert">
+                <div class="fct-alert-icon"><DynamicIcon name="Warning"/></div>
+                <div class="fct-alert-content">
+                    <strong class="fct-alert-heading">{{ __('WooCommerce can still charge migrated subscriptions') }}</strong>
+                    {{ wooRenewalsMessage }}
+                    <p v-if="wooRenewals.wcsActive">{{ __('After you check FluentCart, deactivate WooCommerce Subscriptions. It can schedule them again.') }}</p>
+                    <p>
+                        <fct-button size="small" type="warning" :disabled="wooRenewals.stopping" @click="onStopWooRenewalsRequest">
+                            {{ __('Stop WooCommerce renewals') }}
+                        </fct-button>
+                    </p>
+                </div>
+            </div>
+
             <!-- Error banner -->
             <div v-if="error" class="fct-alert fct-alert-error fct-migrator-error">
                 <div class="fct-alert-content">{{ error }}</div>
@@ -95,7 +110,7 @@
 
 <script>
 import { apiRequest, setApiSource } from './api.js';
-import { __, sprintf, i18nMixin } from './i18n.js';
+import { __, _n, sprintf, i18nMixin } from './i18n.js';
 import { config } from './config.js';
 import { DynamicIcon } from '@fluent-cart/ui';
 import IntroSection from './components/IntroSection.vue';
@@ -131,6 +146,7 @@ export default {
             pluginUrl: config().pluginUrl || '',
             migrationSummary: null,
             hasMigration: false,
+            wooRenewals: { count: 0, wcsActive: false, stopping: false },
 
             // Migration config
             stepsToRun: {},
@@ -151,6 +167,11 @@ export default {
         };
     },
     computed: {
+        wooRenewalsMessage: function () {
+            var count = this.wooRenewals.count;
+            /* translators: %d: number of migrated subscriptions */
+            return sprintf(_n('%d migrated subscription still has renewals scheduled in WooCommerce. FluentCart bills it now, so the customer can be charged twice.', '%d migrated subscriptions still have renewals scheduled in WooCommerce. FluentCart bills them now, so customers can be charged twice.', count), count);
+        },
         visibleSteps: function () {
             return [
                 { key: 'compatibility', text: __('Compatibility') },
@@ -192,6 +213,7 @@ export default {
         init: async function () {
             this.loading = true;
             await this.loadSources();
+            this.loadWooRenewals();
 
             // Check for session-saved state (e.g. page refresh during migration)
             var saved = this.loadSessionState();
@@ -252,6 +274,46 @@ export default {
             }
         },
 
+        loadWooRenewals: async function () {
+            try {
+                var data = await apiRequest('GET', 'woo-renewals');
+                this.wooRenewals.count = data.count || 0;
+                this.wooRenewals.wcsActive = !!data.wcs_active;
+            } catch (e) {
+                this.error = __('Failed to check WooCommerce renewals:') + ' ' + e.message;
+            }
+        },
+
+        onStopWooRenewalsRequest: function () {
+            this.confirmModal.title = __('Stop WooCommerce renewals');
+            this.confirmModal.message = __('Cancel what WooCommerce has scheduled for migrated subscriptions:');
+            this.confirmModal.items = [
+                __('Renewal payments and payment retries'),
+                __('Trial end and expiration'),
+                __('Renewal and expiration reminder emails')
+            ];
+            this.confirmModal.confirmText = __('Yes, Stop Renewals');
+            this.confirmModal.action = 'stop_woo_renewals';
+            this.confirmModal.show = true;
+        },
+
+        stopWooRenewals: async function () {
+            this.wooRenewals.stopping = true;
+            try {
+                var lastId = 0;
+                var result;
+                do {
+                    result = await apiRequest('POST', 'woo-renewals/stop', { last_id: lastId });
+                    lastId = result.last_id;
+                } while (!result.done);
+            } catch (e) {
+                this.error = __('Failed to stop WooCommerce renewals:') + ' ' + e.message;
+            } finally {
+                this.wooRenewals.stopping = false;
+            }
+            await this.loadWooRenewals();
+        },
+
         onSelectSource: function (source) {
             this.selectedSource = source;
             setApiSource(source.key);
@@ -302,6 +364,7 @@ export default {
             // Fetch the server-saved summary and go to intro
             await this.fetchSummary();
             this.currentStep = 'intro';
+            this.loadWooRenewals();
         },
 
         onMigrationError: function (message) {
@@ -350,6 +413,8 @@ export default {
             this.confirmModal.show = false;
             if (this.confirmModal.action === 'reset') {
                 await this.doReset();
+            } else if (this.confirmModal.action === 'stop_woo_renewals') {
+                await this.stopWooRenewals();
             }
         },
 

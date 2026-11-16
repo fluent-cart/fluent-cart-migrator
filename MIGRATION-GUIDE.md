@@ -498,6 +498,12 @@ Yes. Subscription records are migrated with their gateway subscription IDs (Stri
 
 For **PayPal Standard** subscriptions specifically, the migrator plugin provides IPN backward compatibility, so those will keep working too.
 
+**WooCommerce Subscriptions is different.** WooCommerce subscriptions move to FluentCart's Store Billing, so FluentCart charges or invoices each renewal itself. WooCommerce Subscriptions keeps its own renewals scheduled, and if both run, the customer is charged twice. The migrator does not stop them on its own. After the migration:
+
+1. On **Settings → Migrator**, a warning shows how many migrated subscriptions still have WooCommerce renewals scheduled. Click **Stop WooCommerce renewals** and confirm. This cancels WooCommerce's scheduled renewal payments, payment retries, trial end and expiration events, and reminder emails for migrated subscriptions only. The WooCommerce subscriptions keep their status, and no emails are sent.
+2. Check the migrated subscriptions in FluentCart, then **deactivate WooCommerce Subscriptions**. While it is active, it schedules renewals again whenever a subscription is edited or reactivated, and the warning comes back.
+3. Do not run the fix in WooCommerce Subscriptions' Health Check tool. It reports the migrated subscriptions as missing a renewal and would schedule or charge them again.
+
 ### Will my customers' software licenses keep working?
 
 Yes. The migrator plugin intercepts all EDD licensing API calls (`?edd_action=activate_license`, `check_license`, etc.) and routes them through FluentCart. Your customers do not need to update their software — license checks, activations, deactivations, and auto-updates all continue working.
